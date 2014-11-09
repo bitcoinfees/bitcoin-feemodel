@@ -1,0 +1,7 @@
+{
+    "collectdata": {
+        "datadir": "/Users/ianchen/documents/workspace/bitcoinfees/miner-model/data",
+        "pollperiod": 3
+    }
+    
+}
