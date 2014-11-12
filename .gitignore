@@ -2,3 +2,4 @@ _*
 data
 *.pyc
 *.log
+config.json
