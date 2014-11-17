@@ -2,21 +2,22 @@ import os, json
 import cPickle as pickle
 from time import sleep, time
 from txmempool import TxMempool
-from bitcoin.rpc import Proxy
 from bitcoin.core import b2lx
 import shelve
+from model.config import config
+from model.util import logWrite, proxy
 
 statVersion = '0.1'
 
 # datadir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'data/')
-configPath = os.path.join(os.path.dirname(__file__), '../../config.json')
-logPath = os.path.join(os.path.dirname(__file__), 'debug.log')
+# configPath = os.path.join(os.path.dirname(__file__), '../../config.json')
+# logPath = os.path.join(os.path.dirname(__file__), 'debug.log')
 
-try:
-    with open(configPath, 'r') as configFile:
-        config = json.load(configFile) 
-except IOError:
-    raise IOError("No config.json found.")
+# try:
+#     with open(configPath, 'r') as configFile:
+#         config = json.load(configFile) 
+# except IOError:
+#     raise IOError("No config.json found.")
 
 datadir = os.path.normpath(config['collectdata']['datadir'])
 pollperiod =  config['collectdata']['pollperiod']
@@ -24,8 +25,7 @@ pollperiod =  config['collectdata']['pollperiod']
 if not os.path.exists(datadir):
     os.mkdir(datadir)
 
-proxy = Proxy()
-shelfFile = os.path.join(datadir, 'blockstats_v' + str(statVersion) + '.shelf')
+shelfFile = os.path.join(datadir, 'blockstats_v' + str(statVersion))
 shelf = shelve.open(shelfFile)
 
 def collect():
@@ -42,7 +42,7 @@ def collect():
             if currHeight == prevHeight:
                 txDelta, _discard1, _discard2 = mempool.update()
                 if txDelta < 0:
-                    logWrite('Warning, mempool entries removed when no new block was found.', currHeight=currHeight)
+                    logWrite('Warning, mempool entries removed when no new block was found.')
                 sleep(pollperiod)
             else:
                 numNewBlocks = currHeight - prevHeight
@@ -52,30 +52,29 @@ def collect():
                     block = proxy.getblock(proxy.getblockhash(blockHeight))
                     blockRcvTime = time()
                     blockTxList[blockHeight] = [tx.GetHash() for tx in block.vtx]
-
+                   
                     mempoolStats[blockHeight] = [{
                         'txid': txm.txidHex,
                         'inBlock': txid in blockTxList[blockHeight],
                         'feeRate': txm.feeRate,
-                        'priority': txm.computePriority(offset=currHeight-blockHeight+1, currHeight=currHeight),
+                        'priority': txm.computePriority(currHeight=currHeight, offset=currHeight-blockHeight+1),
                         'size': txm.nTxSize,
                         'dependants': map(b2lx, txm.dependants),
                         'dependencies': map(b2lx, txm.dependencies),
                         'timedelta': blockRcvTime-txm.rcvTime
                     } for txid,txm in mempool.txpool.iteritems()]
-
-                    for txid in blockTxList[blockHeight]:
-                        mempool.deleteTx(txid)
+    
+                    mempool.deleteTx(blockTxList[blockHeight],currHeight=currHeight)
 
                 prevHeight = proxy.getblockcount()
                 if prevHeight != currHeight:
-                    logWrite('Blocks are coming too quickly, we skipped one here.', currHeight=prevHeight)
+                    logWrite('Blocks are coming too quickly, we skipped one here.')
 
                 _discard1, removedSet, _discard2 = mempool.update()
                 removedSet = map(b2lx, removedSet)
                 for stat in mempoolStats.values():
                     for tx in stat:
-                        if tx['txid'] in removedSet:
+                        if not tx['inBlock'] and tx['txid'] in removedSet:
                             # A tx that did not get included in a block, yet got removed from mempool:
                             # Means that it was invalidated by the latest blocks (double spent), so 
                             # we don't want to use it in the fee estimations.
@@ -93,19 +92,10 @@ def collect():
                 sleep(pollperiod)
     
     except KeyboardInterrupt:
+        logWrite("Keyboard Interrupt")
+    except Exception as e:
+        print e.message, e.__doc__
+    finally:
         shelf.close()
 
 
-def logWrite(entry, toStdOut=True, currHeight=None):
-    '''An entry in the log file.'''
-    if not currHeight:
-        currHeight = proxy.getblockcount()
-    s = '#'+str(currHeight)+': ' + entry
-    if toStdOut:
-        print s
-    with open(logPath, 'a') as logFile:
-        logFile.write(s + '\n')
-
-
-if __name__ == '__main__':
-    collect()

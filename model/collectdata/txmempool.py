@@ -1,95 +1,98 @@
 from bitcoin.core import CTransaction, b2lx
-from bitcoin.rpc import Proxy
 from bitcoin.core import b2lx
 from time import time
+from model.util import logWrite, proxy
 
 # All txids are binary data
 
-proxy = Proxy()
-reorgGuard = 6
+class Prevout:
+    def __init__(self,prevout,currHeight):
+        try: 
+            # Use proxy.gettxout first, as it seems to be much faster.
+            # If it fails, then txout is in the mempool; use getrawtransaction
+            prevoutPoint = proxy.gettxout(prevout, includemempool=False)
+            nValue = prevoutPoint['txout'].nValue
+            confirmations = prevoutPoint.get('confirmations')
+        except IndexError:                
+            prevoutTx = proxy.getrawtransaction(prevout.hash, verbose=True)
+            nValue = prevoutTx['tx'].vout[prevout.n].nValue
+            confirmations = prevoutTx.get('confirmations')
+
+        self.prevout = prevout
+        self.txid = prevout.hash
+        self.nValue = nValue
+        self.blockHeight = ((currHeight-confirmations+1) 
+            if confirmations > 0 else None)
+
+    def getCoinAge(self, currHeight, offset):
+        if self.blockHeight:
+            return (currHeight-self.blockHeight+1-offset)*self.nValue
+        else:
+            return 0
+
+    def updateBlockHeight(self, currHeight):
+        try: 
+            prevoutPoint = proxy.gettxout(self.prevout, includemempool=False)
+            confirmations = prevoutPoint.get('confirmations')
+        except IndexError:                
+            prevoutTx = proxy.getrawtransaction(self.txid, verbose=True)
+            confirmations = prevoutTx.get('confirmations')
+
+        self.blockHeight = ((currHeight-confirmations+1) 
+            if confirmations > 0 else None)
+
 
 class TxMempoolEntry:
-    def __init__(self, txid):
+    def __init__(self, txid, currHeight=None):
         tx = proxy.getrawtransaction(txid)
         self.tx = tx
         self.txidHex = b2lx(tx.GetHash())
-        self.rcvTime = time()
+        self.nTime = time()
         self.dependants = set() # Mempool transactions which depend on this one
         self.dependencies = set() # Mempool transactions which this tx depends on
-        self.inputAmounts = [None]*len(tx.vin)
-        self.inputBlockHeight = [None]*len(tx.vin)
+        self.prevouts = [0]*len(tx.vin)
 
-        modTxSize = nTxSize = len(tx.serialize())
-        currHeight = proxy.getblockcount()
+        if not currHeight:
+            currHeight = proxy.getblockcount()
+
+        nModSize = nTxSize = len(tx.serialize())
 
         for txinIdx, txin in enumerate(tx.vin):
             offset = 41 + min(110, len(txin.scriptSig))
-            if modTxSize > offset:
-                modTxSize -= offset
-            try: 
-                # Use proxy.gettxout first, as it seems to be much faster.
-                # If it fails, then txout is in the mempool; use getrawtransaction
-                prevoutPoint = proxy.gettxout(txin.prevout, includemempool=False)
-                self.inputAmounts[txinIdx] = prevoutPoint['txout'].nValue
-                inputBlockHeightProposal = currHeight - prevoutPoint['confirmations'] + 1
-                # We only commit the input block height if it has more than $reorgGuard confirmations
-                # This is so that priority calculations won't be erroneous if there is a reorg of < $reorgGuard.
-                # Priority is likely to be (slightly) wrong if there is a reorg > $reorgGuard blocks
-                self.inputBlockHeight[txinIdx] = inputBlockHeightProposal if prevoutPoint['confirmations'] >= reorgGuard else None
-
-            except IndexError:                
-                prevoutTx = proxy.getrawtransaction(txin.prevout.hash, verbose=True)
-                self.inputAmounts[txinIdx] = prevoutTx['tx'].vout[txin.prevout.n].nValue
-                confirmations = prevoutTx.get('confirmations')
-                self.inputBlockHeight[txinIdx] = (currHeight - confirmations + 1) if confirmations >= reorgGuard else None
+            if nModSize > offset:
+                nModSize -= offset
+            self.prevouts[txinIdx] = Prevout(txin.prevout, currHeight)
         
-
-        self.feeRate = (sum(self.inputAmounts) - sum([vout.nValue for vout in tx.vout])) * 1000 / nTxSize
+        inputAmounts = sum([prevout.nValue for prevout in self.prevouts])
+        outputAmounts = sum([vout.nValue for vout in tx.vout])
+        self.feeRate = (inputAmounts - outputAmounts) * 1000 / nTxSize
         self.nTxSize = nTxSize
-        self.modTxSize = modTxSize
+        self.nModSize = nModSize
+        # self.dPriority = self.computePriority(currHeight=currHeight)
 
-    def computePriority(self, offset=0, currHeight=None):
-        dPriority = 0
+    def computePriority(self, currHeight=None, offset=0):
         if not currHeight:
             currHeight = proxy.getblockcount()
-        for txinIdx, txin in enumerate(self.tx.vin):
-            if self.inputBlockHeight[txinIdx]:
-                dPriority += (currHeight-self.inputBlockHeight[txinIdx]+1-offset)*self.inputAmounts[txinIdx]
-            else:
-                try:
-                    prevoutPoint = proxy.gettxout(txin.prevout, includemempool=False)
-                    dPriority += (prevoutPoint['confirmations']-offset)*self.inputAmounts[txinIdx]
-                except IndexError:
-                    prevoutTx = proxy.getrawtransaction(txin.prevout.hash, verbose=True)
-                    confirmations = prevoutTx.get('confirmations')
-                    if confirmations:
-                        dPriority += (confirmations-offset)*self.inputAmounts[txinIdx]
 
-        return float(dPriority) / self.modTxSize
+        dPriority = sum([prevout.getCoinAge(currHeight,offset) 
+            for prevout in self.prevouts])
 
-    def updateInputBlockHeight(self):
-        currHeight = proxy.getblockcount()
-        for txinIdx, txin in enumerate(self.tx.vin):
-            if not self.inputBlockHeight[txinIdx]:
-                try: 
-                    # Use proxy.gettxout first, as it seems to be much faster.
-                    # If it fails, then txout is in the mempool; use getrawtransaction
-                    prevoutPoint = proxy.gettxout(txin.prevout, includemempool=False)
-                    inputBlockHeightProposal = currHeight - prevoutPoint['confirmations'] + 1
-                    # We only commit the input block height if it has more than $reorgGuard confirmations
-                    # This is so that priority calculations won't be erroneous if there is a reorg of < $reorgGuard.
-                    # Priority is likely to be (slightly) wrong if there is a reorg > $reorgGuard blocks
-                    self.inputBlockHeight[txinIdx] = inputBlockHeightProposal if prevoutPoint['confirmations'] >= reorgGuard else None
-                except IndexError:                
-                    prevoutTx = proxy.getrawtransaction(txin.prevout.hash, verbose=True)
-                    confirmations = prevoutTx.get('confirmations')
-                    self.inputBlockHeight[txinIdx] = (currHeight - confirmations + 1) if confirmations >= reorgGuard else None
+        return float(dPriority) / self.nModSize
+
+    def updateInputBlockHeights(self, currHeight=None):
+        if not currHeight:
+            currHeight = proxy.getblockcount()
+
+        for prevout in self.prevouts:
+            if not prevout.blockHeight:
+                prevout.updateBlockHeight(currHeight)
 
 
 class TxMempool:
     def __init__(self):
         txidList = proxy.getrawmempool()
-        self.txpool = {txid: TxMempoolEntry(txid) for txid in txidList}
+        self.currHeight = proxy.getblockcount()
+        self.txpool = {txid: TxMempoolEntry(txid,self.currHeight) for txid in txidList}
 
         for txid,txm in self.txpool.iteritems():
             for txin in txm.tx.vin:
@@ -99,21 +102,24 @@ class TxMempool:
                     self.txpool[prevoutHash].dependants.add(txid)
 
     def update(self):
+        self.currHeight = proxy.getblockcount()
+
         newIdSet = set(proxy.getrawmempool())
         oldIdSet = set(self.txpool)
 
         removedSet = oldIdSet - newIdSet
 
-        for txid in removedSet:
-            self.deleteTx(txid)
+        self.deleteTx(removedSet, currHeight=self.currHeight)
 
         addedSet = newIdSet - oldIdSet
-        addedDict = {txid: TxMempoolEntry(txid) for txid in addedSet}
+        addedDict = {txid: TxMempoolEntry(txid, self.currHeight) for txid in addedSet}
         
         for txid, txm in self.txpool.iteritems():
             for txin in txm.tx.vin:
                 prevoutHash = txin.prevout.hash
                 if prevoutHash in addedDict:
+                    logWrite("A reorg must have happened.")
+                    txm.updateInputBlockHeights(currHeight=self.currHeight)
                     txm.dependencies.add(prevoutHash)
                     addedDict[prevoutHash].dependants.add(txid)
         
@@ -125,19 +131,25 @@ class TxMempool:
                 if prevoutHash in self.txpool:
                     txm.dependencies.add(prevoutHash)
                     self.txpool[prevoutHash].dependants.add(txid)
-
-        for txm in self.txpool.itervalues():
-            txm.updateInputBlockHeight()
+        
 
         return len(addedSet)-len(removedSet), removedSet, addedSet
 
-    def deleteTx(self,txid):
-        txm = self.txpool.get(txid)
-        if txm:
-            for dependant in txm.dependants:
-                self.txpool[dependant].dependencies.discard(txid)
-            for dependency in txm.dependencies:
-                self.txpool[dependency].dependants.discard(txid)
+    def deleteTx(self,txidList,currHeight):
+        updateInputBlockHeightList = set()
+        for txid in txidList:
+            txm = self.txpool.get(txid)
+            if txm:
+                for dependant in txm.dependants:
+                    self.txpool[dependant].dependencies.discard(txid)
+                    updateInputBlockHeightList.add(dependant)
+                    # self.txpool[dependant].updateInputBlockHeight(txid, currHeight)
+                for dependency in txm.dependencies:
+                    self.txpool[dependency].dependants.discard(txid)
 
-            del self.txpool[txid]
+                del self.txpool[txid]
 
+        for dependant in updateInputBlockHeightList:
+            txm = self.txpool.get(dependant)
+            if txm:
+                txm.updateInputBlockHeights(currHeight)
