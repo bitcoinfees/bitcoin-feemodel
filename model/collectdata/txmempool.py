@@ -13,7 +13,7 @@ class Prevout:
             prevoutPoint = proxy.gettxout(prevout, includemempool=False)
             nValue = prevoutPoint['txout'].nValue
             confirmations = prevoutPoint.get('confirmations')
-        except IndexError:                
+        except IndexError:
             prevoutTx = proxy.getrawtransaction(prevout.hash, verbose=True)
             nValue = prevoutTx['tx'].vout[prevout.n].nValue
             confirmations = prevoutTx.get('confirmations')
@@ -46,7 +46,8 @@ class TxMempoolEntry:
     def __init__(self, txid, currHeight=None):
         tx = proxy.getrawtransaction(txid)
         self.tx = tx
-        self.txidHex = b2lx(tx.GetHash())
+        self.txid = tx.GetHash()
+        self.txidHex = b2lx(self.txid)
         self.nTime = time()
         self.dependants = set() # Mempool transactions which depend on this one
         self.dependencies = set() # Mempool transactions which this tx depends on
