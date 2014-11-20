@@ -3,3 +3,5 @@ data
 *.pyc
 *.log
 config.json
+tests*
+main.py
