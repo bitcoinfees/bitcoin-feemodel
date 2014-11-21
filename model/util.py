@@ -31,13 +31,32 @@ def getFees(blockHeight, db=None):
         c = db.cursor()
 
     try:
-        fees = c.execute('SELECT feerate, inblock FROM fees WHERE blockheight=?', (blockHeight,)).fetchall()
+        fees = c.execute('SELECT feerate, inblock, size FROM fees WHERE blockheight=?',
+            (blockHeight,)).fetchall()
         return fees
     finally:
         if 'localdb' in locals():
             localdb.close()
 
-def getBlocks(db=None):
+def getBlocks(minBlock=None, db=None):
+    if db is None:
+        localdb = sqlite3.connect(dbFile)
+        c = localdb.cursor()
+    else:
+        c = db.cursor()
+
+    if not minBlock:
+        minBlock = 0
+
+    try:
+        blocks = c.execute('SELECT blockheight FROM block WHERE blockheight>?',
+            (minBlock,)).fetchall()
+        return [block[0] for block in blocks]
+    finally:
+        if 'localdb' in locals():
+            localdb.close()
+
+def getBlockSize(blockHeight, db=None):
     if db is None:
         localdb = sqlite3.connect(dbFile)
         c = localdb.cursor()
@@ -45,8 +64,9 @@ def getBlocks(db=None):
         c = db.cursor()
 
     try:
-        blocks = c.execute('SELECT blockheight FROM block').fetchall()
-        return [block[0] for block in blocks]
+        blockSize = c.execute('SELECT blocksize FROM block WHERE blockheight=?',
+            (blockHeight,)).fetchall()
+        return blockSize[0]
     finally:
         if 'localdb' in locals():
             localdb.close()
