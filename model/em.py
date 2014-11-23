@@ -1,201 +1,429 @@
-from random import randint
-from numpy.random import dirichlet
-from scipy.special import comb, beta
-from config import config
-from os import path
-import cPickle as pickle
-from operator import mul
+from model.util import getFees, getBlockSize, getBlocks, proxy
+from model.config import dbFile, config
+from numpy import logspace, linspace, diff
+from numpy.random import dirichlet, multinomial
 from math import log
+from random import randint
+from operator import mul
+import sqlite3
 
-timeDeltaMargin = 5
-hardMaxBlockSize = 1e6 # The hard-coded block size limit
-blockSizeStdDev = 0.05*hardMaxBlockSize # The model for actual max block sizes
-defaultAlpha = 10 # value of alpha in the (alpha, 1) beta-binomial model
-numPolicies = 5 
-minFeeRateInitRange = (100, 50000)
-maxBlockSizeInitRange = (0, hardMaxBlockSize)
+numPolicies = config['em']['numPolicies']
+defaultAlpha = config['em']['defaultAlpha']
+feeRateRange = config['em']['feeRateRange']
+hardMaxBlockSize = config['em']['hardMaxBlockSize']
+randomizeWeights = config['em']['randomizeWeights']
+randomizeFee = config['em']['randomizeFee']
+maxAlphaIterations = config['em']['maxAlphaIterations']
+alphaRange = config['em']['alphaRange']
+randomizeMaxBlockSizes = config['em']['randomizeMaxBlockSizes']
+isStochastic = config['em']['isStochastic']
 
-datadir = config['em']['datadir']
-dataformat = config['em']['dataformat']
+logTable = [None] + map(log, range(1, int(hardMaxBlockSize/100)))
 
-def calcFeeRatesLL(minFeeRate, weightedLogkValuesList):
-
-    values = [0]*len(weightedLogkValuesList)
-    for idx,weightedLogkValues in enumerate(weightedLogkValuesList):
-        try:
-            values[idx] = min([(feeRate,wlk) for feeRate,wlk in weightedLogkValues 
-                if feeRate >= minFeeRate], key=lambda x: x[0])[1]
-        except ValueError:
-            values[idx] = weightedLogkValues[0][1]
-
-    return sum(values)
-    # values = [min([(feeRate,wlk) for feeRate,wlk in weightedLogkValues if feeRate >= minFeeRate],
-    #     key=lambda x: x[0])[1] for weightedLogkValues in weightedLogkValuesList]
-
-def toWeightedLogk(kValues,alpha,weight):
-
-    return [(feeRate, weight*log(k) if k > alpha else weight*log(alpha/2)) for feeRate,k in kValues]
-
-class Policy:
-    def __init__(self, minFeeRate, maxBlockSize, weight):
-        self.minFeeRate = minFeeRate
-        self.maxBlockSize = maxBlockSize
-        self.weight = weight
-
-    def maximize(self, weights, alpha, data):
-        # First maximize minFeeRate
-        feeRates = set()
-        for blockStat in data:
-            feeRates.update(set([f for f,k in blockStat.kValues]))
-
-        weightedLogkValuesList = [toWeightedLogk(blockStat.kValues, alpha, weights[idx]) 
-            for idx, blockStat in enumerate(data)]
-        
-        ll = [(feeRate, calcFeeRatesLL(feeRate, weightedLogkValuesList)) for feeRate in feeRates]
-        self.minFeeRate = max(ll, key=lambda x: x[1])[0]
-
-
+class FeeTx:
+    def __init__(self, feeTuple):
+        self.feeRate = feeTuple[0]
+        self.inBlock = bool(feeTuple[1])
+        self.size = feeTuple[2]
 
     def __repr__(self):
-        return "Policy(MinFeeRate: %d, MaxBlockSize: %d, Weight: %.3f)" % (
-            self.minFeeRate, self.maxBlockSize, self.weight)
-        # return str(self.minFeeRate)+', ' + str(self.maxBlockSize) + ', ' + str(self.weight)
-
-
-class ModelParams:
-    def __init__(self, numPolicies=numPolicies, alpha=defaultAlpha):
-        policyWeights = dirichlet([1]*numPolicies)
-        self.policies = [Policy(randint(*minFeeRateInitRange),
-            hardMaxBlockSize,policyWeights[i]) for i in range(numPolicies)]
-        self.alpha = alpha
-
-    # def __repr__(self):
-    #     return self.policies, self.alpha
+        return "Tx(feerate: %d, inblock: %d, size: %d" % (
+            self.feeRate, self.inBlock, self.size)
 
 class BlockStats:
-    def __init__(self, blockData, blocksSize):
-        '''blockData is the list contained in the *.pickle files'''
-        self.blockData = blockData
-        self.stats = filter(self._txCriteria, blockData)
-        # Filter out by mintime
-        try:
-            mintime = min([tx['timedelta'] for tx in self.stats if tx['inBlock']])
-        except ValueError:
-            mintime = 0
+    def __init__(self, blockHeight, db):
+        self.feeStats = [FeeTx(feeTuple) for feeTuple in getFees(blockHeight, db=db)]
+        self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
+        self.blockSize = getBlockSize(blockHeight, db=db)[0]
+        self.blockHeight = blockHeight
+        self.weights = None
 
-        mintime += timeDeltaMargin
+    # def calcLikelihood(self, minFeeRate, maxBlockSize, alpha):
+    #     n = k = 0
+    #     modBlockSize = self.blockSize
 
-        self.stats = filter(lambda x: x['timedelta'] > mintime, self.stats)
-        self.stats.sort(key=lambda x: x['feeRate'], reverse=True)
-        self.blockSize = blockSize
+    #     for tx in self.feeStats:
+    #         if tx.feeRate >= minFeeRate:
+    #             if tx.inBlock:
+    #                 k += 1
+    #                 n += 1
+    #                 modBlockSize -= tx.size
+    #             else:
+    #                 if tx.size + modBlockSize
+    #         else:
 
-        kValues = {}
+    def getDLLbyMinFee(self,maxBlockSize,alpha,weight):
+        if self.blockSize > maxBlockSize:
+            return (_calcpll(0,len(self.feeStats),alpha,weight), [])
 
-        currFeeRate = self.stats[0]['feeRate']
-        kValues[currFeeRate] = len(filter(lambda x: not x['inBlock'],self.stats[1:])) + self.stats[0]['inBlock']
+        pll = []
+        minFeeRates = []
+        n = len(self.feeStats)
+        k = len([1 for tx in self.feeStats if not tx.inBlock])
+        # prevFeeRate = self.feeStats[0].feeRate+1
+        prevFeeRate = float("inf")
 
-        for tx in self.stats[1:]:
-            feeRate = tx['feeRate']
-            if feeRate != currFeeRate:
-                kValues[feeRate] = kValues[currFeeRate]
-                currFeeRate = feeRate
+        for tx in self.feeStats:
+            currFeeRate = tx.feeRate
+            if currFeeRate < prevFeeRate:
+                # pll.append((prevFeeRate, _pll(k,n,alpha,weight)))
+                pll.append(_calcpll(k,n,alpha,weight))
+                minFeeRates.append(prevFeeRate)
+                prevFeeRate = currFeeRate
 
-            kValues[currFeeRate] += 1 if tx['inBlock'] else -1
-        self.kValues = sorted(kValues.iteritems(), key=lambda x: x[0], reverse=True)
-        # self.blockSize = sum([tx['size'] for tx in self.stats if tx['inBlock']])
 
-    def _txCriteria(self, tx):
-        '''tx must have > 0 feeRate and all its mempool dependencies must be inBlock.'''
-        deps = [depc for depc in self.blockData if depc['txid'] in tx['dependencies']]
-        return tx['feeRate'] and all([dep['inBlock'] for dep in deps])
+            if tx.inBlock:
+                k += 1
+            elif tx.size + self.blockSize > maxBlockSize:
+                k -= 1
+                n -= 1
+            else:
+                k -= 1
+
+        pll.append(_calcpll(k,n,alpha,weight))
+        minFeeRates.append(currFeeRate)
+
+        # pllDiff = diff(pll)
+        dll = diff(pll)
+
+        return (pll[0], zip(minFeeRates[1:], dll))
+
+    def getDLLbyMaxBlockSize(self, minFeeRate, alpha, weight):
+        pll = []
+        maxBlockSizes = []
+        nmax = n = len(self.feeStats)
+
+        k = len([1 for tx in self.feeStats if 
+            tx.feeRate >= minFeeRate and tx.inBlock or
+            tx.feeRate < minFeeRate and not tx.inBlock])
+
+        txBound = [tx.size + self.blockSize for tx in self.feeStats if 
+            tx.feeRate >= minFeeRate and not tx.inBlock]
+
+        txBound.sort(reverse=True)
+
+        # if not txBound:
+        #     raise ValueError("No txs in block " + str(self.blockHeight))
+
+        prevMax = float("inf")
+
+        for txMax in txBound:
+            currMax = txMax
+            if currMax < prevMax:
+                pll.append(_calcpll(k,n,alpha,weight))
+                maxBlockSizes.append(prevMax)
+                prevMax = currMax
+
+            n -= 1
+        pll.append(_calcpll(k,n,alpha,weight))
+        pll.append(_calcpll(0,nmax,alpha,weight))
+        if 'currMax' in locals():
+            maxBlockSizes.append(currMax)
+        else:
+            maxBlockSizes.append(prevMax)
+        maxBlockSizes.append(self.blockSize-1)
+
+        dll = diff(pll)
+
+        return (pll[0], zip(maxBlockSizes[1:], dll))
+
+
+
+    # def getKNbyMinFee(self,maxBlockSize):
+    #     if self.blockSize > maxBlockSize:
+    #         return None
+    #     kn = []
+    #     n = len(self.feeStats)
+    #     k = len([1 for tx in self.feeStats if not tx.inBlock])
+    #     prevFeeRate = self.feeStats[0].feeRate+1
+
+    #     for tx in self.feeStats:
+    #         currFeeRate = tx.feeRate
+    #         if currFeeRate < prevFeeRate:
+    #             kn.append((prevFeeRate, k, n))
+    #             prevFeeRate = currFeeRate
+
+    #         if tx.inBlock:
+    #             k += 1
+    #         elif tx.size + self.blockSize > maxBlockSize:
+    #             n -= 1
+
+    #     kn.append((currFeeRate,k,n))
+    #     return kn
 
     def calcWeights(self, params):
-        weights = [0]*len(params.policies)
-        for pidx,policy in enumerate(params.policies):
-            likelihood = self.calcLikelihood(policy,params.alpha)
-            weights[pidx] = likelihood*policy.weight
+        weights = [None]*len(params.policies)
+        likelihoods = [None]*len(params.policies)
+        for policy in params.policies:
+            likelihoods[policy.idx] = self.calcLikelihood(policy, params.alpha)
+            weights[policy.idx] = likelihoods[policy.idx]*policy.weight
         weightSum = sum(weights)
         if weightSum > 0:
             self.weights = map(lambda x: x/weightSum, weights)
         else:
             self.weights = [0]*len(params.policies)
+            print ("Warning all weights are zero.")
+
+        if isStochastic:
+            weights = multinomial(1, self.weights)
+            self.weights = map(float, weights)
+
+        self.likelihoods = likelihoods
+
+    def getKN(self,policy):
+        k = n = 0
+
+        for tx in self.feeStats:
+            if tx.feeRate >= policy.minFeeRate:
+                if tx.inBlock:
+                    k += 1
+                    n += 1
+                elif not (tx.size + self.blockSize > policy.maxBlockSize):
+                    n += 1
+            else:
+                if not tx.inBlock:
+                    k += 1
+                n += 1
+
+        return k,n
+
 
     def calcLikelihood(self, policy, alpha):
-        
-        if self.blockSize > policy.maxBlockSize+blockSizeStdDev:
+        if self.blockSize > policy.maxBlockSize:
             return 0
+
+        k,n = self.getKN(policy)
+
+        return _pbb(k,n,alpha)
+
+    def showTailFees(self,n):
+        return self.feeStats[-n:]
+
+    def weightsEntropy(self):
+        return sum(map(lambda x: -x*log(x), self.weights))
+
+
+
+class Policy:
+    def __init__(self, idx, minFeeRate, maxBlockSize, weight):
+        self.minFeeRate = minFeeRate
+        self.maxBlockSize = maxBlockSize
+        self.weight = weight
+        self.idx = idx
+
+    def maximize(self, blocks, alpha):
+        self.maximizeMinFeeRate(blocks,alpha)
+        self.maximizeMaxBlockSize(blocks,alpha)
+
+    def maximizeMaxBlockSize(self, blocks, alpha):
+        dlls = []
+        maxL = 0
+
+        for block in blocks:
+            dllData = block.getDLLbyMaxBlockSize(self.minFeeRate, alpha, block.weights[self.idx])
+            dlls += dllData[1]
+            maxL += dllData[0]
+
+        dlls.sort(key=lambda x: x[0], reverse=True)
+
+        argMaxL = float("inf")
+        currL = maxL
+        prevMaxSize = float("inf")
+
+        for dll in dlls:
+            if dll[0] < prevMaxSize:
+                if currL > maxL:
+                    maxL = currL
+                    argMaxL = prevMaxSize
+                prevMaxSize = dll[0]
+
+            currL += dll[1]
+
+        if currL > maxL:
+            argMaxL = prevMaxSize
+
+        argMaxL = min(argMaxL, hardMaxBlockSize)
+
+        self.maxBlockSize = argMaxL
+        return dlls
+      
+
+    def maximizeMinFeeRate(self, blocks,alpha):
+        dlls = []
+        maxL = 0
+
+        for block in blocks:
+            dllData = block.getDLLbyMinFee(self.maxBlockSize, alpha, block.weights[self.idx])
+            dlls += dllData[1]
+            maxL += dllData[0]
+
+        dlls.sort(key=lambda x: x[0], reverse=True)
+
+        argMaxL = float("inf")        
+        currL = maxL 
+        prevFeeRate = float("inf")
+
+        for dll in dlls:
+            if dll[0] < prevFeeRate:
+                if currL > maxL:
+                    maxL = currL
+                    argMaxL = prevFeeRate
+                prevFeeRate = dll[0]
+
+            currL += dll[1]
+
+        if currL > maxL:
+            argMaxL = prevFeeRate
+
+        self.minFeeRate = argMaxL
+
+    def __repr__(self):
+        return "Policy(MinFeeRate: %f, MaxBlockSize: %f, Weight: %.3f)" % (
+            self.minFeeRate, self.maxBlockSize, self.weight)
+            
+
+class Params:
+    def __init__(self, policies=None, numPolicies=numPolicies, alpha=defaultAlpha):
+        if policies:
+            self.policies = policies
         else:
-            k = len([1 for tx in self.stats if tx['feeRate'] >= policy.minFeeRate and tx['inBlock']
-                or tx['feeRate'] < policy.minFeeRate and not tx['inBlock']]) # this is not strictly correct :( if a reorg happened it could be in a prev block
-            n = len(self.stats)
-            if self.blockSize > policy.maxBlockSize-blockSizeStdDev:
-                try:
-                    feeThreshold = min([tx['feeRate'] for tx in self.stats 
-                        if tx['feeRate'] > policy.minFeeRate and tx['inBlock']])
-                    
-                    nDiscount = len([1 for tx in self.stats if tx['feeRate'] < feeThreshold
-                        and tx['feeRate'] > policy.minFeeRate])
-                except ValueError:
-                    nDiscount = len([1 for tx in self.stats if tx['feeRate'] > policy.minFeeRate])
+            if randomizeFee:
+                minFeeRates = [randint(*feeRateRange) for n in range(numPolicies)]
+            else:
+                minFeeRates = logspace(log(feeRateRange[0],10), log(feeRateRange[1],10), numPolicies)
 
-                n -= nDiscount
+            if randomizeWeights:
+                weights = dirichlet([1]*numPolicies)
+            else:
+                weights = [1./numPolicies for n in range(numPolicies)]
 
-            return pbb(k,n,alpha)
+            if randomizeMaxBlockSizes:
+                sizes = [randint(1000,hardMaxBlockSize) for n in range(numPolicies)]
+            else:
+                # sizes = [hardMaxBlockSize for n in range(numPolicies)]
+                sizes = linspace(0.1*hardMaxBlockSize, hardMaxBlockSize, numPolicies)
+
+            sizes = [hardMaxBlockSize for i in range(numPolicies)]
+
+            self.policies = [Policy(idx, minFeeRate, sizes[idx], weights[idx]) 
+                for idx,minFeeRate in enumerate(minFeeRates)]
+        
+        self.alpha = alpha
+
+    def maximize(self, blocks):
+        newWeights = [None]*len(self.policies)
+        for policy in self.policies:
+            newWeights[policy.idx] = sum([block.weights[policy.idx] for block in blocks])
+            policy.maximize(blocks, self.alpha)
+        # Don't forget to maximize alpha here
+
+        # Set up the difference function of alpha, use the secant method to find the roots
+        # alphaDiff = _getAlphaDiff(blocks, self.policies)
+        # self.alpha = _findAlpha(alphaDiff, self.alpha)
+        self.alpha = _getAlphaML(blocks, self.policies)
+
+        newWeightsSum = sum(newWeights)
+        if newWeightsSum:
+            for policy in self.policies:
+                policy.weight = newWeights[policy.idx]/newWeightsSum
+        else:
+            raise ValueError("Something went real bad.")
+
+        return newWeights
+
+
 
 class EM:
-    def __init__(self):
-        self.params = ModelParams()
-        self.data = []
-    
-    def addBlock(self, blockData, blockSize):
-        self.data.append(BlockStats(blockData,blockSize))
+    def __init__(self, policies=None):
+        self.params = Params(policies=policies)
+        self.blocks = []
+
+    def addBlock(self, blockHeight, db):
+        self.blocks.append(BlockStats(blockHeight, db))
 
     def eStep(self):
-        for block in self.data: 
+        for block in self.blocks:
             block.calcWeights(self.params)
 
     def mStep(self):
-        newWeights = [0]*len(self.params.policies)
-        for pidx,policy in enumerate(self.params.policies):
-            weights = [block.weights[pidx] for block in self.data]
-            policy.maximize(weights, self.params.alpha, self.data)
-            newWeights[pidx] = sum(weights)
-        newWeightsSum = sum(newWeights)
-        for pidx,policy in enumerate(self.params.policies):
-            policy.weight = newWeights[pidx]/newWeightsSum
-        # Remember to re-estimate alpha!
+        self.params.maximize(self.blocks)
 
-def pbb(k,n,alpha):
+def _pbb(k,n,alpha):
+    r = (float(k+i)/(n+i) for i in xrange(1,alpha))
+
+    return reduce(mul, r, 1)*alpha/(n+alpha)
+
+def _pbb2(k,n,alpha):
+
     numerator = reduce(mul, range(k+1,k+alpha), 1)
     denominator = reduce(mul, range(n+1, n+alpha+1), 1)
     return float(numerator)*alpha/denominator
 
+def _calcpll(k,n,alpha,weight):
+    return weight*(sum(logTable[k+1:k+alpha]) - sum(logTable[n+1:n+alpha+1]))
 
-def pbb2(k,n,alpha,b=1):
-    return comb(n,k)*beta(k+alpha,n-k+b)/beta(alpha,b)
+# def _calcplln(n,alpha,weight):
+#     return weight*(sum(logTable[n+1:n+alpha+1]))
 
-if __name__ == '__main__':
+def _getAlphaML(blocks, policies):
+    kn = [(block.weights[policy.idx],) + block.getKN(policy) 
+        for block in blocks for policy in policies]
 
-    from bitcoin.rpc import Proxy
-    proxy = Proxy()
+    alphaList = range(*alphaRange)
+    LL = [sum([_calcpll(k,n,alpha,weight)+weight*logTable[alpha] for weight,k,n in kn])
+        for alpha in alphaList]
 
-    blockRange = (329400, 329450)
-    emo = EM()
-
-    for height in range(*blockRange):
-        filename = path.join(datadir, str(height) + dataformat)
-        try:
-            with open(filename, 'rb') as f:
-                b = pickle.load(f)
-                rawblock = proxy.getblock(proxy.getblockhash(height))
-                blockSize = len(rawblock.serialize())
-                print "Loading block " + str(height) + '...'
-                if len(b):
-                    emo.addBlock(b, blockSize)
-        except IOError:
-            print "Block not found, moving on"
+    maxLL = max(enumerate(LL), key=lambda x: x[1])
+    return alphaList[maxLL[0]]
 
 
+def _getAlphaDiff(blocks, policies):
+    kn = [(block.weights[policy.idx],) + block.getKN(policy) 
+            for block in blocks for policy in policies]
+
+    alphaDiff = lambda a: sum([weight*(logTable[k+a]-logTable[n+a+1]
+        +logTable[a+1]-logTable[a]) for weight,k,n in kn])
+
+    return alphaDiff
+
+def _nextAlpha(f, a1,a2):
+    a1 = max(a1, 3)
+    a2 = max(a2, 2)
+    # if a1 < 1 or a2 < 1:
+    #     raise ValueError("Bad alpha values.")
+    return int(round(a1 - f(a1)*(a1-a2)/(f(a1)-f(a2))))
+
+def _findAlpha(f, alphaInit):
+
+
+    alphaPrev = alphaInit 
+    alphaPrevPrev = alphaPrev - 1
+
+    for i in xrange(maxAlphaIterations):
+        alphaNext = _nextAlpha(f, alphaPrev, alphaPrevPrev)
+        if alphaNext == alphaPrev:
+            return alphaNext
+        else:
+            alphaPrevPrev = alphaPrev
+            alphaPrev = alphaNext
+
+    raise ValueError("Max alpha iterations reached.")
+
+
+# if __name__ == '__main__':
+def run(policies=None):
+    db = sqlite3.connect(dbFile)
+    maxblocks = 500
+    currHeight = proxy.getblockcount()
+    blocks = getBlocks(currHeight-maxblocks, db)
+    try:
+        emObj = EM(policies)
+        for n,blockHeight in enumerate(blocks):            
+            emObj.addBlock(blockHeight,db)
+
+        return emObj
+    finally:
+        db.close()
 
 
 
