@@ -2,8 +2,8 @@ from model.util import getFees, getBlockSize, getBlocks, proxy
 from model.config import dbFile, config
 from numpy import logspace, linspace, diff
 from numpy.random import dirichlet, multinomial
-from math import log
-from random import randint
+from math import log, ceil
+from random import randint, shuffle
 from operator import mul
 import sqlite3
 
@@ -122,12 +122,22 @@ class BlockStats:
 
             n -= 1
         pll.append(_calcpll(k,n,alpha,weight))
-        pll.append(_calcpll(0,nmax,alpha,weight))
         if 'currMax' in locals():
             maxBlockSizes.append(currMax)
         else:
             maxBlockSizes.append(prevMax)
-        maxBlockSizes.append(self.blockSize-1)
+
+        cumBlockSize = self.blockSize
+        txOverflow = [tx.size for tx in self.feeStats if tx.feeRate >= minFeeRate and tx.inBlock]
+
+        for txSize in reversed(txOverflow):
+            k -= 1
+            pll.append(_calcpll(k,n,alpha,weight))
+            maxBlockSizes.append(cumBlockSize-1)
+            cumBlockSize -= txSize
+
+        # pll.append(_calcpll(0,nmax,alpha,weight))
+        # maxBlockSizes.append(self.blockSize-1)
 
         dll = diff(pll)
 
@@ -178,11 +188,13 @@ class BlockStats:
 
     def getKN(self,minFeeRate,maxBlockSize):
         k = n = 0
-
-        for tx in self.feeStats:
+        cumBlockSize = 0
+        for tx in self.feeStats:            
             if tx.feeRate >= minFeeRate:
                 if tx.inBlock:
-                    k += 1
+                    cumBlockSize += tx.size
+                    if not cumBlockSize > maxBlockSize:
+                        k += 1
                     n += 1
                 elif not (tx.size + self.blockSize > maxBlockSize):
                     n += 1
@@ -195,8 +207,8 @@ class BlockStats:
 
 
     def calcLikelihood(self, policy, alpha):
-        if self.blockSize > policy.maxBlockSize:
-            return 0
+        # if self.blockSize > policy.maxBlockSize:
+        #     return 0
 
         k,n = self.getKN(policy.minFeeRate,policy.maxBlockSize)
 
@@ -309,7 +321,7 @@ class Params:
                 # sizes = [hardMaxBlockSize for n in range(numPolicies)]
                 sizes = linspace(0.1*hardMaxBlockSize, hardMaxBlockSize, numPolicies)
 
-            sizes = [hardMaxBlockSize for i in range(numPolicies)]
+            # sizes = [hardMaxBlockSize for i in range(numPolicies)]
 
             self.policies = [Policy(idx, minFeeRate, sizes[idx], weights[idx]) 
                 for idx,minFeeRate in enumerate(minFeeRates)]
@@ -337,6 +349,15 @@ class Params:
 
         return newWeights
 
+    def initPoliciesFromData(self, blocks):
+        shuffle(blocks)
+        for idx, part in enumerate(_partition(blocks,numPolicies)):
+            for block in part:
+                block.weights = [0]*numPolicies
+                block.weights[idx] = 1.
+
+        self.maximize(blocks)
+
 
 
 class EM:
@@ -353,6 +374,8 @@ class EM:
 
     def mStep(self):
         self.params.maximize(self.blocks)
+
+
 
 def _pbb(k,n,alpha):
     r = (float(k+i)/(n+i) for i in xrange(1,alpha))
@@ -381,6 +404,13 @@ def _getAlphaML(blocks, policies):
 
     maxLL = max(enumerate(LL), key=lambda x: x[1])
     return alphaList[maxLL[0]]
+
+def _partition(dataList, numPartitions):
+
+    partitionLength, r = divmod(len(dataList), numPartitions)
+    partitionLength += 1 if r else 0 
+    for i in range(numPartitions):
+        yield dataList[partitionLength*i:partitionLength*(i+1)]
 
 
 # def _getAlphaDiff(blocks, policies):
