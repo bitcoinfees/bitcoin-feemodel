@@ -38,7 +38,7 @@ def getFees(blockHeight, db=None):
         if 'localdb' in locals():
             localdb.close()
 
-def getBlocks(minBlock=None, db=None):
+def getBlocks(minBlock=None, maxBlock=None, db=None):
     if db is None:
         localdb = sqlite3.connect(dbFile)
         c = localdb.cursor()
@@ -47,10 +47,12 @@ def getBlocks(minBlock=None, db=None):
 
     if not minBlock:
         minBlock = 0
+    if not maxBlock:
+        maxBlock = proxy.getblockcount()
 
     try:
-        blocks = c.execute('SELECT blockheight FROM block WHERE blockheight>?',
-            (minBlock,)).fetchall()
+        blocks = c.execute('SELECT blockheight FROM block WHERE blockheight>? AND blockheight<=?',
+            (minBlock,maxBlock)).fetchall()
         return [block[0] for block in blocks]
     finally:
         if 'localdb' in locals():
@@ -70,3 +72,20 @@ def getBlockSize(blockHeight, db=None):
     finally:
         if 'localdb' in locals():
             localdb.close()
+
+def getBlockMinTime(blockHeight, db=None):
+    if db is None:
+        localdb = sqlite3.connect(dbFile)
+        c = localdb.cursor()
+    else:
+        c = db.cursor()
+
+    try:
+        blockSize = c.execute('SELECT mintime FROM block WHERE blockheight=?',
+            (blockHeight,)).fetchall()
+        return blockSize[0]
+    finally:
+        if 'localdb' in locals():
+            localdb.close()
+
+

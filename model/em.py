@@ -71,7 +71,6 @@ class BlockStats:
                 minFeeRates.append(prevFeeRate)
                 prevFeeRate = currFeeRate
 
-
             if tx.inBlock:
                 k += 1
             elif tx.size + self.blockSize > maxBlockSize:
@@ -83,8 +82,15 @@ class BlockStats:
         pll.append(_calcpll(k,n,alpha,weight))
         minFeeRates.append(currFeeRate)
 
+        pll.append(_calcpll(0,n,alpha,weight))
+        minFeeRates.append(0.)
+
+        pll.reverse()
+        minFeeRates.reverse()
+
         # pllDiff = diff(pll)
-        dll = diff(pll)
+        
+        dll = diff(pll)    
 
         return (pll[0], zip(minFeeRates[1:], dll))
 
@@ -170,15 +176,15 @@ class BlockStats:
 
         self.likelihoods = likelihoods
 
-    def getKN(self,policy):
+    def getKN(self,minFeeRate,maxBlockSize):
         k = n = 0
 
         for tx in self.feeStats:
-            if tx.feeRate >= policy.minFeeRate:
+            if tx.feeRate >= minFeeRate:
                 if tx.inBlock:
                     k += 1
                     n += 1
-                elif not (tx.size + self.blockSize > policy.maxBlockSize):
+                elif not (tx.size + self.blockSize > maxBlockSize):
                     n += 1
             else:
                 if not tx.inBlock:
@@ -192,7 +198,7 @@ class BlockStats:
         if self.blockSize > policy.maxBlockSize:
             return 0
 
-        k,n = self.getKN(policy)
+        k,n = self.getKN(policy.minFeeRate,policy.maxBlockSize)
 
         return _pbb(k,n,alpha)
 
@@ -257,22 +263,22 @@ class Policy:
             dlls += dllData[1]
             maxL += dllData[0]
 
-        dlls.sort(key=lambda x: x[0], reverse=True)
+        dlls.sort(key=lambda x: x[0])
 
-        argMaxL = float("inf")        
+        argMaxL = 0.      
         currL = maxL 
-        prevFeeRate = float("inf")
+        prevFeeRate = 0.
 
         for dll in dlls:
-            if dll[0] < prevFeeRate:
-                if currL > maxL:
+            if dll[0] > prevFeeRate:
+                if currL >= maxL:
                     maxL = currL
                     argMaxL = prevFeeRate
                 prevFeeRate = dll[0]
 
             currL += dll[1]
 
-        if currL > maxL:
+        if currL >= maxL:
             argMaxL = prevFeeRate
 
         self.minFeeRate = argMaxL
@@ -366,7 +372,7 @@ def _calcpll(k,n,alpha,weight):
 #     return weight*(sum(logTable[n+1:n+alpha+1]))
 
 def _getAlphaML(blocks, policies):
-    kn = [(block.weights[policy.idx],) + block.getKN(policy) 
+    kn = [(block.weights[policy.idx],) + block.getKN(policy.minFeeRate, policy.maxBlockSize) 
         for block in blocks for policy in policies]
 
     alphaList = range(*alphaRange)
@@ -377,45 +383,44 @@ def _getAlphaML(blocks, policies):
     return alphaList[maxLL[0]]
 
 
-def _getAlphaDiff(blocks, policies):
-    kn = [(block.weights[policy.idx],) + block.getKN(policy) 
-            for block in blocks for policy in policies]
+# def _getAlphaDiff(blocks, policies):
+#     kn = [(block.weights[policy.idx],) + block.getKN(policy) 
+#             for block in blocks for policy in policies]
 
-    alphaDiff = lambda a: sum([weight*(logTable[k+a]-logTable[n+a+1]
-        +logTable[a+1]-logTable[a]) for weight,k,n in kn])
+#     alphaDiff = lambda a: sum([weight*(logTable[k+a]-logTable[n+a+1]
+#         +logTable[a+1]-logTable[a]) for weight,k,n in kn])
 
-    return alphaDiff
+#     return alphaDiff
 
-def _nextAlpha(f, a1,a2):
-    a1 = max(a1, 3)
-    a2 = max(a2, 2)
-    # if a1 < 1 or a2 < 1:
-    #     raise ValueError("Bad alpha values.")
-    return int(round(a1 - f(a1)*(a1-a2)/(f(a1)-f(a2))))
+# def _nextAlpha(f, a1,a2):
+#     a1 = max(a1, 3)
+#     a2 = max(a2, 2)
+#     # if a1 < 1 or a2 < 1:
+#     #     raise ValueError("Bad alpha values.")
+#     return int(round(a1 - f(a1)*(a1-a2)/(f(a1)-f(a2))))
 
-def _findAlpha(f, alphaInit):
+# def _findAlpha(f, alphaInit):
 
 
-    alphaPrev = alphaInit 
-    alphaPrevPrev = alphaPrev - 1
+#     alphaPrev = alphaInit 
+#     alphaPrevPrev = alphaPrev - 1
 
-    for i in xrange(maxAlphaIterations):
-        alphaNext = _nextAlpha(f, alphaPrev, alphaPrevPrev)
-        if alphaNext == alphaPrev:
-            return alphaNext
-        else:
-            alphaPrevPrev = alphaPrev
-            alphaPrev = alphaNext
+#     for i in xrange(maxAlphaIterations):
+#         alphaNext = _nextAlpha(f, alphaPrev, alphaPrevPrev)
+#         if alphaNext == alphaPrev:
+#             return alphaNext
+#         else:
+#             alphaPrevPrev = alphaPrev
+#             alphaPrev = alphaNext
 
-    raise ValueError("Max alpha iterations reached.")
+#     raise ValueError("Max alpha iterations reached.")
 
 
 # if __name__ == '__main__':
-def run(policies=None):
+def run(policies=None, blockOffset=0, maxblocks=144):
     db = sqlite3.connect(dbFile)
-    maxblocks = 500
-    currHeight = proxy.getblockcount()
-    blocks = getBlocks(currHeight-maxblocks, db)
+    startHeight = proxy.getblockcount() - blockOffset
+    blocks = getBlocks(startHeight-maxblocks, startHeight, db)
     try:
         emObj = EM(policies)
         for n,blockHeight in enumerate(blocks):            
