@@ -8,6 +8,7 @@ import sqlite3
 
 dbFile = dbReadFile
 alphaRange = config['np']['alphaRange']
+OIRange = config['np']['OIRange']
 hardMaxBlockSize = config['generic']['hardMaxBlockSize']
 logTable = [None] + map(log, range(1, int(hardMaxBlockSize/100)))
 
@@ -63,16 +64,22 @@ class BlockStats:
 
             x[1],y[1] = self.kvals[midx] 
             try:
-                x[0],y[0] = self.kvals[midx+1]
+                i0 = midx+1
+                while self.kvals[i0][1] > y[1] - OIRange:
+                    i0 += 1
+                x[0],y[0] = self.kvals[i0]
             except IndexError:
                 x[0] = 0
-                y[0] = self.kvals[midx][1]
+                y[0] = self.kvals[-1][1]
 
             try:
-                x[2],y[2] = self.kvals[midx-1]
+                i2 = midx-1
+                while self.kvals[i2][1] > y[1] - OIRange:
+                    i2 -= 1
+                x[2],y[2] = self.kvals[i2]
             except IndexError:
                 x[2] = x[1]+x[1]-x[0]
-                y[2] = self.kvals[midx][1]
+                y[2] = self.kvals[0][1]
 
             y = map(lambda k: _calcpll(k, self.n, alpha), y)
             f = _dFn(x)
