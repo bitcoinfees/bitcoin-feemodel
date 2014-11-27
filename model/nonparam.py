@@ -18,10 +18,11 @@ class BlockStats:
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
         self.priorityStats = priorityStats
         self.priorityStats.sort(key=lambda x: x.priority, reverse=True)
-        self.priorityBlockSize = sum([tx.size for tx in self.priorityStats if tx.inBlock])
+        # self.priorityBlockSize = sum([tx.size for tx in self.priorityStats if tx.inBlock])
         self.blockSize = blockSize
         self.blockHeight = blockHeight
         self.calcML()
+        self.calcPriorityML()
 
     def calcML(self):
         n = len(self.feeStats)
@@ -42,7 +43,7 @@ class BlockStats:
         for feeRate, kdelta in dkvals:
             cumk += kdelta
             self.kvals.append((feeRate,cumk+k))
-            if cumk >= cumkmax:
+            if cumk > cumkmax:
                 argkmax = feeRate
                 cumkmax = cumk
 
@@ -50,7 +51,39 @@ class BlockStats:
         self.k = k + cumkmax
         self.n = n
 
-    # Gotta redo this to make less susceptible to noise
+    # This is not correct.
+    def calcPriorityML(self):
+        n = len(self.priorityStats)
+        k = len([1 for tx in self.priorityStats if not tx.inBlock])
+
+        cumSize = 0
+        cumkmax = 0
+        argkmax = 0.
+        cumk = 0
+
+        for tx in self.priorityStats:
+            if tx.inBlock:
+                if tx.feeRate >= self.minFeeRate:
+                    n -= 1
+                    tx.discounted = True
+                else:
+                    cumk += 1
+                    tx.discounted = False
+            else:
+                cumk -= 1
+                tx.discounted = False
+
+            cumSize += tx.size
+            tx.cumSize = cumSize
+            if cumk > cumkmax:
+                argkmax = cumSize
+                cumkmax = cumk
+
+        self.priorityBlockSize = argkmax
+        self.kPriority = k + cumkmax
+        self.nPriority = n
+
+
     def calcOI(self,alpha):
         # http://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/
         if self.minFeeRate != float('inf'):
@@ -72,20 +105,23 @@ class BlockStats:
                 x[0] = 0
                 y[0] = self.kvals[-1][1]
 
-            try:
-                i2 = midx-1
-                while self.kvals[i2][1] > y[1] - OIRange:
-                    i2 -= 1
-                x[2],y[2] = self.kvals[i2]
-            except IndexError:
-                x[2] = x[1]+x[1]-x[0]
-                y[2] = self.kvals[0][1]
+            i2 = midx
+            while (self.kvals[i2][1] > y[1] - OIRange) and i2 >= 1:
+                i2 -= 1
+            x[2],y[2] = self.kvals[i2]
 
+            if x[2] == x[1]:
+                self.OI = None
+                self.std = float("inf")
+                return
+           
             y = map(lambda k: _calcpll(k, self.n, alpha), y)
             f = _dFn(x)
 
             self.OI = -sum([f[i](y[i]) for i in range(3)])
             self.std = sqrt(1./self.OI)
+
+            return x,y
 
         else:
             self.OI = None
@@ -116,13 +152,14 @@ class NP:
             fees, priority, blockSizes = getBlockData(*blockHeightRange, db=db)
             for blockHeight, blockSize in blockSizes:
                 blockFees = [FeeTx(f) for f in fees if f[3] == blockHeight]
-                blockPriority = [PriorityTx(p) for p in priority if p[3] == blockHeight]
+                blockPriority = [PriorityTx(p) for p in priority if p[4] == blockHeight]
                 self.blocks.append(BlockStats(blockHeight,blockSize,blockFees,blockPriority))
         finally:
             db.close()
         self.numBlocks = len(self.blocks)
         self.minFeeRates = [block.minFeeRate for block in self.blocks]
         self.calcAlpha()
+        self.calcAlphaPriority()
 
         for block in self.blocks:
             block.calcOI(self.alpha)
@@ -142,6 +179,15 @@ class NP:
 
         maxLL = max(enumerate(LL), key=lambda x: x[1])
         self.alpha = alphaGrid[maxLL[0]]
+
+    def calcAlphaPriority(self):
+        alphaGrid = range(*alphaRange)
+
+        LL = [sum([_calcpll(block.kPriority, block.nPriority, alpha) for block in self.blocks]) 
+            for alpha in alphaGrid]
+
+        maxLL = max(enumerate(LL), key=lambda x: x[1])
+        self.alphaPriority = alphaGrid[maxLL[0]]
 
     def feecdf(self, feeRate):
         return sum([block.feecdf(feeRate) for block in self.blocks])/len(self.blocks)
