@@ -1,27 +1,15 @@
-import os
 from bitcoin.rpc import Proxy
+from minermodel.config import logFile
 from time import ctime
-import cPickle as pickle
-from model.config import dbFile
-import sqlite3
 
 proxy = Proxy()
-logPath = os.path.join(os.path.dirname(__file__), '../debug.log')
 
-def logWrite(entry, toStdOut=True):
-    '''An entry in the log file.'''
-    # if not currHeight:
-    #     currHeight = proxy.getblockcount()
-    s = ctime()+' ' + entry
+def logWrite(entry, toStdOut=False):
+    s = ctime() + ': ' + entry
     if toStdOut:
         print s
-    with open(logPath, 'a') as logFile:
-        logFile.write(s + '\n')
-
-def pickleLoad(path):
-    with open(path, 'rb') as f:
-        data = pickle.load(f)
-    return data
+    with open(logFile, 'a') as f:
+        f.write(s + '\n')
 
 def getFees(blockHeight, db=None):
     if db is None:

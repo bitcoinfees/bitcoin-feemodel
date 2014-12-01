@@ -1,9 +1,6 @@
-from bitcoin.core import CTransaction, b2lx
 from bitcoin.core import b2lx
+from minermodel.util import logWrite, proxy
 from time import time
-from model.util import logWrite, proxy
-
-# All txids are binary data
 
 class Prevout:
     def __init__(self,prevout,currHeight):
@@ -69,7 +66,6 @@ class TxMempoolEntry:
         self.feeRate = (inputAmounts - outputAmounts) * 1000 / nTxSize
         self.nTxSize = nTxSize
         self.nModSize = nModSize
-        # self.dPriority = self.computePriority(currHeight=currHeight)
 
     def computePriority(self, currHeight=None, offset=0):
         if not currHeight:
@@ -84,16 +80,25 @@ class TxMempoolEntry:
         if not currHeight:
             currHeight = proxy.getblockcount()
 
-        for prevout in self.prevouts:
+        for idx,prevout in enumerate(self.prevouts):
             if not prevout.blockHeight:
-                prevout.updateBlockHeight(currHeight)
+                try:
+                    prevout.updateBlockHeight(currHeight)
+                except IndexError:
+                    logWrite('Error updating input block height for tx ' + 
+                        self.txidHex + ' input ' + str(idx))
 
 
 class TxMempool:
     def __init__(self):
         txidList = proxy.getrawmempool()
         self.currHeight = proxy.getblockcount()
-        self.txpool = {txid: TxMempoolEntry(txid,self.currHeight) for txid in txidList}
+        self.txpool = {}
+        for txid in txidList:
+            try:
+                self.txpool[txid] = TxMempoolEntry(txid, self.currHeight)
+            except IndexError:
+                logWrite('Error in fetching tx ' + b2lx(txid))
 
         for txid,txm in self.txpool.iteritems():
             for txin in txm.tx.vin:
@@ -113,7 +118,12 @@ class TxMempool:
         self.deleteTx(removedSet, currHeight=self.currHeight)
 
         addedSet = newIdSet - oldIdSet
-        addedDict = {txid: TxMempoolEntry(txid, self.currHeight) for txid in addedSet}
+        addedDict = {}
+        for txid in addedSet:
+            try:
+                addedDict[txid] = TxMempoolEntry(txid, self.currHeight)
+            except IndexError:
+                logWrite('Error in fetching tx ' + b2lx(txid))
         
         for txid, txm in self.txpool.iteritems():
             for txin in txm.tx.vin:
@@ -133,7 +143,6 @@ class TxMempool:
                     txm.dependencies.add(prevoutHash)
                     self.txpool[prevoutHash].dependants.add(txid)
         
-
         return len(addedSet)-len(removedSet), removedSet, addedSet
 
     def deleteTx(self,txidList,currHeight):
@@ -144,7 +153,6 @@ class TxMempool:
                 for dependant in txm.dependants:
                     self.txpool[dependant].dependencies.discard(txid)
                     updateInputBlockHeightList.add(dependant)
-                    # self.txpool[dependant].updateInputBlockHeight(txid, currHeight)
                 for dependency in txm.dependencies:
                     self.txpool[dependency].dependants.discard(txid)
 
