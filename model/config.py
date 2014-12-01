@@ -12,4 +12,6 @@ datadir = os.path.normpath(config['collectdata']['datadir'])
 dbFile = os.path.join(datadir, config['collectdata']['dbname'] + 
     config['collectdata']['statVersion'])
 
+dbReadFile = os.path.join(datadir, config['collectdata']['dbname'] + 
+    config['generic']['statVersion'])
 

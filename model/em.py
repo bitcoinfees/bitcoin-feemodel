@@ -5,6 +5,7 @@ from numpy.random import dirichlet, multinomial
 from math import log, ceil
 from random import randint, shuffle
 from operator import mul
+from generic import FeeTx
 import sqlite3
 
 numPolicies = config['em']['numPolicies']
@@ -20,15 +21,6 @@ isStochastic = config['em']['isStochastic']
 
 logTable = [None] + map(log, range(1, int(hardMaxBlockSize/100)))
 
-class FeeTx:
-    def __init__(self, feeTuple):
-        self.feeRate = feeTuple[0]
-        self.inBlock = bool(feeTuple[1])
-        self.size = feeTuple[2]
-
-    def __repr__(self):
-        return "Tx(feerate: %d, inblock: %d, size: %d" % (
-            self.feeRate, self.inBlock, self.size)
 
 class BlockStats:
     def __init__(self, blockHeight, db):

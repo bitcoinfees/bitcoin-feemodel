@@ -38,6 +38,22 @@ def getFees(blockHeight, db=None):
         if 'localdb' in locals():
             localdb.close()
 
+def getPriority(blockHeight, db=None):
+    if db is None:
+        localdb = sqlite3.connect(dbFile)
+        c = localdb.cursor()
+    else:
+        c = db.cursor()
+
+    try:
+        priority = c.execute('SELECT priority, inblock, size FROM priority WHERE blockheight=?',
+            (blockHeight,)).fetchall()
+        return priority
+    finally:
+        if 'localdb' in locals():
+            localdb.close()
+
+
 def getBlocks(minBlock=None, maxBlock=None, db=None):
     if db is None:
         localdb = sqlite3.connect(dbFile)
@@ -87,5 +103,27 @@ def getBlockMinTime(blockHeight, db=None):
     finally:
         if 'localdb' in locals():
             localdb.close()
+
+
+def getBlockData(startBlock, endBlock, db=None):
+    if db is None:
+        db = sqlite3.connect(dbFile)
+        closeDb = True
+    else:
+        closeDb = False
+
+    try:
+        priority = db.execute('SELECT priority, inblock, size, feeRate, blockheight FROM priority WHERE\
+            blockheight BETWEEN ? AND ?', (startBlock,endBlock)).fetchall()
+        fees = db.execute('SELECT feeRate, inblock, size, priority, blockheight FROM fees WHERE\
+            blockheight BETWEEN ? AND ?', (startBlock,endBlock)).fetchall()
+        blockSizes = db.execute('SELECT blockheight, blocksize from block WHERE\
+            blockheight BETWEEN ? AND ?', (startBlock,endBlock)).fetchall()
+        return fees, priority, blockSizes
+    finally:
+        if closeDb:
+            db.close()
+
+
 
 

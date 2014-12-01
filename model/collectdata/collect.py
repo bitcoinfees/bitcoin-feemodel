@@ -39,9 +39,9 @@ def collect(debug=False):
         if not dbFileExists:
             dbcur = db.cursor()
             dbcur.execute('CREATE TABLE fees \
-                (blockheight INTEGER, feerate INTEGER, inblock INTEGER, size INTEGER)')
+                (blockheight INTEGER, feerate INTEGER, inblock INTEGER, size INTEGER, priority REAL)')
             dbcur.execute('CREATE TABLE priority \
-                (blockheight INTEGER, priority REAL, inblock INTEGER, size INTEGER)')
+                (blockheight INTEGER, priority REAL, inblock INTEGER, size INTEGER, feerate INTEGER)')
             dbcur.execute('CREATE TABLE block \
                 (blockheight INTEGER, blocksize INTEGER, mintime REAL)')
 
@@ -145,15 +145,14 @@ class Block:
 
         stat_fee = filter(lambda x: x['feeRate'], stat_filt)
         # stat_fee.sort(key=lambda x: x['feeRate'], reverse=True)
-        stat_priority = filter(lambda x: x['priority'] > priorityThresh
-            and x['feeRate'] < minFeeRate, stat_filt)
+        stat_priority = filter(lambda x: x['priority'] > priorityThresh, stat_filt)
         # stat_priority.sort(key=lambda x: x['priority'], reverse=True)
 
         dbcur = db.cursor()
-        dbcur.executemany('INSERT INTO fees VALUES (?,?,?,?)',
-            [(self.blockHeight, tx['feeRate'], tx['inBlock'], tx['size']) for tx in stat_fee])
-        dbcur.executemany('INSERT INTO priority VALUES (?,?,?,?)',
-            [(self.blockHeight, tx['priority'], tx['inBlock'], tx['size']) for tx in stat_priority])
+        dbcur.executemany('INSERT INTO fees VALUES (?,?,?,?,?)',
+            [(self.blockHeight, tx['feeRate'], tx['inBlock'], tx['size'], tx['priority']) for tx in stat_fee])
+        dbcur.executemany('INSERT INTO priority VALUES (?,?,?,?,?)',
+            [(self.blockHeight, tx['priority'], tx['inBlock'], tx['size'], tx['feeRate']) for tx in stat_priority])
         dbcur.execute('INSERT INTO block VALUES (?,?,?)',
             (self.blockHeight, self.blockSize, mintime-timedeltaMargin))
 

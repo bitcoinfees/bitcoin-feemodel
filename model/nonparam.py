@@ -4,13 +4,36 @@ from util import getFees,getBlockSize,getBlocks,getBlockData
 from collections import defaultdict
 from math import log, sqrt
 from scipy.stats import norm
+from random import choice
 import sqlite3
 
 dbFile = dbReadFile
 alphaRange = config['np']['alphaRange']
 OIRange = config['np']['OIRange']
 hardMaxBlockSize = config['generic']['hardMaxBlockSize']
+priorityThresh = config['collectdata']['priorityThresh']
 logTable = [None] + map(log, range(1, int(hardMaxBlockSize/100)))
+
+def calcFeeML(feeStats):
+    cumk = 0
+    dkvals = defaultdict(int)
+
+    for tx in feeStats:
+        dkvals[tx.feeRate] += 1 if tx.inBlock else -1
+
+    cumkmax = 0
+    argkmax = float('inf')
+
+    dkvals = sorted(dkvals.items(), key=lambda x: x[0], reverse=True)
+    for feeRate, kdelta in dkvals:
+        cumk += kdelta
+        if cumk > cumkmax:
+            argkmax = feeRate
+            cumkmax = cumk
+
+    return argkmax
+
+
 
 class BlockStats:
     def __init__(self,blockHeight,blockSize,feeStats,priorityStats):
@@ -39,7 +62,7 @@ class BlockStats:
 
         self.kvals = []
         
-        dkvals = sorted(dkvals.items(), key=lambda x: x, reverse=True)
+        dkvals = sorted(dkvals.items(), key=lambda x: x[0], reverse=True)
         for feeRate, kdelta in dkvals:
             cumk += kdelta
             self.kvals.append((feeRate,cumk+k))
@@ -83,6 +106,13 @@ class BlockStats:
         self.kPriority = k + cumkmax
         self.nPriority = n
 
+    def calcBootstrap(self, numTimes):
+        bootstraps = []
+        for i in range(numTimes):
+            feeStats = [choice(self.feeStats) for idx in range(self.n)]
+            bootstraps.append(calcFeeML(feeStats))
+
+        return bootstraps
 
     def calcOI(self,alpha):
         # http://mathformeremortals.wordpress.com/2013/01/12/a-numerical-second-derivative-from-three-points/
@@ -151,7 +181,7 @@ class NP:
         try:
             fees, priority, blockSizes = getBlockData(*blockHeightRange, db=db)
             for blockHeight, blockSize in blockSizes:
-                blockFees = [FeeTx(f) for f in fees if f[3] == blockHeight]
+                blockFees = [FeeTx(f) for f in fees if f[4] == blockHeight and f[3] <= priorityThresh]
                 blockPriority = [PriorityTx(p) for p in priority if p[4] == blockHeight]
                 self.blocks.append(BlockStats(blockHeight,blockSize,blockFees,blockPriority))
         finally:
