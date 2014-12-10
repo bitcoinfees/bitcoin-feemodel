@@ -1,20 +1,25 @@
 import os
 
-here = os.path.abspath(os.path.dirname(__file__))
-
 config = {
-    "priorityThresh": 57e6,
-    "datadir": os.path.join(here, 'data/'),
-    "dbname": 'txdata',
-    "logFile": os.path.join(here, 'debug.log')
-    "collectdata": {
-        "pollPeriod": 3,
-        "leadTimeMargin": 5,
-        "defaultLeadTime": 60,
+    "datadir": 'data',
+    "logFile": 'debug.log',
+    "pollPeriod": 5,
+    "nonparam": {
+        "numBlockRange": (6, 144), 
+        "maxBlockAge": 432,
+        "keepHistory": 2016, # How many blocks to keep history for
+        "historyDb": "history",
+        "statsDb": "stats",
+        "numBootstrap": 1000,
     },
-    "model": {
-        "bootstrapSamples": 1000
+    "logging": {
+        "logFile": 'debug.log',
+        "toStdOut": True
     }
 }
 
-dbFile = os.path.join(config['datadir'], config['dbname'])
+here = os.path.abspath(os.path.dirname(__file__))
+
+statsFile = os.path.join(here, config['datadir'], config['nonparam']['statsDb'])
+historyFile = os.path.join(here, config['datadir'], config['nonparam']['historyDb'])
+logFile = os.path.join(here, config['logging']['logFile'])

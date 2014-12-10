@@ -1,10 +1,11 @@
 from bitcoin.rpc import Proxy
-from minermodel.config import logFile
+from config import logFile, config
 from time import ctime
 
 proxy = Proxy()
+toStdOut = config['logging']['toStdOut']
 
-def logWrite(entry, toStdOut=False):
+def logWrite(entry):
     s = ctime() + ': ' + entry
     if toStdOut:
         print s
