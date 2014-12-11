@@ -1,16 +1,37 @@
 from time import time, sleep
 from copy import deepcopy
+import threading
+import sqlite3
 from bitcoin.core import COIN, b2lx
-from config import config
+from config import config, historyFile
 from feemodel.util import proxy, logWrite
 
 pollPeriod = config['pollPeriod'] 
 
+class TxMempoolThread(threading.Thread):
+    def __init__(self,mempool):
+        super(TxMempoolThread, self).__init__()
+        self.mempool = mempool
+        self._stop = threading.Event()
+
+    def run(self):
+        print("Starting mempool.")
+        while not self._stop.is_set():
+            self.mempool.update()
+            self._stop.wait(timeout=pollPeriod)
+        print("Ending mempool.")
+
+    def stop(self):
+        self._stop.set()
+
+
 class TxMempool(object):
-    def __init__(self, model):
+    # Have to handle RPC errors
+    def __init__(self, model, writeHistory=True):
         self.model = model
         self.bestSeenBlock = proxy.getblockcount()
         self.mapTx = proxy.getrawmempool(verbose=True)
+        self.writeHistory = writeHistory
     
     def update(self):
         currHeight = proxy.getblockcount()
@@ -18,12 +39,6 @@ class TxMempool(object):
             self.processBlocks(currHeight)
         else:
             self.mapTx = proxy.getrawmempool(verbose=True)
-
-    def run(self):
-        while True:
-            # print('.'), # DEBUG only
-            self.update()
-            sleep(pollPeriod)
 
     def processBlocks(self, currHeight):
         blockTime = time()

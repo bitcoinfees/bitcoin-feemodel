@@ -12,6 +12,10 @@ class NonParam(object):
         self.blockEstimates = {}
 
     def pushBlocks(self, blocks):
+        for block in blocks:
+            print("Pushed block " + str(block.height))
+
+    def pushBlocks2(self, blocks):
         # Check the minLeadTime of each block
         for block in blocks:
             if not block.entries:

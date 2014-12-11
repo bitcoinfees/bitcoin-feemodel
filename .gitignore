@@ -1,8 +1,5 @@
 _*
-data
 *.pyc
 *.ipynb
 *.log
-config.json
-tests*
-main.py
+*-info
