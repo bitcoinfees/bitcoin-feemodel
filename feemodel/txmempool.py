@@ -2,11 +2,14 @@ from time import time, sleep
 from copy import deepcopy
 import threading
 import sqlite3
+import cPickle as pickle
+import os
 from bitcoin.core import COIN, b2lx
 from config import config, historyFile
 from feemodel.util import proxy, logWrite
 
-pollPeriod = config['pollPeriod'] 
+pollPeriod = config['pollPeriod']
+keepHistory = config['keepHistory']
 
 class TxMempoolThread(threading.Thread):
     def __init__(self,mempool):
@@ -78,6 +81,9 @@ class TxMempool(object):
         if self.bestSeenBlock != currHeight:
             logWrite('We skipped a block here.')
 
+        if keepHistory:
+            for block in blocks:
+                threading.Thread(target=block.writeHistory).start()
 
 class Block(object):
     def __init__(self, entries, blockHeight, blockSize, blockTime):
@@ -91,3 +97,72 @@ class Block(object):
             if txid in conflicts:
                 del self.entries[txid]
 
+    def writeHistory(self):
+        db = None
+        dbExists = os.path.exists(historyFile)
+        try:
+            db = sqlite3.connect(historyFile)
+            if not dbExists:
+                db.execute('CREATE TABLE blocks (height INTEGER UNIQUE, size INTEGER, time REAL)')
+                # Work needs to be done on the 2/3 compatibility of pickle/unicode/blob
+                db.execute('CREATE TABLE txs (blockheight INTEGER, txid TEXT, data BLOB)')
+
+                # db.execute('CREATE TABLE txs (\
+                #     blockheight INTEGER, \
+                #     txid TEXT, \
+                #     currentpriority REAL, \
+                #     startingpriority REAL, \
+                #     depends TEXT, \
+                #     fee REAL, \
+                #     entryheight INTEGER, \
+                #     size INTEGER, \
+                #     time REAL, \
+                #     leadtime REAL, \
+                #     feerate INTEGER, \
+                #     inblock INTEGER)')
+            with db:
+                db.execute('INSERT INTO blocks VALUES (?,?,?)', (self.height, self.size, self.time))
+                db.executemany('INSERT INTO txs VALUES (?,?,?)', [(self.height, txid, buffer(pickle.dumps(entry)))
+                    for txid,entry in self.entries.iteritems()])
+                # db.executemany('INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?)', 
+                #     [(
+                #         self.height,
+                #         txid,
+                #         entry['currentpriority'],
+                #         entry['startingpriority'],
+                #         ','.join(entry['depends']),
+                #         entry['fee'],
+                #         entry['height'],
+                #         entry['size'],
+                #         entry['time'],
+                #         entry['leadTime'],
+                #         entry['feeRate'],
+                #         entry['inBlock']
+                #     ) for txid, entry in self.entries])
+                historyLimit = self.height - keepHistory
+                if keepHistory:
+                    db.execute('DELETE FROM blocks WHERE height<=?', (historyLimit,))
+                    db.execute('DELETE FROM txs WHERE blockheight<=?', (historyLimit,))
+        except Exception as e:
+            logWrite(repr(e))
+            logWrite("Exception in writing/cleaning history.")
+        finally:
+            if db:
+                db.close()
+
+    @classmethod
+    def blockFromHistory(cls, blockHeight):
+        db = None
+        try:
+            db = sqlite3.connect(historyFile)
+            blockSize,blockTime = db.execute('SELECT size,time FROM blocks WHERE height=?', 
+                (blockHeight,)).fetchall()[0]
+            txlist = db.execute('SELECT txid,data FROM txs WHERE blockheight=?', (blockHeight,))
+            entries = {txid: pickle.loads(str(data)) for txid,data in txlist}
+            return cls(entries,blockHeight,blockSize,blockTime)
+        except Exception as e:
+            logWrite(repr(e))
+            return None
+        finally:
+            if db:
+                db.close()

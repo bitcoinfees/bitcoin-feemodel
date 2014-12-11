@@ -1,10 +1,21 @@
 import os, sys
 from setuptools import setup, find_packages
-from feemodel.appdirs import user_data_dir
+from appdirs import user_data_dir
 
 appname = 'bitcoin-feemodel'
 appversion = '0.1.0' 
 datadir = user_data_dir(appname)
+with open('feemodel/installdata.py','w') as f:
+    f.write('appname=\''+appname+'\'\nappversion=\''+appversion+'\'\ndatadir=\''+datadir+'\'\n')
+
+dirwarn = False
+if not os.path.exists(datadir):
+    try:
+        os.mkdir(datadir)
+    except OSError:
+        sys.exit("Error: Unable to create data directory " + datadir)
+else:
+    dirwarn = True
 
 setup(
     name=appname,
@@ -21,13 +32,9 @@ setup(
     ]
 )
 
-if not os.path.exists(datadir):
-    try:
-        os.mkdir(datadir)
-    except OSError:
-        sys.exit("Error: Unable to create data directory " + datadir)
-else:
+if dirwarn:
     print("Warning: the data directory " + datadir + " already exists.")
+
 
 
 

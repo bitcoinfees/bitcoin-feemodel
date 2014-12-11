@@ -1,15 +1,17 @@
 import os
+try:
+    from installdata import datadir
+except ImportError:
+    sys.exit("Error: Package has not been installed.")
 
 config = {
-    "datadir": 'data',
-    "logFile": 'debug.log',
     "pollPeriod": 5,
+    "keepHistory": 3,
     "nonparam": {
         "numBlockRange": (6, 144), 
         "maxBlockAge": 432,
-        "keepHistory": 2016, # How many blocks to keep history for
-        "historyDb": "history",
-        "statsDb": "stats",
+        "historyDb": "history.db",
+        "statsDb": "stats.db",
         "numBootstrap": 1000,
     },
     "logging": {
@@ -18,8 +20,8 @@ config = {
     }
 }
 
-here = os.path.abspath(os.path.dirname(__file__))
+statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
+historyFile = os.path.join(datadir, config['nonparam']['historyDb'])
+logFile = os.path.join(datadir, 'debug.log')
 
-statsFile = os.path.join(here, config['datadir'], config['nonparam']['statsDb'])
-historyFile = os.path.join(here, config['datadir'], config['nonparam']['historyDb'])
-logFile = os.path.join(here, config['logging']['logFile'])
+apprun = False

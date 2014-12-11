@@ -1,5 +1,5 @@
 from bitcoin.rpc import Proxy
-from config import logFile, config
+from config import logFile, config, apprun
 from time import ctime
 
 proxy = Proxy()
@@ -7,10 +7,11 @@ toStdOut = config['logging']['toStdOut']
 
 def logWrite(entry):
     s = ctime() + ': ' + entry
-    if toStdOut:
-        print s
-    with open(logFile, 'a') as f:
-        f.write(s + '\n')
+    if apprun:  
+        with open(logFile, 'a') as f:
+            f.write(s + '\n')
+    if toStdOut or not apprun:
+        print(s)
 
 def getFees(blockHeight, db=None):
     if db is None:
