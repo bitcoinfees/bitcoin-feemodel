@@ -3,4 +3,4 @@ _*
 *.ipynb
 *.log
 *-info
-feemodel/installdata.py
+feemodel/installinfo.py

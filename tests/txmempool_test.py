@@ -3,9 +3,7 @@ import os
 from copy import deepcopy
 import feemodel.txmempool as txmempool
 from feemodel.util import DummyModel
-
-dbFile = 'data/test.db'
-tmpdbFile = 'data/tmptest.db'
+from testconfig import dbFile, tmpdbFile
 
 class BlockTests(unittest.TestCase):
     def setUp(self):

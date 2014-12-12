@@ -1,16 +1,16 @@
 import os
 try:
-    from installdata import datadir
+    from installinfo import datadir
 except ImportError:
     sys.exit("Error: Package has not been installed.")
 
 config = {
     "pollPeriod": 5,
     "keepHistory": 2016, # Making this smaller will erase part of the history.
+    "historyDb": "history.db",
     "nonparam": {
-        "numBlockRange": (6, 144), 
+        "numBlocksUsed": (6, 144), 
         "maxBlockAge": 432,
-        "historyDb": "history.db",
         "statsDb": "stats.db",
         "numBootstrap": 1000,
     },
@@ -21,7 +21,7 @@ config = {
 }
 
 statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
-historyFile = os.path.join(datadir, config['nonparam']['historyDb'])
+historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
 apprun = False

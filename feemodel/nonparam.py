@@ -1,47 +1,74 @@
+import threading
 from feemodel.config import statsFile, historyFile, config
+from feemodel.util import logWrite
 from random import choice
 
 leadTimeOffset = config['pollPeriod']
 numBootstrap = config['nonparam']['numBootstrap']
+numBlocksUsed = config['nonparam']['numBlocksUsed']
 
 class NonParam(object):
 
     def __init__(self):
-        # self.blockStats = {}
-        self.feeEstimates = {}
         self.blockEstimates = {}
+        self.zeroInBlock = []
+        self.lock = threading.Lock()
 
-    def pushBlocks(self, blocks):
-        for block in blocks:
-            print("Pushed block " + str(block.height))
+    def pushBlocks(self, blocks, async=True):
+        bthread = threading.Thread(target=self.computeEstimates, args=(blocks,))
+        bthread.start()
 
-    def pushBlocks2(self, blocks):
-        # Check the minLeadTime of each block
-        for block in blocks:
-            if not block.entries: # Empty blocks - means nothing in mempool. Don't care about them!
-                continue
-            try:
-                minLeadTime = min([entry['leadTime'] for entry in 
-                    block.entries.itervalues() if entry['inBlock']])
-            except ValueError:
-                minLeadTime = 0 # Change it later to use past statistics
+        if not async:
+            bthread.join()
 
-            # self.blockStats[block.height] = BlockStat(block, minLeadTime)
-            blockStats = BlockStat(block, minLeadTime)
-            # self.feeEstimates[block.height] = self.blockStats[block.height].estimateFee()
-            self.feeEstimates[block.height] = blockStats.estimateFee()
-            self.blockEstimates[block.height] = BlockEstimate(block.size, minLeadTime)
+    def computeEstimates(self, blocks):
+        with self.lock:
+            for block in blocks:
+                if not block or not block.entries or block.height in self.blockEstimates:
+                # Empty block.entries - means empty mempool. Discard it!
+                    continue
+                try:
+                    minLeadTime = min([entry['leadTime'] for entry in 
+                        block.entries.itervalues() if entry['inBlock']])
+                except ValueError:
+                    self.zeroInBlock.append(block)
+                    continue
 
-            # for debug
-            print('--------------')
-            print('Blockheight: %d' % block.height)
-            print(self.blockEstimates[block.height])
-            print(self.feeEstimates[block.height])
+                self._addBlockEstimate(block,minLeadTime)
+
+            if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:
+                minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
+                defaultMLT = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
+                for block in self.zeroInBlock:
+                    self._addBlockEstimate(block,defaultMLT)
+                self.zeroInBlock = []
+
+            # Clean up old blockEstimates
+
+    def _addBlockEstimate(self,block,minLeadTime):
+        blockStats = BlockStat(block, minLeadTime)
+        feeEstimate = blockStats.estimateFee()
+        if feeEstimate:
+            self.blockEstimates[block.height] = BlockEstimate(
+                block.size, minLeadTime, blockStats.estimateFee())
+        logWrite('Model: added block ' + str(block.height) + ', %s' %
+            self.blockEstimates[block.height])
+
+        # Clean up old blockEstimates
+        blockThresh = block.height - numBlocksUsed[1]
+        if blockThresh < block.height:
+            keysToDelete = [key for key in self.blockEstimates if key <= blockThresh]
+            for key in keysToDelete:
+                del self.blockEstimates[key]
+
+    def __eq__(self,other):
+        if not isinstance(other,NonParam):
+            return False
+        return self.blockEstimates == other.blockEstimates and self.zeroInBlock == other.zeroInBlock
 
 
 class BlockStat(object):
     def __init__(self, block, minLeadTime):
-        # Empty feeStats should be discarded earlier.
         self.entries = block.entries
         self.height = block.height
         self.size = block.size
@@ -57,6 +84,10 @@ class BlockStat(object):
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
 
     def estimateFee(self):
+        if not self.feeStats:
+            # No txs which pass the filtering
+            return None
+
         minFeeRate = BlockStat.calcMinFeeRateSingle(self.feeStats)
         
         aboveList = filter(lambda x: x.feeRate >= minFeeRate, self.feeStats)
@@ -68,19 +99,25 @@ class BlockStat(object):
         nAbove = len(aboveList)
         nBelow = len(belowList)
 
-        altBiasRef = belowList[0].feeRate if nBelow else 0
+        if minFeeRate != float("inf"):
+            altBiasRef = belowList[0].feeRate if nBelow else 0
 
-        bootstrap = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
-            for i in range(numBootstrap)]
+            bootstrap = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
+                for i in range(numBootstrap)]
 
-        mean = float(sum(bootstrap)) / len(bootstrap)
-        std = (sum([(b-mean)**2 for b in bootstrap]) / (len(bootstrap)-1))**0.5
+            mean = float(sum(bootstrap)) / len(bootstrap)
+            std = (sum([(b-mean)**2 for b in bootstrap]) / (len(bootstrap)-1))**0.5
 
-        biasRef = max((minFeeRate, abs(mean-minFeeRate)), 
-            (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
-        bias = mean - biasRef
+            biasRef = max((minFeeRate, abs(mean-minFeeRate)), 
+                (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
+            bias = mean - biasRef
+        else:
+            bias = float("inf")
+            std = float("inf")
 
-        return FeeEstimate(minFeeRate, bias, std, (kAbove,nAbove), (kBelow,nBelow))
+        threshFeeStats = aboveList[-10:] + belowList[:10]
+
+        return FeeEstimate(minFeeRate, bias, std, (kAbove,nAbove), (kBelow,nBelow), threshFeeStats)
 
     def bootstrapSample(self):
         sample = [choice(self.feeStats) for i in range(len(self.feeStats))]
@@ -90,8 +127,8 @@ class BlockStat(object):
 
 
     def depsCheck(self, entry):
-        deps = [self.entries[depId] for depId in entry['depends']]
-        return all([dep['inBlock'] for dep in deps])
+        deps = [self.entries.get(depId) for depId in entry['depends']]
+        return all([dep['inBlock'] if dep else False for dep in deps])
 
     @staticmethod
     def calcMinFeeRateSingle(feeStats):
@@ -109,30 +146,32 @@ class BlockStat(object):
             kvals[feeRateCurr] += 1 if feeStat.inBlock else -1
 
         maxk = max(kvals.itervalues())
-        argmaxk = [feeStat.feeRate for feeStat in feeStats if kvals[feeStat.feeRate] == maxk]
+        argmaxk = [feeRate for feeRate in kvals.iterkeys() if kvals[feeRate] == maxk]
 
         return min(argmaxk)
 
 
 class FeeEstimate(object):
-    def __init__(self, minFeeRate, bias, std, abovekn, belowkn):
+    def __init__(self, minFeeRate, bias, std, abovekn, belowkn, threshFeeStats):
         self.minFeeRate = minFeeRate
         self.bias = bias
         self.std = std
         self.abovekn = abovekn
         self.belowkn = belowkn
+        self.threshFeeStats = threshFeeStats
 
     def __repr__(self):
-        return "FeeEstimate{minFeeRate: %d, bias: %d, std: %d, above: %s, below: %s}" % (
+        return "FE{mfr: %.1f, bias: %.1f, std: %.1f, above: %s, below: %s}" % (
             self.minFeeRate, self.bias, self.std, self.abovekn, self.belowkn)
 
 class BlockEstimate(object):
-    def __init__(self, size, minLeadTime):
+    def __init__(self, size, minLeadTime, feeEstimate):
         self.size = size
         self.minLeadTime = minLeadTime
+        self.feeEstimate = feeEstimate
 
     def __repr__(self):
-        return "BlockEstimate{size: %d, minLeadTime: %.1f}" % (self.size, self.minLeadTime)
+        return "BE{size: %d, mlt: %.1f, %s}" % (self.size, self.minLeadTime, self.feeEstimate)
 
 
 class FeeStat(object):
@@ -141,3 +180,6 @@ class FeeStat(object):
         self.priority = entry['currentpriority']
         self.size =  entry['size']
         self.inBlock = entry['inBlock']
+
+    def __repr__(self):
+        return "FeeStat(%d,%d)" % (self.feeRate,self.inBlock)

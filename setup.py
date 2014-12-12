@@ -5,7 +5,7 @@ from appdirs import user_data_dir
 appname = 'bitcoin-feemodel'
 appversion = '0.1.0' 
 datadir = user_data_dir(appname)
-with open('feemodel/installdata.py','w') as f:
+with open('feemodel/installinfo.py','w') as f:
     f.write('appname=\''+appname+'\'\nappversion=\''+appversion+'\'\ndatadir=\''+datadir+'\'\n')
 
 dirwarn = False

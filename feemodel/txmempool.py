@@ -156,6 +156,8 @@ class Block(object):
                 db.close()
 
     def __eq__(self,other):
+        if not isinstance(other,Block):
+            return False
         return all([
             self.entries == other.entries,
             self.height == other.height,
