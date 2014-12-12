@@ -1,5 +1,6 @@
 from bitcoin.rpc import Proxy
-from config import logFile, config, apprun
+import feemodel.config
+from feemodel.config import logFile, config
 from time import ctime
 
 proxy = Proxy()
@@ -7,7 +8,7 @@ toStdOut = config['logging']['toStdOut']
 
 def logWrite(entry):
     s = ctime() + ': ' + entry
-    if apprun:  
+    if config.apprun:
         with open(logFile, 'a') as f:
             f.write(s + '\n')
     if toStdOut or not apprun:

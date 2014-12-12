@@ -1,4 +1,4 @@
-from config import statsFile, historyFile, config
+from feemodel.config import statsFile, historyFile, config
 from random import choice
 
 leadTimeOffset = config['pollPeriod']

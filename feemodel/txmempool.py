@@ -2,10 +2,11 @@ from time import time, sleep
 from copy import deepcopy
 import threading
 import sqlite3
-import cPickle as pickle
+import json
 import os
+import decimal
 from bitcoin.core import COIN, b2lx
-from config import config, historyFile
+from feemodel.config import config, historyFile
 from feemodel.util import proxy, logWrite
 
 pollPeriod = config['pollPeriod']
@@ -103,42 +104,14 @@ class Block(object):
         try:
             db = sqlite3.connect(historyFile)
             if not dbExists:
-                db.execute('CREATE TABLE blocks (height INTEGER UNIQUE, size INTEGER, time REAL)')
-                # Work needs to be done on the 2/3 compatibility of pickle/unicode/blob
-                db.execute('CREATE TABLE txs (blockheight INTEGER, txid TEXT, data BLOB)')
-
-                # db.execute('CREATE TABLE txs (\
-                #     blockheight INTEGER, \
-                #     txid TEXT, \
-                #     currentpriority REAL, \
-                #     startingpriority REAL, \
-                #     depends TEXT, \
-                #     fee REAL, \
-                #     entryheight INTEGER, \
-                #     size INTEGER, \
-                #     time REAL, \
-                #     leadtime REAL, \
-                #     feerate INTEGER, \
-                #     inblock INTEGER)')
+                with db:
+                    db.execute('CREATE TABLE blocks (height INTEGER UNIQUE, size INTEGER, time REAL)')
+                    db.execute('CREATE TABLE txs (blockheight INTEGER, txid TEXT, data TEXT)')
             with db:
                 db.execute('INSERT INTO blocks VALUES (?,?,?)', (self.height, self.size, self.time))
-                db.executemany('INSERT INTO txs VALUES (?,?,?)', [(self.height, txid, buffer(pickle.dumps(entry)))
+                db.executemany('INSERT INTO txs VALUES (?,?,?)',
+                    [(self.height, txid, json.dumps(entry,default=decimalDefault))
                     for txid,entry in self.entries.iteritems()])
-                # db.executemany('INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?)', 
-                #     [(
-                #         self.height,
-                #         txid,
-                #         entry['currentpriority'],
-                #         entry['startingpriority'],
-                #         ','.join(entry['depends']),
-                #         entry['fee'],
-                #         entry['height'],
-                #         entry['size'],
-                #         entry['time'],
-                #         entry['leadTime'],
-                #         entry['feeRate'],
-                #         entry['inBlock']
-                #     ) for txid, entry in self.entries])
                 historyLimit = self.height - keepHistory
                 if keepHistory:
                     db.execute('DELETE FROM blocks WHERE height<=?', (historyLimit,))
@@ -155,10 +128,18 @@ class Block(object):
         db = None
         try:
             db = sqlite3.connect(historyFile)
-            blockSize,blockTime = db.execute('SELECT size,time FROM blocks WHERE height=?', 
-                (blockHeight,)).fetchall()[0]
+            block = db.execute('SELECT size,time FROM blocks WHERE height=?',
+                (blockHeight,)).fetchall()
+            if block:
+                blockSize,blockTime = block[0]
+            else:
+                return None
             txlist = db.execute('SELECT txid,data FROM txs WHERE blockheight=?', (blockHeight,))
-            entries = {txid: pickle.loads(str(data)) for txid,data in txlist}
+            entries = {txid: json.loads(str(data)) for txid,data in txlist}
+            for entry in entries.itervalues():
+                entry['fee'] = decimal.Decimal(entry['fee'])
+                entry['startingpriority'] = decimal.Decimal(entry['startingpriority'])
+                entry['currentpriority'] = decimal.Decimal(entry['currentpriority'])
             return cls(entries,blockHeight,blockSize,blockTime)
         except Exception as e:
             logWrite(repr(e))
@@ -166,3 +147,10 @@ class Block(object):
         finally:
             if db:
                 db.close()
+
+
+def decimalDefault(obj):
+    if isinstance(obj, decimal.Decimal):
+        return str(obj)
+    raise TypeError
+
