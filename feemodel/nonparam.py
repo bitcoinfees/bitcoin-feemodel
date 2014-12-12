@@ -7,7 +7,7 @@ numBootstrap = config['nonparam']['numBootstrap']
 class NonParam(object):
 
     def __init__(self):
-        self.blockStats = {}
+        # self.blockStats = {}
         self.feeEstimates = {}
         self.blockEstimates = {}
 
@@ -18,21 +18,23 @@ class NonParam(object):
     def pushBlocks2(self, blocks):
         # Check the minLeadTime of each block
         for block in blocks:
-            if not block.entries:
+            if not block.entries: # Empty blocks - means nothing in mempool. Don't care about them!
                 continue
             try:
                 minLeadTime = min([entry['leadTime'] for entry in 
-                    self.entries.itervalues() if entry['inBlock']])
+                    block.entries.itervalues() if entry['inBlock']])
             except ValueError:
                 minLeadTime = 0 # Change it later to use past statistics
 
-            self.blockStats[block.height] = BlockStat(block, minLeadTime)
-            self.feeEstimates[block.height] = self.blockStats[block.height].estimateFee()
+            # self.blockStats[block.height] = BlockStat(block, minLeadTime)
+            blockStats = BlockStat(block, minLeadTime)
+            # self.feeEstimates[block.height] = self.blockStats[block.height].estimateFee()
+            self.feeEstimates[block.height] = blockStats.estimateFee()
             self.blockEstimates[block.height] = BlockEstimate(block.size, minLeadTime)
 
             # for debug
             print('--------------')
-            print('Blockheight: %d', block.height)
+            print('Blockheight: %d' % block.height)
             print(self.blockEstimates[block.height])
             print(self.feeEstimates[block.height])
 
@@ -102,7 +104,6 @@ class BlockStat(object):
         for feeStat in feeStats:
             if feeStat.feeRate < feeRateCurr:
                 kvals[feeStat.feeRate] = kvals[feeRateCurr]
-                nvals[feeStat.feeRate] = nvals[feeRateCurr]
                 feeRateCurr = feeStat.feeRate
 
             kvals[feeRateCurr] += 1 if feeStat.inBlock else -1
@@ -116,14 +117,14 @@ class BlockStat(object):
 class FeeEstimate(object):
     def __init__(self, minFeeRate, bias, std, abovekn, belowkn):
         self.minFeeRate = minFeeRate
-        self.bias = samplingDist
+        self.bias = bias
         self.std = std
         self.abovekn = abovekn
         self.belowkn = belowkn
 
     def __repr__(self):
-        return "FeeEstimate{minleadtime: %d, minFeeRate: %d, bias: %d, std: %d, above: %s, below: %s}" % (
-            self.minLeadTime, self.minFeeRate, self.bias, self.std, self.abovekn, self.belowkn)
+        return "FeeEstimate{minFeeRate: %d, bias: %d, std: %d, above: %s, below: %s}" % (
+            self.minFeeRate, self.bias, self.std, self.abovekn, self.belowkn)
 
 class BlockEstimate(object):
     def __init__(self, size, minLeadTime):
@@ -137,6 +138,6 @@ class BlockEstimate(object):
 class FeeStat(object):
     def __init__(self, entry):
         self.feeRate = entry['feeRate']
-        self.priority = entry['currentPriority']
+        self.priority = entry['currentpriority']
         self.size =  entry['size']
         self.inBlock = entry['inBlock']

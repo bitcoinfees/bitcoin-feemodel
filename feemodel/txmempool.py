@@ -31,7 +31,9 @@ class TxMempoolThread(threading.Thread):
 
 class TxMempool(object):
     # Have to handle RPC errors
-    def __init__(self, model, writeHistory=True):
+    def __init__(self, model, writeHistory=False):
+        # Writehistory means write to db the mempool state at each block.
+        # We keep <keepHistory> number of past blocks.
         self.model = model
         self.bestSeenBlock = proxy.getblockcount()
         self.mapTx = proxy.getrawmempool(verbose=True)
@@ -44,8 +46,9 @@ class TxMempool(object):
         else:
             self.mapTx = proxy.getrawmempool(verbose=True)
 
-    def processBlocks(self, currHeight):
-        blockTime = time()
+    def processBlocks(self, currHeight, blockTime=None, removeConflicts=True):
+        if not blockTime:
+            blockTime = time()
         blocks = []
         for blockHeight in range(self.bestSeenBlock+1, currHeight+1):
             blockData = proxy.getblock(proxy.getblockhash(blockHeight))
@@ -73,18 +76,22 @@ class TxMempool(object):
 
         conflicts = set(self.mapTx) - set(mapTxNew)
         self.mapTx = mapTxNew
-               
-        for block in blocks:
-            block.removeConflicts(conflicts)
+        
+        if removeConflicts:       
+            for block in blocks:
+                block.removeConflicts(conflicts)
 
         self.model.pushBlocks(blocks)
 
         if self.bestSeenBlock != currHeight:
             logWrite('We skipped a block here.')
 
-        if keepHistory:
+        if self.writeHistory:
             for block in blocks:
                 threading.Thread(target=block.writeHistory).start()
+
+        return blocks
+
 
 class Block(object):
     def __init__(self, entries, blockHeight, blockSize, blockTime):
@@ -98,11 +105,11 @@ class Block(object):
             if txid in conflicts:
                 del self.entries[txid]
 
-    def writeHistory(self):
+    def writeHistory(self, dbFile=historyFile):
         db = None
-        dbExists = os.path.exists(historyFile)
+        dbExists = os.path.exists(dbFile)
         try:
-            db = sqlite3.connect(historyFile)
+            db = sqlite3.connect(dbFile)
             if not dbExists:
                 with db:
                     db.execute('CREATE TABLE blocks (height INTEGER UNIQUE, size INTEGER, time REAL)')
@@ -113,7 +120,7 @@ class Block(object):
                     [(self.height, txid, json.dumps(entry,default=decimalDefault))
                     for txid,entry in self.entries.iteritems()])
                 historyLimit = self.height - keepHistory
-                if keepHistory:
+                if keepHistory > 0:
                     db.execute('DELETE FROM blocks WHERE height<=?', (historyLimit,))
                     db.execute('DELETE FROM txs WHERE blockheight<=?', (historyLimit,))
         except Exception as e:
@@ -124,10 +131,10 @@ class Block(object):
                 db.close()
 
     @classmethod
-    def blockFromHistory(cls, blockHeight):
+    def blockFromHistory(cls, blockHeight, dbFile=historyFile):
         db = None
         try:
-            db = sqlite3.connect(historyFile)
+            db = sqlite3.connect(dbFile)
             block = db.execute('SELECT size,time FROM blocks WHERE height=?',
                 (blockHeight,)).fetchall()
             if block:
@@ -147,6 +154,14 @@ class Block(object):
         finally:
             if db:
                 db.close()
+
+    def __eq__(self,other):
+        return all([
+            self.entries == other.entries,
+            self.height == other.height,
+            self.size == other.size,
+            self.time == other.time,
+        ])
 
 
 def decimalDefault(obj):

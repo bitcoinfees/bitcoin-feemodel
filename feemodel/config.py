@@ -6,7 +6,7 @@ except ImportError:
 
 config = {
     "pollPeriod": 5,
-    "keepHistory": 3,
+    "keepHistory": 2016, # Making this smaller will erase part of the history.
     "nonparam": {
         "numBlockRange": (6, 144), 
         "maxBlockAge": 432,

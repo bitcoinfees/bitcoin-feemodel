@@ -8,11 +8,24 @@ toStdOut = config['logging']['toStdOut']
 
 def logWrite(entry):
     s = ctime() + ': ' + entry
-    if config.apprun:
+    if feemodel.config.apprun:
         with open(logFile, 'a') as f:
             f.write(s + '\n')
     if toStdOut or not apprun:
         print(s)
+
+class DummyModel(object):
+    def __init__(self):
+        pass
+
+    def pushBlocks(self, blocks):
+        print("I'm a dummy.")
+
+    
+
+
+
+
 
 def getFees(blockHeight, db=None):
     if db is None:
