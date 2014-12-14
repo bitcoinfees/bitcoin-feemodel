@@ -14,14 +14,7 @@ class NonParam(object):
         self.zeroInBlock = []
         self.lock = threading.Lock()
 
-    def pushBlocks(self, blocks, async=True):
-        bthread = threading.Thread(target=self.computeEstimates, args=(blocks,))
-        bthread.start()
-
-        if not async:
-            bthread.join()
-
-    def computeEstimates(self, blocks):
+    def pushBlocks(self, blocks):
         with self.lock:
             for block in blocks:
                 if not block or not block.entries or block.height in self.blockEstimates:
@@ -36,23 +29,23 @@ class NonParam(object):
 
                 self._addBlockEstimate(block,minLeadTime)
 
-            if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:
+            if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:            
                 minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
                 defaultMLT = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
                 for block in self.zeroInBlock:
                     self._addBlockEstimate(block,defaultMLT)
                 self.zeroInBlock = []
 
-            # Clean up old blockEstimates
-
     def _addBlockEstimate(self,block,minLeadTime):
+        # Lock should have been acquired in pushBlocks.
+        # To-do: put in an assert that lock is held.
         blockStats = BlockStat(block, minLeadTime)
         feeEstimate = blockStats.estimateFee()
         if feeEstimate:
             self.blockEstimates[block.height] = BlockEstimate(
-                block.size, minLeadTime, blockStats.estimateFee())
-        logWrite('Model: added block ' + str(block.height) + ', %s' %
-            self.blockEstimates[block.height])
+                block.size, minLeadTime, feeEstimate)
+            logWrite('Model: added block ' + str(block.height) + ', %s' %
+                self.blockEstimates[block.height])
 
         # Clean up old blockEstimates
         blockThresh = block.height - numBlocksUsed[1]

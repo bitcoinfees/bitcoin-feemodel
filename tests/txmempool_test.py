@@ -33,25 +33,25 @@ class BlockTests(unittest.TestCase):
 class TxMempoolTests(unittest.TestCase):
     def setUp(self):
         self.testBlockHeight = 333931
-        model = DummyModel()
-        self.mempool = txmempool.TxMempool(model)
+        self.model = DummyModel()
         self.block = txmempool.Block.blockFromHistory(self.testBlockHeight, dbFile=dbFile)
-        self.mempool.bestSeenBlock = self.testBlockHeight - 1
+        self.blockHeightRange = range(self.testBlockHeight, self.testBlockHeight+1)
 
         entries = deepcopy(self.block.entries)
         for entry in entries.values():
             del entry['leadTime'], entry['feeRate'], entry['inBlock']
 
-        self.mempool.mapTx = entries
+        self.currPool = entries
 
     def test_processBlocks(self):
-        processedBlock = self.mempool.processBlocks(self.testBlockHeight, self.block.time, False)[0]
+        processedBlock = txmempool.TxMempool.processBlocks(self.model,self.blockHeightRange,
+            self.currPool, deepcopy(self.currPool), self.block.time)[0]
         self.assertEqual(processedBlock, self.block)
 
     def test_processEmptyMempool(self):
-        self.mempool.mapTx = {}
         self.block.entries = {}
-        processedBlock = self.mempool.processBlocks(self.testBlockHeight, self.block.time, False)[0]
+        processedBlock = txmempool.TxMempool.processBlocks(self.model,self.blockHeightRange,
+            {},{},self.block.time)[0]
         self.assertEqual(processedBlock, self.block)
 
 

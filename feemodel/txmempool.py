@@ -6,6 +6,7 @@ import json
 import os
 import decimal
 from bitcoin.core import COIN, b2lx
+import feemodel.config
 from feemodel.config import config, historyFile
 from feemodel.util import proxy, logWrite
 
@@ -19,11 +20,14 @@ class TxMempoolThread(threading.Thread):
         self._stop = threading.Event()
 
     def run(self):
-        print("Starting mempool.")
+        logWrite("Starting mempool.")
         while not self._stop.is_set():
-            self.mempool.update()
+            pthread = self.mempool.update()
             self._stop.wait(timeout=pollPeriod)
-        print("Ending mempool.")
+        if pthread:
+            logWrite("Waiting for processBlocks to terminate...")
+            pthread.join()
+        logWrite("Ending mempool.")
 
     def stop(self):
         self._stop.set()
@@ -31,37 +35,45 @@ class TxMempoolThread(threading.Thread):
 
 class TxMempool(object):
     # Have to handle RPC errors
-    def __init__(self, model, writeHistory=False):
+    def __init__(self, model):
         # Writehistory means write to db the mempool state at each block.
         # We keep <keepHistory> number of past blocks.
         self.model = model
         self.bestSeenBlock = proxy.getblockcount()
         self.mapTx = proxy.getrawmempool(verbose=True)
-        self.writeHistory = writeHistory
     
     def update(self):
         currHeight = proxy.getblockcount()
         if currHeight > self.bestSeenBlock:
-            self.processBlocks(currHeight)
+            mapTxNew = proxy.getrawmempool(verbose=True)
+            pthread = threading.Thread(target=TxMempool.processBlocks,
+                args=(self.model, range(self.bestSeenBlock+1,currHeight+1),
+                    deepcopy(self.mapTx), deepcopy(mapTxNew)))
+            self.mapTx = mapTxNew
+            self.bestSeenBlock = currHeight
+            pthread.start()
+            return pthread
         else:
             self.mapTx = proxy.getrawmempool(verbose=True)
+            return None
 
-    def processBlocks(self, currHeight, blockTime=None, removeConflicts=True):
+    @staticmethod
+    def processBlocks(model, blockHeightRange, currPool, newPool, blockTime=None):
         if not blockTime:
             blockTime = time()
         blocks = []
-        for blockHeight in range(self.bestSeenBlock+1, currHeight+1):
+        for blockHeight in blockHeightRange:
             blockData = proxy.getblock(proxy.getblockhash(blockHeight))
             blockSize = len(blockData.serialize())
             blockTxList = [b2lx(tx.GetHash()) for tx in blockData.vtx]
-            entries = deepcopy(self.mapTx)
+            entries = deepcopy(currPool)
             numMempoolTxsInBlock = 0
 
             for txid, entry in entries.iteritems():
                 if txid in blockTxList:
                     entry['inBlock'] = True
                     numMempoolTxsInBlock += 1
-                    del self.mapTx[txid]
+                    del currPool[txid]
                 else:
                     entry['inBlock'] = False
                 entry['leadTime'] = blockTime - entry['time']
@@ -71,24 +83,16 @@ class TxMempool(object):
             logWrite(str(numMempoolTxsInBlock) + ' of ' + 
                 str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
 
-        self.bestSeenBlock = proxy.getblockcount()
-        mapTxNew = proxy.getrawmempool(verbose=True)
+        conflicts = set(currPool) - set(newPool)
+      
+        for block in blocks:
+            block.removeConflicts(conflicts)
 
-        conflicts = set(self.mapTx) - set(mapTxNew)
-        self.mapTx = mapTxNew
-        
-        if removeConflicts:       
+        model.pushBlocks(blocks)
+
+        if feemodel.config.apprun:
             for block in blocks:
-                block.removeConflicts(conflicts)
-
-        self.model.pushBlocks(blocks)
-
-        if self.bestSeenBlock != currHeight:
-            logWrite('We skipped a block here.')
-
-        if self.writeHistory:
-            for block in blocks:
-                threading.Thread(target=block.writeHistory).start()
+                block.writeHistory()
 
         return blocks
 
