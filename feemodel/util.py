@@ -1,7 +1,8 @@
 from bitcoin.rpc import Proxy
 import feemodel.config
-from feemodel.config import logFile, config
+from feemodel.config import logFile, config, historyFile
 from time import ctime
+import sqlite3
 
 proxy = Proxy()
 toStdOut = config['logging']['toStdOut']
@@ -13,6 +14,13 @@ def logWrite(entry):
             f.write(s + '\n')
     if toStdOut or not apprun:
         print(s)
+
+def getHistory(dbFile=historyFile):
+    db = sqlite3.connect(dbFile)
+    blocks = db.execute('SELECT * FROM blocks').fetchall()
+    db.close()
+    return blocks
+
 
 class DummyModel(object):
     def __init__(self):
