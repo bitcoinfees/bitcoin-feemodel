@@ -26,7 +26,7 @@ class TxMempoolThread(threading.Thread):
             self._stop.wait(timeout=pollPeriod)
         if pthread:
             logWrite("Waiting for processBlocks to terminate...")
-            pthread.join()
+            pthread.join() # This is wrong. There might be > 1 thread.
         logWrite("Ending mempool.")
 
     def stop(self):

@@ -4,3 +4,4 @@
 *.log
 *-info
 feemodel/installinfo.py
+venv
