@@ -33,21 +33,20 @@ class TxMempoolThread(threading.Thread):
         self._stop.set()
 
 
-class TxMempool(object):
+class TxMempool(threading.Thread):
     # Have to handle RPC errors
-    def __init__(self, model):
+    def __init__(self):
         # Writehistory means write to db the mempool state at each block.
         # We keep <keepHistory> number of past blocks.
-        self.model = model
-        self.bestSeenBlock = proxy.getblockcount()
-        self.mapTx = proxy.getrawmempool(verbose=True)
+        super(TxMempool, self).__init__()
+        self._stop = threading.Event()        
     
     def update(self):
         currHeight = proxy.getblockcount()
         if currHeight > self.bestSeenBlock:
             mapTxNew = proxy.getrawmempool(verbose=True)
             pthread = threading.Thread(target=TxMempool.processBlocks,
-                args=(self.model, range(self.bestSeenBlock+1,currHeight+1),
+                args=(range(self.bestSeenBlock+1,currHeight+1),
                     deepcopy(self.mapTx), deepcopy(mapTxNew)))
             self.mapTx = mapTxNew
             self.bestSeenBlock = currHeight
@@ -57,8 +56,17 @@ class TxMempool(object):
             self.mapTx = proxy.getrawmempool(verbose=True)
             return None
 
+    def run(self):
+        self.bestSeenBlock = proxy.getblockcount()
+        self.mapTx = proxy.getrawmempool(verbose=True)
+        while not self._stop.is_set():
+            
+
+    def stop(self):
+        self._stop.set()
+
     @staticmethod
-    def processBlocks(model, blockHeightRange, currPool, newPool, blockTime=None):
+    def processBlocks(blockHeightRange, currPool, newPool, blockTime=None):
         if not blockTime:
             blockTime = time()
         blocks = []
@@ -87,8 +95,6 @@ class TxMempool(object):
       
         for block in blocks:
             block.removeConflicts(conflicts)
-
-        model.pushBlocks(blocks)
 
         if feemodel.config.apprun:
             for block in blocks:
