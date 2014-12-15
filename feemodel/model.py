@@ -1,26 +1,20 @@
 import threading
 from feemodel.txmempool import TxMempool
+import feemodel.config
 
-class Model(object):
+class Model(TxMempool):
     def __init__(self):
-        self.mempool = None
+        super(Model, self).__init__()
         self.modelLock = threading.Lock()
-        self.pushBlocks = PushBlocks(self.modelLock)
-        self.blocksToConfirm = ModelInterface(self.modelLock)
-        self.feeToConfirm = ModelInterface(self.modelLock)
+        self.pushBlocks = ModelInterface(self.modelLock)
+        self.estimateFee = ModelInterface(self.modelLock)
+        self.estimateTx = ModelInterface(self.modelLock)
         self.miscStats = ModelInterface(self.modelLock)
 
-    def start(self):        
-        @self.pushBlocks.decorateProcessBlocks()
-        TxMempool.processBlocks
-        logWrite("Starting mempool.")
-        self.mempool = TxMempool()
-        self.mempool.start()
-
-    def stop(self):
-        if self.mempool:
-            self.mempool.stop()
-
+    def processBlocks(self, *args, **kwargs):
+        blocks = super(Model, self).processBlocks(*args,**kwargs)
+        self.pushBlocks(blocks)
+        return blocks
 
 
 class ModelInterface(object):
@@ -28,25 +22,17 @@ class ModelInterface(object):
         self.lock = lock
         self.fns = []
 
-    def register(self):
-        def decorator(fn):
-            if not fn in self.fns:
-                self.fns.append(fn)
-            return fn
-        return decorator
+    def register(self, fn):
+        if not fn in self.fns:
+            self.fns.append(fn)
 
     def __call__(self, *args, **kwargs):
         with self.lock:
             return [fn(*args, **kwargs) for fn in self.fns]
 
-class PushBlocks(ModelInterface):
-    def decorateProcessBlocks(self):
-        def decorator(processBlocks):
-            def processBlocksPush(*args, **kwargs):
-                blocks = processBlocks(*args,**kwargs)
-                self(blocks)
-                return blocks
-            return processBlocksPush
-        return decorator
+
+class InsufficientDataError(Exception):
+    pass
+
 
 

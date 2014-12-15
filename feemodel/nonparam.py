@@ -1,44 +1,67 @@
 import threading
+from feemodel.model import InsufficientDataError
 from feemodel.config import statsFile, historyFile, config
-from feemodel.util import logWrite
+from feemodel.util import logWrite, proxy
 from random import choice
+from math import ceil
 
 leadTimeOffset = config['pollPeriod']
 numBootstrap = config['nonparam']['numBootstrap']
 numBlocksUsed = config['nonparam']['numBlocksUsed']
+sigLevel = config['nonparam']['sigLevel']
 
 class NonParam(object):
 
-    def __init__(self):
+    def __init__(self, autoLoad=False, blockHeightRange=None):
         self.blockEstimates = {}
         self.zeroInBlock = []
         self.lock = threading.Lock()
 
+        if autoLoad:
+            pass
+
+
+    def estimateFee(self, nBlocks):
+        if len(self.blockEstimates) >= numBlocksUsed[0]:
+            p = 1 - (1-sigLevel)**(1./nBlocks)
+            minFeeRates = [blockEstimate.feeEstimate.minFeeRate 
+                for blockEstimate in self.blockEstimates.itervalues()]
+            minFeeRates.sort()
+            idx = int(ceil(p*len(minFeeRates)))
+            return minFeeRates[idx-1]
+        else:
+            raise InsufficientDataError("Need at least " + str(numBlocksUsed[0])
+                + "blocks of data.")
+
     def pushBlocks(self, blocks):
-        with self.lock:
-            for block in blocks:
-                if not block or not block.entries or block.height in self.blockEstimates:
-                # Empty block.entries - means empty mempool. Discard it!
-                    continue
-                try:
-                    minLeadTime = min([entry['leadTime'] for entry in 
-                        block.entries.itervalues() if entry['inBlock']])
-                except ValueError:
-                    self.zeroInBlock.append(block)
-                    continue
+        assert not self.lock.locked()
+        # This is non-blocking: we just want to assert that this method is not 
+        # accessed from multiple threads.
+        self.lock.acquire(False)
 
-                self._addBlockEstimate(block,minLeadTime)
+        for block in blocks:
+            if not block or not block.entries or block.height in self.blockEstimates:
+            # Empty block.entries - means empty mempool. Discard it!
+                continue
+            try:
+                minLeadTime = min([entry['leadTime'] for entry in 
+                    block.entries.itervalues() if entry['inBlock']])
+            except ValueError:
+                self.zeroInBlock.append(block)
+                continue
 
-            if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:            
-                minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
-                defaultMLT = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
-                for block in self.zeroInBlock:
-                    self._addBlockEstimate(block,defaultMLT)
-                self.zeroInBlock = []
+            self._addBlockEstimate(block,minLeadTime)
+
+        if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:            
+            minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
+            defaultMLT = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
+            for block in self.zeroInBlock:
+                self._addBlockEstimate(block,defaultMLT)
+            self.zeroInBlock = []
+
+        self.lock.release()
 
     def _addBlockEstimate(self,block,minLeadTime):
-        # Lock should have been acquired in pushBlocks.
-        # To-do: put in an assert that lock is held.
         blockStats = BlockStat(block, minLeadTime)
         feeEstimate = blockStats.estimateFee()
         if feeEstimate:
@@ -71,7 +94,7 @@ class BlockStat(object):
 
         # In future perhaps remove high priority
         self.feeStats = [FeeStat(entry) for entry in block.entries.itervalues()
-            if self.depsCheck(entry)
+            if self._depsCheck(entry)
             and entry['leadTime'] >= leadTimeThresh
             and entry['feeRate']]
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
@@ -119,7 +142,7 @@ class BlockStat(object):
         return sample
 
 
-    def depsCheck(self, entry):
+    def _depsCheck(self, entry):
         deps = [self.entries.get(depId) for depId in entry['depends']]
         return all([dep['inBlock'] if dep else False for dep in deps])
 
@@ -141,7 +164,7 @@ class BlockStat(object):
         maxk = max(kvals.itervalues())
         argmaxk = [feeRate for feeRate in kvals.iterkeys() if kvals[feeRate] == maxk]
 
-        return min(argmaxk)
+        return max(argmaxk)
 
 
 class FeeEstimate(object):

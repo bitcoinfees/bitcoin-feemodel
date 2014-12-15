@@ -3,23 +3,43 @@ import feemodel.config
 from feemodel.config import logFile, config, historyFile
 from time import ctime
 import sqlite3
+import threading
 
-proxy = Proxy()
-toStdOut = config['logging']['toStdOut']
+class BlockingProxy(Proxy):
+    '''
+    Thread-safe version of Proxy
+    '''
+    def __init__(self):
+        super(BlockingProxy, self).__init__()
+        self.lock = threading.Lock()
+
+    def _call(self, *args):
+        with self.lock:
+            return super(BlockingProxy, self)._call(*args)
 
 def logWrite(entry):
     s = ctime() + ': ' + entry
     if feemodel.config.apprun:
         with open(logFile, 'a') as f:
             f.write(s + '\n')
-    if toStdOut or not apprun:
+    if toStdOut or not feemodel.config.apprun:
         print(s)
 
 def getHistory(dbFile=historyFile):
-    db = sqlite3.connect(dbFile)
-    blocks = db.execute('SELECT * FROM blocks').fetchall()
-    db.close()
-    return blocks
+    db = None
+    try:
+        db = sqlite3.connect(dbFile)
+        blocks = db.execute('SELECT * FROM blocks').fetchall()
+        return blocks
+    finally:
+        if db:
+            db.close()
+
+
+proxy = BlockingProxy()
+toStdOut = config['logging']['toStdOut']
+
+
 
 
 class DummyModel(object):

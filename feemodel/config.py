@@ -9,8 +9,9 @@ config = {
     "keepHistory": 2016, # Making this smaller will erase part of the history.
     "historyDb": "history.db",
     "nonparam": {
-        "numBlocksUsed": (6, 144), 
+        "numBlocksUsed": (6, 144), # ends-inclusive
         "maxBlockAge": 432,
+        "sigLevel": 0.9,
         "statsDb": "stats.db",
         "numBootstrap": 1000,
     },
@@ -24,4 +25,4 @@ statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
-apprun = False
+apprun = False # If true, TxMempool.processBlocks will write history, and logWrite will write to the log file

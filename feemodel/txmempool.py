@@ -13,26 +13,6 @@ from feemodel.util import proxy, logWrite
 pollPeriod = config['pollPeriod']
 keepHistory = config['keepHistory']
 
-class TxMempoolThread(threading.Thread):
-    def __init__(self,mempool):
-        super(TxMempoolThread, self).__init__()
-        self.mempool = mempool
-        self._stop = threading.Event()
-
-    def run(self):
-        logWrite("Starting mempool.")
-        while not self._stop.is_set():
-            pthread = self.mempool.update()
-            self._stop.wait(timeout=pollPeriod)
-        if pthread:
-            logWrite("Waiting for processBlocks to terminate...")
-            pthread.join() # This is wrong. There might be > 1 thread.
-        logWrite("Ending mempool.")
-
-    def stop(self):
-        self._stop.set()
-
-
 class TxMempool(threading.Thread):
     # Have to handle RPC errors
     def __init__(self):
@@ -45,22 +25,28 @@ class TxMempool(threading.Thread):
         currHeight = proxy.getblockcount()
         if currHeight > self.bestSeenBlock:
             mapTxNew = proxy.getrawmempool(verbose=True)
-            pthread = threading.Thread(target=TxMempool.processBlocks,
+            threading.Thread(target=self.processBlocks,
                 args=(range(self.bestSeenBlock+1,currHeight+1),
-                    deepcopy(self.mapTx), deepcopy(mapTxNew)))
+                    deepcopy(self.mapTx), deepcopy(mapTxNew)),
+                name='processBlocksThread').start()
             self.mapTx = mapTxNew
             self.bestSeenBlock = currHeight
-            pthread.start()
-            return pthread
         else:
             self.mapTx = proxy.getrawmempool(verbose=True)
-            return None
 
     def run(self):
+        feemodel.config.apprun = True
+        logWrite("Starting mempool")
         self.bestSeenBlock = proxy.getblockcount()
         self.mapTx = proxy.getrawmempool(verbose=True)
         while not self._stop.is_set():
-            
+            self.update()
+            self._stop.wait(timeout=pollPeriod)
+        logWrite("Closing up mempool...")
+        for thread in threading.enumerate():
+            if thread.name == 'processBlocksThread':
+                thread.join()
+        logWrite("Finished everything.")
 
     def stop(self):
         self._stop.set()
@@ -105,6 +91,7 @@ class TxMempool(threading.Thread):
 
 class Block(object):
     def __init__(self, entries, blockHeight, blockSize, blockTime):
+        # To-do: add a 'tx-coverage' field
         self.entries = entries
         self.height = blockHeight
         self.size = blockSize

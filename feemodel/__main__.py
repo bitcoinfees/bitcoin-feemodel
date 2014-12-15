@@ -1,16 +1,33 @@
-import feemodel.config
 from feemodel.nonparam import NonParam
-from feemodel.util import DummyModel
-from feemodel.txmempool import TxMempoolThread, TxMempool
-import threading
+from feemodel.model import Model
 from time import sleep
 
-feemodel.config.apprun = True
+# feemodel.config.apprun = True
 
-model = DummyModel()
-mempool = TxMempool(model,writeHistory=True)
-mempoolThread = TxMempoolThread(mempool)
-mempoolThread.start()
+# model = DummyModel()
+# mempool = TxMempool(model,writeHistory=True)
+# mempoolThread = TxMempoolThread(mempool)
+# mempoolThread.start()
+
+# try:
+#     while True:
+#         # print('At block ' + str(mempool.bestSeenBlock))
+#         print('.'),
+#         sleep(60)
+# except KeyboardInterrupt:
+#     print("keyboard.")
+# finally:
+#     mempoolThread.stop()
+#     mempoolThread.join()
+#     print("Finished everything.")
+
+# ===========
+
+nonparam = NonParam()
+model = Model()
+
+model.pushBlocks.register(nonparam.pushBlocks)
+model.start()
 
 try:
     while True:
@@ -20,6 +37,6 @@ try:
 except KeyboardInterrupt:
     print("keyboard.")
 finally:
-    mempoolThread.stop()
-    mempoolThread.join()
+    model.stop()
+    model.join()
     print("Finished everything.")
