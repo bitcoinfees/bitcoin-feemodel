@@ -22,17 +22,18 @@ class TxMempool(threading.Thread):
         self._stop = threading.Event()        
     
     def update(self):
-        currHeight = proxy.getblockcount()
-        if currHeight > self.bestSeenBlock:
-            mapTxNew = proxy.getrawmempool(verbose=True)
-            threading.Thread(target=self.processBlocks,
-                args=(range(self.bestSeenBlock+1,currHeight+1),
-                    deepcopy(self.mapTx), deepcopy(mapTxNew)),
-                name='processBlocksThread').start()
-            self.mapTx = mapTxNew
-            self.bestSeenBlock = currHeight
-        else:
-            self.mapTx = proxy.getrawmempool(verbose=True)
+        with proxy.rlock:
+            currHeight = proxy.getblockcount()
+            if currHeight > self.bestSeenBlock:
+                mapTxNew = proxy.getrawmempool(verbose=True)
+                threading.Thread(target=self.processBlocks,
+                    args=(range(self.bestSeenBlock+1,currHeight+1),
+                        deepcopy(self.mapTx), deepcopy(mapTxNew)),
+                    name='processBlocksThread').start()
+                self.mapTx = mapTxNew
+                self.bestSeenBlock = currHeight
+            else:
+                self.mapTx = proxy.getrawmempool(verbose=True)
 
     def run(self):
         feemodel.config.apprun = True
@@ -54,7 +55,7 @@ class TxMempool(threading.Thread):
     @staticmethod
     def processBlocks(blockHeightRange, currPool, newPool, blockTime=None):
         if not blockTime:
-            blockTime = time()
+            blockTime = int(time())
         blocks = []
         for blockHeight in blockHeightRange:
             blockData = proxy.getblock(proxy.getblockhash(blockHeight))
