@@ -13,7 +13,7 @@ class PushBlockTests(unittest.TestCase):
     def setUp(self):
         self.testBlockHeight = 333931
         self.block = txmempool.Block.blockFromHistory(self.testBlockHeight, dbFile=dbFile)
-        self.np = nonparam.NonParam(noBootstrap=True)
+        self.np = nonparam.NonParam(bootstrap=False)
 
     def test_regular(self):
         self.np.pushBlocks([self.block])      
@@ -58,6 +58,7 @@ class PushBlockTests(unittest.TestCase):
         self.assertEquals(len(self.np.blockEstimates),nonparam.numBlocksUsed[1])
 
     def test_concurrentRaises(self):
+        self.np = nonparam.NonParam()
         secondBlock = txmempool.Block.blockFromHistory(self.testBlockHeight+1, dbFile=dbFile)
         t = threading.Thread(target=self.np.pushBlocks, args=([self.block],))
         t.start()

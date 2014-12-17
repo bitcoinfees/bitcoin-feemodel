@@ -14,14 +14,12 @@ minP = config['nonparam']['minP']
 
 class NonParam(object):
 
-    _noBootstrap = None
-
-    def __init__(self, autoLoad=False, blockHeightRange=None, noBootstrap=False):
+    def __init__(self, autoLoad=False, blockHeightRange=None, bootstrap=True):
         self.aboveBelowProb = (None, None)
         self.blockEstimates = {}
         self.zeroInBlock = []
         self.lock = threading.Lock()
-        NonParam._noBootstrap = noBootstrap
+        self.bootstrap = bootstrap
 
         if autoLoad:
             currHeight = proxy.getblockcount()
@@ -86,8 +84,8 @@ class NonParam(object):
         self.lock.release()
 
     def _addBlockEstimate(self,block,minLeadTime):
-        blockStats = BlockStat(block, minLeadTime)
-        feeEstimate = blockStats.estimateFee()
+        blockStats = BlockStat(block, minLeadTime, bootstrap=self.bootstrap)
+        feeEstimate = blockStats.calcFee()
         if feeEstimate:
             self.blockEstimates[block.height] = BlockEstimate(
                 block.size, minLeadTime, feeEstimate)
@@ -119,12 +117,13 @@ class NonParam(object):
 
 
 class BlockStat(object):
-    def __init__(self, block, minLeadTime):
+    def __init__(self, block, minLeadTime, bootstrap=True):
         self.entries = block.entries
         self.height = block.height
         self.size = block.size
         self.time = block.time
         self.minLeadTime = minLeadTime
+        self.bootstrap = bootstrap
 
         # In future perhaps remove high priority
         self.feeStats = [FeeStat(entry) for entry in block.entries.itervalues()
@@ -133,7 +132,7 @@ class BlockStat(object):
             and entry['feeRate']]
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
 
-    def estimateFee(self):
+    def calcFee(self):
         if not self.feeStats:
             # No txs which pass the filtering
             return None
@@ -149,14 +148,14 @@ class BlockStat(object):
         nAbove = len(aboveList)
         nBelow = len(belowList)
 
-        if minFeeRate != float("inf") and not NonParam._noBootstrap:
+        if self.bootstrap and minFeeRate != float("inf"):
             altBiasRef = belowList[0].feeRate if nBelow else 0
 
-            bootstrap = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
+            bootstrapEst = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
                 for i in range(numBootstrap)]
 
-            mean = float(sum(bootstrap)) / len(bootstrap)
-            std = (sum([(b-mean)**2 for b in bootstrap]) / (len(bootstrap)-1))**0.5
+            mean = float(sum(bootstrapEst)) / len(bootstrapEst)
+            std = (sum([(b-mean)**2 for b in bootstrapEst]) / (len(bootstrapEst)-1))**0.5
 
             biasRef = max((minFeeRate, abs(mean-minFeeRate)), 
                 (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
