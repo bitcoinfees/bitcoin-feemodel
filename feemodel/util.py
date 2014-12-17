@@ -1,4 +1,4 @@
-from bitcoin.rpc import Proxy
+from bitcoin.rpc import Proxy, JSONRPCException
 import feemodel.config
 from feemodel.config import logFile, config, historyFile
 from time import ctime
@@ -16,6 +16,38 @@ class BlockingProxy(Proxy):
     def _call(self, *args):
         with self.rlock:
             return super(BlockingProxy, self)._call(*args)
+
+
+class BatchProxy(BlockingProxy):
+    def pollMempool(self):
+        with self.rlock:
+            self._RawProxy__id_count += 1
+            rpc_call_list = [
+                {
+                    'version': '1.1',
+                    'method': 'getblockcount',
+                    'params': [],
+                    'id': self._RawProxy__id_count
+                },
+                {
+                    'version':'1.1',
+                    'method': 'getrawmempool',
+                    'params': [True],
+                    'id': self._RawProxy__id_count
+                }
+            ]
+
+            responses = self._batch(rpc_call_list)
+            for response in responses:
+                if response['error']:
+                    raise JSONRPCException(response['error'])
+                if 'result' not in response:
+                    raise JSONRPCException({
+                        'code': -343, 'message': 'missing JSON-RPC result'
+                    })
+
+            return responses[0]['result'], responses[1]['result']
+
 
 def logWrite(entry):
     s = ctime() + ': ' + entry
@@ -36,7 +68,7 @@ def getHistory(dbFile=historyFile):
             db.close()
 
 
-proxy = BlockingProxy()
+proxy = BatchProxy()
 toStdOut = config['logging']['toStdOut']
 
 

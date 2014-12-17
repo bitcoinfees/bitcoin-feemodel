@@ -22,24 +22,21 @@ class TxMempool(threading.Thread):
         self._stop = threading.Event()        
     
     def update(self):
-        with proxy.rlock:
-            currHeight = proxy.getblockcount()
-            if currHeight > self.bestSeenBlock:
-                mapTxNew = proxy.getrawmempool(verbose=True)
-                threading.Thread(target=self.processBlocks,
-                    args=(range(self.bestSeenBlock+1,currHeight+1),
-                        deepcopy(self.mapTx), deepcopy(mapTxNew)),
-                    name='processBlocksThread').start()
-                self.mapTx = mapTxNew
-                self.bestSeenBlock = currHeight
-            else:
-                self.mapTx = proxy.getrawmempool(verbose=True)
+        currHeight, mapTxNew = proxy.pollMempool()
+        if currHeight > self.bestSeenBlock:
+            threading.Thread(target=self.processBlocks,
+                args=(range(self.bestSeenBlock+1,currHeight+1),
+                    self.mapTx, deepcopy(mapTxNew)),
+                name='processBlocksThread').start()
+            self.mapTx = mapTxNew
+            self.bestSeenBlock = currHeight
+        else:
+            self.mapTx = mapTxNew
 
     def run(self):
         feemodel.config.apprun = True
         logWrite("Starting mempool")
-        self.bestSeenBlock = proxy.getblockcount()
-        self.mapTx = proxy.getrawmempool(verbose=True)
+        self.bestSeenBlock, self.mapTx = proxy.pollMempool()
         while not self._stop.is_set():
             self.update()
             self._stop.wait(timeout=pollPeriod)
