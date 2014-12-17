@@ -8,6 +8,8 @@ config = {
     "pollPeriod": 5,
     "keepHistory": 2016, # Making this smaller will erase part of the history.
     "historyDb": "history.db",
+    "predictionFeeResolution": 10000,
+    "predictionMaxBlocks": 25,
     "nonparam": {
         "numBlocksUsed": (6, 144), # ends-inclusive
         "maxBlockAge": 432,

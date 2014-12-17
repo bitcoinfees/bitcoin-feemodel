@@ -27,11 +27,13 @@ class TxMempool(threading.Thread):
             threading.Thread(target=self.processBlocks,
                 args=(range(self.bestSeenBlock+1,currHeight+1),
                     self.mapTx, deepcopy(mapTxNew)),
-                name='processBlocksThread').start()
+                name='mempool-processBlocks').start()
             self.mapTx = mapTxNew
             self.bestSeenBlock = currHeight
+            return True
         else:
             self.mapTx = mapTxNew
+            return False
 
     def run(self):
         feemodel.config.apprun = True
@@ -42,7 +44,7 @@ class TxMempool(threading.Thread):
             self._stop.wait(timeout=pollPeriod)
         logWrite("Closing up mempool...")
         for thread in threading.enumerate():
-            if thread.name == 'processBlocksThread':
+            if thread.name.startswith('mempool'):
                 thread.join()
         logWrite("Finished everything.")
 
