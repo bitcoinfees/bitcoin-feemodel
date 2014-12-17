@@ -7,7 +7,7 @@ from random import choice
 from math import ceil
 
 numBootstrap = config['nonparam']['numBootstrap']
-numBlocksUsed = config['nonparam']['numBlocksUsed']
+numBlocksUsed = config['nonparam']['numBlocksUsed'] # must be > 1
 maxBlockAge = config['nonparam']['maxBlockAge']
 sigLevel = config['nonparam']['sigLevel']
 minP = config['nonparam']['minP']
@@ -18,6 +18,7 @@ class NonParam(object):
         self.aboveBelowProb = (None, None)
         self.blockEstimates = {}
         self.zeroInBlock = []
+        self.mlt90 = None
         self.lock = threading.Lock()
         self.bootstrap = bootstrap
 
@@ -53,8 +54,6 @@ class NonParam(object):
     def estimateTx(self, entry):
         pass
 
-
-
     def pushBlocks(self, blocks):
         assert not self.lock.locked()
         # This is non-blocking: we just want to assert that this method is not 
@@ -74,11 +73,10 @@ class NonParam(object):
 
             self._addBlockEstimate(block,minLeadTime)
 
-        if self.zeroInBlock and len(self.blockEstimates) >= numBlocksUsed[0]:            
-            minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
-            defaultMLT = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
+        if self.zeroInBlock and self.mlt90:
+            mlt90 = self.mlt90
             for block in self.zeroInBlock:
-                self._addBlockEstimate(block,defaultMLT)
+                self._addBlockEstimate(block,mlt90)
             self.zeroInBlock = []
 
         self.lock.release()
@@ -109,6 +107,12 @@ class NonParam(object):
         aboveRatio = aboveknTotal[0]/float(aboveknTotal[1]) if aboveknTotal[1] else None
         belowRatio = belowknTotal[0]/float(belowknTotal[1]) if belowknTotal[1] else None
         self.aboveBelowProb = (aboveRatio,belowRatio)
+
+        if len(self.blockEstimates) >= numBlocksUsed[0]:
+            minLeadTimes = [b.minLeadTime for b in self.blockEstimates.values()]
+            self.mlt90 = minLeadTimes[9*len(minLeadTimes)//10 - 1] # 90th percentile
+        else:
+            self.mlt90 = None
 
     def __eq__(self,other):
         if not isinstance(other,NonParam):
