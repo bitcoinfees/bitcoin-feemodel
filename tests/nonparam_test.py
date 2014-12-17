@@ -2,9 +2,11 @@ import unittest
 import os
 import feemodel.txmempool as txmempool
 import feemodel.nonparam as nonparam
+from feemodel.model import ModelError
 from feemodel.util import logWrite
 from testconfig import dbFile, tmpdbFile
 import threading
+from random import choice
 
 nonparam.numBlocksUsed = (6,15)
 
@@ -64,6 +66,36 @@ class PushBlockTests(unittest.TestCase):
         t.start()
         self.assertRaises(AssertionError, self.np.pushBlocks, [secondBlock])
         t.join()
+
+
+class EstimateTests(unittest.TestCase):
+    def setUp(self):
+        self.blocks = [txmempool.Block.blockFromHistory(height, dbFile=dbFile)
+            for height in range(333931,333953)]
+        self.np = nonparam.NonParam(bootstrap=False)
+        self.np.pushBlocks(self.blocks)
+
+    def test_estimateFee(self):
+        self.assertRaises(ValueError, self.np.estimateFee, 0)
+        self.assertRaises(ValueError, self.np.estimateFee, 1e6)
+        for nBlocks in range(1, 7):
+            print(nBlocks, self.np.estimateFee(nBlocks))
+
+    def test_estimateTx(self):
+        for i in range(100):
+            entry = None
+            while not entry:
+                try:
+                    block = choice(self.blocks)
+                    entry = choice(block.entries.values())
+                except:
+                    pass
+            try:
+                nBlocks = self.np.estimateTx(entry)
+                feeEstimate = self.np.estimateFee(nBlocks)
+                print(entry['feeRate'], feeEstimate, nBlocks)
+            except (ModelError, ValueError) as e:
+                print(e)
 
 
 if __name__ == '__main__':

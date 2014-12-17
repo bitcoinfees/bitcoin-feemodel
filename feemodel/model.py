@@ -31,7 +31,7 @@ class ModelInterface(object):
             return [fn(*args, **kwargs) for fn in self.fns]
 
 
-class InsufficientDataError(Exception):
+class ModelError(Exception):
     pass
 
 

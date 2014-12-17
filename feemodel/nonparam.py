@@ -1,10 +1,10 @@
 import threading
-from feemodel.model import InsufficientDataError
+from feemodel.model import ModelError
 from feemodel.config import statsFile, historyFile, config
 from feemodel.util import logWrite, proxy
 from feemodel.txmempool import Block
 from random import choice
-from math import ceil
+from math import ceil, log
 
 numBootstrap = config['nonparam']['numBootstrap']
 numBlocksUsed = config['nonparam']['numBlocksUsed'] # must be > 1
@@ -35,8 +35,12 @@ class NonParam(object):
                 self.pushBlocks(block)
 
     def estimateFee(self, nBlocks):
-        if nBlocks <= 0:
-            raise ValueError("nBlocks must be greater than 0.")
+        if nBlocks < 1:
+            raise ValueError("nBlocks must be >= 1.")
+        nBlocksMax = log(1-sigLevel)/log(1-minP)
+
+        if nBlocks >= nBlocksMax:
+            raise ValueError("nBlocks must be less than " + str(nBlocksMax))
 
         if len(self.blockEstimates) >= numBlocksUsed[0]:
             p = 1 - (1-sigLevel)**(1./nBlocks)
@@ -48,11 +52,28 @@ class NonParam(object):
             idx = max(1, idx)
             return minFeeRates[idx-1]
         else:
-            raise InsufficientDataError("Need at least " + str(numBlocksUsed[0])
+            raise ModelError("Need at least " + str(numBlocksUsed[0])
                 + " blocks of data.")
 
     def estimateTx(self, entry):
-        pass
+        if len(self.blockEstimates) < numBlocksUsed[0] or not self.mlt90:
+            raise ModelError("Need at least " + str(numBlocksUsed[0])
+                + " blocks of data.")
+        if entry['leadTime'] < self.mlt90:
+            raise ModelError("Tx lead time must be greater than " + str(self.mlt90))
+        if not entry['feeRate']:
+            raise ModelError("Tx must not have zero fee.")
+
+        p = self.feeECDF(entry['feeRate'])
+        pmod = p*self.aboveBelowProb[0] + (1-p)*(1-self.aboveBelowProb[1])
+
+        nBlocks = max(1, log(1-sigLevel)/log(1-pmod))
+        return nBlocks
+
+    def feeECDF(self, feeRate):
+        below = len([1 for b in self.blockEstimates.itervalues() if b.feeEstimate.minFeeRate <= feeRate])
+        total = len(self.blockEstimates)
+        return float(below)/total
 
     def pushBlocks(self, blocks):
         assert not self.lock.locked()
