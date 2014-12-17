@@ -2,7 +2,7 @@ import os, sys
 from setuptools import setup, find_packages
 from appdirs import user_data_dir
 
-appname = 'bitcoin-feemodel-test'
+appname = 'bitcoin-feemodel'
 appversion = '0.1.0' 
 datadir = user_data_dir(appname)
 with open('feemodel/installinfo.py','w') as f:

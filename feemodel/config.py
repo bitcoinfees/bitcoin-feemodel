@@ -14,6 +14,7 @@ config = {
         "sigLevel": 0.9,
         "statsDb": "stats.db",
         "numBootstrap": 1000,
+        "minP": 0.3
     },
     "logging": {
         "logFile": 'debug.log',

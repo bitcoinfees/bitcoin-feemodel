@@ -8,18 +8,19 @@ import threading
 
 nonparam.numBlocksUsed = (6,15)
 
+# Might need to change these - given that blocktime has been changed to int
 class PushBlockTests(unittest.TestCase):
     def setUp(self):
         self.testBlockHeight = 333931
         self.block = txmempool.Block.blockFromHistory(self.testBlockHeight, dbFile=dbFile)
-        self.np = nonparam.NonParam()
+        self.np = nonparam.NonParam(noBootstrap=True)
 
     def test_regular(self):
         self.np.pushBlocks([self.block])      
         feeEstimate = self.np.blockEstimates[self.testBlockHeight].feeEstimate
         self.assertEquals(feeEstimate.minFeeRate, 23310)
-        self.assertEquals(feeEstimate.abovekn, (489,492))
-        self.assertEquals(feeEstimate.belowkn, (281,284))
+        self.assertEquals(feeEstimate.abovekn, (490,493))
+        self.assertEquals(feeEstimate.belowkn, (282,285))
 
     def test_empty(self):
         self.block.entries = {}
@@ -62,7 +63,6 @@ class PushBlockTests(unittest.TestCase):
         t.start()
         self.assertRaises(AssertionError, self.np.pushBlocks, [secondBlock])
         t.join()
-        
 
 
 if __name__ == '__main__':

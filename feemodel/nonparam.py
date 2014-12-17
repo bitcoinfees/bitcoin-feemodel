@@ -2,36 +2,60 @@ import threading
 from feemodel.model import InsufficientDataError
 from feemodel.config import statsFile, historyFile, config
 from feemodel.util import logWrite, proxy
+from feemodel.txmempool import Block
 from random import choice
 from math import ceil
 
-leadTimeOffset = config['pollPeriod']
 numBootstrap = config['nonparam']['numBootstrap']
 numBlocksUsed = config['nonparam']['numBlocksUsed']
+maxBlockAge = config['nonparam']['maxBlockAge']
 sigLevel = config['nonparam']['sigLevel']
+minP = config['nonparam']['minP']
 
 class NonParam(object):
 
-    def __init__(self, autoLoad=False, blockHeightRange=None):
+    _noBootstrap = None
+
+    def __init__(self, autoLoad=False, blockHeightRange=None, noBootstrap=False):
+        self.aboveBelowProb = (None, None)
         self.blockEstimates = {}
         self.zeroInBlock = []
         self.lock = threading.Lock()
+        NonParam._noBootstrap = noBootstrap
 
         if autoLoad:
-            pass
-
+            currHeight = proxy.getblockcount()
+            for height in range(currHeight, currHeight-maxBlockAge, -1):
+                block = [Block.blockFromHistory(height)]
+                self.pushBlocks(block)
+                if len(self.blockEstimates) >= numBlocksUsed[1]:
+                    break
+        elif blockHeightRange:
+            for height in range(*blockHeightRange):
+                block = [Block.blockFromHistory(height)]
+                self.pushBlocks(block)
 
     def estimateFee(self, nBlocks):
+        if nBlocks <= 0:
+            raise ValueError("nBlocks must be greater than 0.")
+
         if len(self.blockEstimates) >= numBlocksUsed[0]:
             p = 1 - (1-sigLevel)**(1./nBlocks)
+            p = min(max(minP, p), 1)
             minFeeRates = [blockEstimate.feeEstimate.minFeeRate 
                 for blockEstimate in self.blockEstimates.itervalues()]
             minFeeRates.sort()
             idx = int(ceil(p*len(minFeeRates)))
+            idx = max(1, idx)
             return minFeeRates[idx-1]
         else:
             raise InsufficientDataError("Need at least " + str(numBlocksUsed[0])
-                + "blocks of data.")
+                + " blocks of data.")
+
+    def estimateTx(self, entry):
+        pass
+
+
 
     def pushBlocks(self, blocks):
         assert not self.lock.locked()
@@ -77,6 +101,17 @@ class NonParam(object):
             for key in keysToDelete:
                 del self.blockEstimates[key]
 
+        # recompute other stats
+        sumTuplesFn = lambda x,y: (x[0]+y[0],x[1]+y[1])
+        aboveknTotal = reduce(sumTuplesFn, [blockEstimate.feeEstimate.abovekn
+            for blockEstimate in self.blockEstimates.itervalues()], (0,0))
+        belowknTotal = reduce(sumTuplesFn, [blockEstimate.feeEstimate.belowkn
+            for blockEstimate in self.blockEstimates.itervalues()], (0,0))
+
+        aboveRatio = aboveknTotal[0]/float(aboveknTotal[1]) if aboveknTotal[1] else None
+        belowRatio = belowknTotal[0]/float(belowknTotal[1]) if belowknTotal[1] else None
+        self.aboveBelowProb = (aboveRatio,belowRatio)
+
     def __eq__(self,other):
         if not isinstance(other,NonParam):
             return False
@@ -90,12 +125,11 @@ class BlockStat(object):
         self.size = block.size
         self.time = block.time
         self.minLeadTime = minLeadTime
-        leadTimeThresh = self.minLeadTime + leadTimeOffset
 
         # In future perhaps remove high priority
         self.feeStats = [FeeStat(entry) for entry in block.entries.itervalues()
             if self._depsCheck(entry)
-            and entry['leadTime'] >= leadTimeThresh
+            and entry['leadTime'] >= self.minLeadTime
             and entry['feeRate']]
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
 
@@ -115,7 +149,7 @@ class BlockStat(object):
         nAbove = len(aboveList)
         nBelow = len(belowList)
 
-        if minFeeRate != float("inf"):
+        if minFeeRate != float("inf") and not NonParam._noBootstrap:
             altBiasRef = belowList[0].feeRate if nBelow else 0
 
             bootstrap = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
@@ -175,6 +209,7 @@ class FeeEstimate(object):
         self.abovekn = abovekn
         self.belowkn = belowkn
         self.threshFeeStats = threshFeeStats
+        self.rmse = (bias**2 + std**2)**0.5
 
     def __repr__(self):
         return "FE{mfr: %.1f, bias: %.1f, std: %.1f, above: %s, below: %s}" % (

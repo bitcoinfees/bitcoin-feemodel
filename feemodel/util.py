@@ -11,10 +11,10 @@ class BlockingProxy(Proxy):
     '''
     def __init__(self):
         super(BlockingProxy, self).__init__()
-        self.lock = threading.Lock()
+        self.rlock = threading.RLock()
 
     def _call(self, *args):
-        with self.lock:
+        with self.rlock:
             return super(BlockingProxy, self)._call(*args)
 
 def logWrite(entry):
