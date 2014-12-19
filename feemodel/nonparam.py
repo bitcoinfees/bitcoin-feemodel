@@ -36,7 +36,7 @@ class NonParam(object):
 
     def estimateFee(self, nBlocks):
         if nBlocks < 1:
-            raise fb ("nBlocks must be >= 1.")
+            raise ValueError("nBlocks must be >= 1.")
         nBlocksMax = log(1-sigLevel)/log(1-minP)
 
         if nBlocks >= nBlocksMax:
