@@ -36,7 +36,7 @@ class NonParam(object):
 
     def estimateFee(self, nBlocks):
         if nBlocks < 1:
-            raise ValueError("nBlocks must be >= 1.")
+            raise fb ("nBlocks must be >= 1.")
         nBlocksMax = log(1-sigLevel)/log(1-minP)
 
         if nBlocks >= nBlocksMax:
@@ -179,6 +179,9 @@ class BlockStat(object):
             bootstrapEst = [BlockStat.calcMinFeeRateSingle(self.bootstrapSample()) 
                 for i in range(numBootstrap)]
 
+            bootstrapEst.sort()
+            mfr95 = bootstrapEst[95*len(bootstrapEst) // 100 - 1]
+
             mean = float(sum(bootstrapEst)) / len(bootstrapEst)
             std = (sum([(b-mean)**2 for b in bootstrapEst]) / (len(bootstrapEst)-1))**0.5
 
@@ -188,10 +191,12 @@ class BlockStat(object):
         else:
             bias = float("inf")
             std = float("inf")
+            mean = float("inf")
+            mfr95 = float("inf")
 
         threshFeeStats = aboveList[-10:] + belowList[:10]
 
-        return FeeEstimate(minFeeRate, bias, std, (kAbove,nAbove), (kBelow,nBelow), threshFeeStats)
+        return FeeEstimate(minFeeRate, bias, mean, std, (kAbove,nAbove), (kBelow,nBelow), threshFeeStats, mfr95)
 
     def bootstrapSample(self):
         sample = [choice(self.feeStats) for i in range(len(self.feeStats))]
@@ -226,13 +231,15 @@ class BlockStat(object):
 
 
 class FeeEstimate(object):
-    def __init__(self, minFeeRate, bias, std, abovekn, belowkn, threshFeeStats):
+    def __init__(self, minFeeRate, bias, mean, std, abovekn, belowkn, threshFeeStats, mfr95):
         self.minFeeRate = minFeeRate
         self.bias = bias
+        self.mean = mean
         self.std = std
         self.abovekn = abovekn
         self.belowkn = belowkn
         self.threshFeeStats = threshFeeStats
+        self.mfr95 = mfr95
         self.rmse = (bias**2 + std**2)**0.5
 
     def __repr__(self):
