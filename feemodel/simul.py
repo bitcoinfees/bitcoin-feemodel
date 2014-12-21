@@ -1,14 +1,16 @@
 from feemodel.txmempool import Block
 from feemodel.nonparam import BlockStat
 from feemodel.util import proxy
+from feemodel.model import ModelError
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
 from math import log, exp, ceil
 
-poolHistoryUsed = 432
+poolHistoryUsed = 36
 txRateHistoryUsed = 12
 feeResolution = 1000
 useBootstrap = False
+mfrPoolPercentile = 95
 
 class MiningPool(object):
     def __init__(self, name, proportion, avgTxSize, policy=None, blockHeights=None):
@@ -23,7 +25,8 @@ class MiningPool(object):
         else:
             self.maxBlockSize = None
             self.minFeeRate = None
-        
+        self.feeEstimate = None
+
         if blockHeights:
             self.estimateParams(blockHeights)
 
@@ -83,20 +86,36 @@ class MiningPool(object):
 
 
 class Simul(object):
-    def __init__(self, currHeight=None):
+    def __init__(self, currHeight=None, adaptive=0):
         self.currHeight = currHeight if currHeight else proxy.getblockcount()
         self.pools = None
         self.numPoolsEff = None
         self.txSamples = None
         self.txRate = None
         self.avgTxSize = None
-        self.estimateTxRate()
-        self.estimatePools()
-        self.pools.sort(key=lambda x: x.proportion, reverse=True)
+        self.serviceRates = None
+        self.arrivalRates = None
+        self.adaptive = adaptive
+        if not adaptive:
+            self.estimateTxRate()
+            self.estimatePools()
+            self.calcIORates()
+            self.pools.sort(key=lambda x: x.proportion, reverse=True)
+        self.qMetrics = [FeeClass(i*feeResolution, adaptive=adaptive)
+            for i in range(len(self.serviceRates))]
+
+    def pushBlock(self, blockInterval, minFeeRate, currHeight=None, blockHeight=None):
+        for feeClass in self.qMetrics:
+            feeClass.pushBlock(blockInterval,minFeeRate,currHeight,blockHeight)
 
     def calcIORates(self):
-        self.maxMFR = int(max([pool.minFeeRate for pool in self.pools
-            if pool.minFeeRate != float("inf")]) // feeResolution + 1)
+        # self.maxMFR = int(max([pool.minFeeRate for pool in self.pools
+        #     if pool.minFeeRate != float("inf")]) // feeResolution + 1)
+        poolMFR = [pool.minFeeRate for pool in self.pools if pool.minFeeRate != float("inf")]
+        poolMFR.sort()
+        mfrIdx = int(mfrPoolPercentile*len(poolMFR)//100)
+        self.maxMFR = poolMFR[mfrIdx] // feeResolution + 1
+
         self.serviceRates = [sum([pool.proportion*pool.maxBlockSize/10/60 for pool in self.pools
             if pool.minFeeRate <= n*feeResolution]) for n in range(self.maxMFR+1)] # per hour, in bytes
         self.arrivalRates = [sum([tx[0] for tx in self.txSamples
@@ -169,10 +188,6 @@ class Simul(object):
 
         self.txRate = len(self.txSamples) / float(totalTime)
         self.avgTxSize = sum([s[0] for s in self.txSamples])/float(len(self.txSamples))
-
-
-
-
 
 
 

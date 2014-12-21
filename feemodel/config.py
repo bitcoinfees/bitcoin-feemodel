@@ -18,6 +18,11 @@ config = {
         "numBootstrap": 1000,
         "minP": 0.3
     },
+    "queue": {
+        "saveBlocks": "saveBlocks.pickle",
+        "feeResolution": 1000,
+        "adaptiveWindow": 2016
+    },
     "logging": {
         "logFile": 'debug.log',
         "toStdOut": True
@@ -25,6 +30,7 @@ config = {
 }
 
 statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
+saveBlocksFile = os.path.join(datadir, config['queue']['saveBlocks'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 

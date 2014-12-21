@@ -142,7 +142,7 @@ class NonParam(object):
 
 
 class BlockStat(object):
-    def __init__(self, block, minLeadTime, bootstrap=True):
+    def __init__(self, block, minLeadTime, bootstrap=True, allowZeroFee=False):
         self.entries = block.entries
         self.height = block.height
         self.size = block.size
@@ -154,7 +154,7 @@ class BlockStat(object):
         self.feeStats = [FeeStat(entry) for entry in block.entries.itervalues()
             if self._depsCheck(entry)
             and entry['leadTime'] >= self.minLeadTime
-            and entry['feeRate']]
+            and (entry['feeRate'] if not allowZeroFee else True)]
         self.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
 
     def calcFee(self):

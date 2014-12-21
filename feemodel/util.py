@@ -4,6 +4,7 @@ from feemodel.config import logFile, config, historyFile
 from time import ctime
 import sqlite3
 import threading
+from pprint import pprint
 
 class BlockingProxy(Proxy):
     '''
