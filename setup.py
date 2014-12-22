@@ -21,14 +21,15 @@ setup(
     name=appname,
     version=appversion,
     packages=find_packages(),
-    scripts=['feemodel-run'],
+    scripts=['feemodel-cli'],
     description='Bitcoin transaction fee modeling and estimation package',
     author='Ian Chen',
     author_email='bitcoinfees@gmail.com',
     license='MIT',
     url='https://bitcoinfees.github.com/',
     install_requires=[
-        'python-bitcoinlib'
+        'python-bitcoinlib',
+        'Flask'
     ]
 )
 

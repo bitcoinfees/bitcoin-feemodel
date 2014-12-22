@@ -9,7 +9,7 @@ class Model(TxMempool):
         self.pushBlocks = ModelInterface(self.modelLock)
         self.estimateFee = ModelInterface(self.modelLock)
         self.estimateTx = ModelInterface(self.modelLock)
-        self.miscStats = ModelInterface(self.modelLock)
+        self.getStats = ModelInterface(self.modelLock)
 
     def processBlocks(self, *args, **kwargs):
         blocks = super(Model, self).processBlocks(*args,**kwargs)
