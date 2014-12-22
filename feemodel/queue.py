@@ -44,9 +44,9 @@ class QEOnline(QEstimator):
             try:
                 self.loadBlockData(loadFile)
             except IOError:
-                logWrite("Couldn't load saved blocks.")
+                logWrite("QE: Couldn't load saved blocks.")
             else:
-                logWrite("Loading blocks; found best height at " + 
+                logWrite("QE: Loading blocks; found best height at " + 
                     str(self.bestHeight if self.bestHeight else -1))
 
     def pushBlocks(self, blocks, isInit=False):
@@ -73,11 +73,11 @@ class QEOnline(QEstimator):
             try:
                 self.saveBlockData()
             except IOError:
-                logWrite("Error saving blocks.")
+                logWrite("QE: Error saving blocks.")
 
     def adaptiveCalc(self):
         if not self.bestHeight:
-            raise ValueError("Empty blockData.")
+            raise ValueError("QE: Empty blockData.")
 
         heightThresh = self.bestHeight - self.adaptive
         for height in self.blockData.keys():
@@ -98,7 +98,7 @@ class QEOnline(QEstimator):
 
     def saveBlockData(self, dbFile=saveQueueFile):
         if not self.blockData:
-            raise ValueError("There's nothing to save.")
+            raise ValueError("QE: There's nothing to save.")
 
         with open(dbFile, 'wb') as f:
             pickle.dump(self.blockData, f)
