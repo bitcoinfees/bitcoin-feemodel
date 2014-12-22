@@ -163,6 +163,25 @@ class Block(object):
         ])
 
 
+class LoadHistory(object):
+    def __init__(self, dbFile=historyFile):
+        self.fns = []
+        self.dbFile = dbFile
+
+    def registerFn(self, fn, blockHeightRange):
+        # blockHeightRange tuple (start,end) includes start but not end, to adhere to range() convention
+        self.fns.append((fn, blockHeightRange))
+
+    def loadBlocks(self):
+        startHeight = min([f[1][0] for f in self.fns])
+        endHeight = max([f[1][1] for f in self.fns])
+
+        for height in range(startHeight, endHeight):
+            block = Block.blockFromHistory(height, self.dbFile)
+            for fn, blockHeightRange in self.fns:
+                if height >= blockHeightRange[0] and height < blockHeightRange[1]:
+                    fn([block])
+
 def decimalDefault(obj):
     if isinstance(obj, decimal.Decimal):
         return str(obj)

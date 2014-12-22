@@ -19,9 +19,12 @@ config = {
         "minP": 0.3
     },
     "queue": {
-        "saveBlocks": "saveBlocks.pickle",
+        "saveQueue": "saveQueue.pickle",
         "feeResolution": 1000,
         "adaptiveWindow": 2016
+    },
+    "measurer": {
+        "saveWait": "saveWait.pickle"
     },
     "logging": {
         "logFile": 'debug.log',
@@ -30,7 +33,8 @@ config = {
 }
 
 statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
-saveBlocksFile = os.path.join(datadir, config['queue']['saveBlocks'])
+saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
+saveWaitFile = os.path.join(datadir, config['measurer']['saveWait'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
