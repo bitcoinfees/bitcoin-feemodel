@@ -50,7 +50,7 @@ class WaitMeasure(object):
             logWrite("WM: Added block %d with %d transactions" %
                         (block.height, numTxs))
         if not isInit:
-            self.calcWaitTimes()
+            self.adaptiveCalc()
             try:
                 self.saveBlockData()
             except IOError:
