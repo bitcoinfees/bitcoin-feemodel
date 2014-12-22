@@ -8,27 +8,8 @@ from pprint import pprint
 from time import sleep
 from flask import Flask
 import json
+import sys
 
-# feemodel.config.apprun = True
-
-# model = DummyModel()
-# mempool = TxMempool(model,writeHistory=True)
-# mempoolThread = TxMempoolThread(mempool)
-# mempoolThread.start()
-
-# try:
-#     while True:
-#         # print('At block ' + str(mempool.bestSeenBlock))
-#         print('.'),
-#         sleep(60)
-# except KeyboardInterrupt:
-#     print("keyboard.")
-# finally:
-#     mempoolThread.stop()
-#     mempoolThread.join()
-#     print("Finished everything.")
-
-# ===========
 model = Model()
 
 app = Flask(__name__)
@@ -63,8 +44,13 @@ except IOError:
 
 model.start()
 
+if len(sys.argv) > 1:
+    port = int(sys.argv[1])
+else:
+    port = 5001
+
 try:
-    app.run(port=5001)
+    app.run(port=port)
 finally:
     model.stop()
     model.join()

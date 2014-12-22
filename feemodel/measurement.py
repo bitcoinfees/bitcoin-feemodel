@@ -21,9 +21,9 @@ class WaitMeasure(object):
             try:
                 self.loadBlockData()
             except IOError:
-                logWrite("Couldn't load saved measurements; loading from disk.")
+                logWrite("WM: Couldn't load saved measurements; loading from disk.")
             else:
-                logWrite("Saved measurements loaded: %s" % (repr(self),))
+                logWrite("WM: Saved measurements loaded: %s" % (repr(self),))
 
     def getStats(self):
         if self.waitTimes:
@@ -54,11 +54,11 @@ class WaitMeasure(object):
             try:
                 self.saveBlockData()
             except IOError:
-                logWrite("Couldn't save block data.")
+                logWrite("WM: Couldn't save block data.")
 
     def adaptiveCalc(self):
         if not self.bestHeight:
-            raise ValueError("Empty block data.")
+            raise ValueError("WM: Empty block data.")
 
         heightThresh = self.bestHeight - self.adaptive
         for height in self.blockData.keys():
