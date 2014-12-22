@@ -23,7 +23,7 @@ class QEstimator(object):
             feeClass.nextBlock(blockHeight, blockInterval, minFeeRate)
 
     def getStats(self):
-        return [(fc.feeRate, fc.avgWait, fc.strandedProportion, fc.avgStrandedBlocks)
+        return [repr(self)] + [(fc.feeRate, fc.avgWait, fc.strandedProportion, fc.avgStrandedBlocks)
             for fc in self.qMetrics]
 
     def __eq__(self, other):
