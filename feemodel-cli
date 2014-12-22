@@ -2,8 +2,14 @@
 from pprint import pprint
 import json
 import urllib2
+import sys
 
-url = 'http://127.0.0.1:5000/txstats'
+if len(sys.argv) > 1:
+    port = sys.argv[1]
+else:
+    port = '5001'
+
+url = 'http://127.0.0.1:' + port + "/txstats"
 s = json.load(urllib2.urlopen(url))
 
 pprint(s)

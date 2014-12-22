@@ -39,7 +39,7 @@ def txstats():
 lh = LoadHistory()
 nonparam = NonParam()
 qe = QEOnline(60000,2016)
-wm = WaitMeasure(50000,2016)
+wm = WaitMeasure(60000,2016)
 
 currHeight = proxy.getblockcount()
 lh.registerFn(lambda x: qe.pushBlocks(x,True), (max(currHeight-2016,qe.bestHeight), currHeight+10))
@@ -53,18 +53,18 @@ model.getStats.register(qe.getStats)
 model.getStats.register(wm.getStats)
 
 lh.loadBlocks()
-# qe.adaptiveCalc()
-# qe.saveBlockData()
-# wm.adaptiveCalc()
-# try:
-#     wm.saveBlockData()
-# except IOError:
-#     print("io error")
+qe.adaptiveCalc()
+qe.saveBlockData()
+wm.adaptiveCalc()
+try:
+    wm.saveBlockData()
+except IOError:
+    print("io error")
 
 model.start()
 
 try:
-    app.run()
+    app.run(port=5001)
 finally:
     model.stop()
     model.join()
