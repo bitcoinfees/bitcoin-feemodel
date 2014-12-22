@@ -21,7 +21,7 @@ setup(
     name=appname,
     version=appversion,
     packages=find_packages(),
-    scripts=['feemodel-cli'],
+    scripts=['feemodel-cli', 'feemodel-txmempool'],
     description='Bitcoin transaction fee modeling and estimation package',
     author='Ian Chen',
     author_email='bitcoinfees@gmail.com',
