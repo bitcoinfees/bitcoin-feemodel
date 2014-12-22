@@ -64,7 +64,7 @@ class QEOnline(QEstimator):
                     minFeeRate = blockStat.calcFee().minFeeRate
                     self.blockData[block.height] = (blockInterval, minFeeRate)
                     self.bestHeight = block.height
-                    logWrite("Added block %d with interval %d and mfr %.0f" %
+                    logWrite("QE: Added block %d with interval %d and mfr %.0f" %
                         (block.height, blockInterval, minFeeRate))
                 self.prevBlock = block
 

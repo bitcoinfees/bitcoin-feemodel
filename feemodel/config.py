@@ -23,8 +23,9 @@ config = {
         "feeResolution": 1000,
         "adaptiveWindow": 2016
     },
-    "measurer": {
-        "saveWait": "saveWait.pickle"
+    "measurement": {
+        "saveWait": "saveWait.pickle",
+        "priorityThresh": 57.6e6
     },
     "logging": {
         "logFile": 'debug.log',
@@ -34,7 +35,7 @@ config = {
 
 statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
 saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
-saveWaitFile = os.path.join(datadir, config['measurer']['saveWait'])
+saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
