@@ -27,6 +27,10 @@ config = {
         "saveWait": "saveWait.pickle",
         "priorityThresh": 57.6e6
     },
+    "simul": {
+        "savePoolBlocks": "savePoolBlocks.pickle",
+        "savePools": "savePools.db"
+    },
     "logging": {
         "logFile": 'debug.log',
         "toStdOut": True
@@ -36,6 +40,8 @@ config = {
 statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
 saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
 saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
+savePoolBlocksFile = os.path.join(datadir, config['simul']['savePoolBlocks'])
+savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 

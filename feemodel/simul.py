@@ -1,10 +1,20 @@
 from feemodel.txmempool import Block
 from feemodel.nonparam import BlockStat
-from feemodel.util import proxy
+from feemodel.util import proxy, logWrite
 from feemodel.model import ModelError
+from feemodel.config import savePoolBlocksFile, savePoolsFile
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
 from math import log, exp, ceil
+from operator import add
+import json
+import sqlite3
+import os
+
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 poolHistoryUsed = 36
 txRateHistoryUsed = 12
@@ -12,71 +22,72 @@ feeResolution = 1000
 useBootstrap = False
 mfrPoolPercentile = 95
 
+
 class MiningPool(object):
-    def __init__(self, name, proportion, avgTxSize, policy=None, blockHeights=None):
-        self.name = name
-        self.proportion = proportion
-        self.avgTxSize = avgTxSize
-        self.sizeAdjusted = False
-        
-        if policy:
-            self.maxBlockSize = policy['maxBlockSize']
-            self.minFeeRate = policy['minFeeRate']
+    def __init__(self, name=None, proportion=None, initData=None):
+        if initData:
+            for key in initData:
+                setattr(self, key, initData[key])
         else:
+            self.name = name
+            self.proportion = proportion
             self.maxBlockSize = None
             self.minFeeRate = None
-        self.feeEstimate = None
-
-        if blockHeights:
-            self.estimateParams(blockHeights)
+            self.abovekn = None
+            self.belowkn = None
+            self.blockHeights = []
+            self.feeLimitedBlocks = []
+            self.sizeLimitedBlocks = []
 
     def estimateParams(self, blockHeights):
         self.blockHeights = blockHeights
-        self.maxBlockSize = None
-        self.minFeeRate = None
-        self.feeEstimate = None
-
         blockStatTotal = None
         deferredBlocks = []
 
         for height in blockHeights:
             block = Block.blockFromHistory(height)
             if block:
+                blockTxs = [tx for tx in block.entries.itervalues() if tx['inBlock']]
+                if blockTxs:
+                    block.avgTxSize = sum([tx['size'] for tx in blockTxs]) / float(len(blockTxs))
+                else:
+                    block.avgTxSize = 0
                 if block.size > self.maxBlockSize:
                     self.maxBlockSize = block.size
                     deferredBlocks.append(block)
                     continue
-                if self.maxBlockSize - block.size > self.avgTxSize:
-                    blockStat = self._addBlock(block)
-                    if blockStatTotal:
-                        blockStatTotal.feeStats += blockStat.feeStats
-                    else:                    
-                        blockStatTotal = blockStat
+                blockStatTotal = self.addBlock(block, blockStatTotal)
 
         for block in deferredBlocks:
-            if self.maxBlockSize - block.size > self.avgTxSize:
-                blockStat = self._addBlock(block)
-                if blockStatTotal:
-                    blockStatTotal.feeStats += blockStat.feeStats
-                else:                    
-                    blockStatTotal = blockStat
+            blockStatTotal = self.addBlock(block, blockStatTotal)
 
         if not blockStatTotal:
-            blockStatTotal = self._addBlock(deferredBlocks[0])
+            blockStatTotal = self._getBlockStat(deferredBlocks[0])
 
         blockStatTotal.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
-        self.feeEstimate = blockStatTotal.calcFee()
-        self.minFeeRate = self.feeEstimate.mfr95 if useBootstrap else self.feeEstimate.minFeeRate
-
+        feeEstimate = blockStatTotal.calcFee()
+        self.minFeeRate = feeEstimate.mfr95 if useBootstrap else feeEstimate.minFeeRate
+        self.abovekn = list(feeEstimate.abovekn)
+        self.belowkn = list(feeEstimate.belowkn)
+        logWrite("Done estimating %s " % repr(self))
 
         # If a pool has fewer than X blocks, use the average max block size of all the pools
 
-    def __repr__(self):
-        return "MP{Name: %s, Prop: %.2f, Size: %d, MFR: %.0f, Adj: %s, %s}" % (
-            self.name, self.proportion, self.maxBlockSize, self.minFeeRate, self.sizeAdjusted, self.feeEstimate)
+    def addBlock(self, block, blockStatTotal):
+        if self.maxBlockSize - block.size > block.avgTxSize:
+            self.feeLimitedBlocks.append([block.height, block.size])
+            blockStat = self._getBlockStat(block)
+            if blockStatTotal:
+                blockStatTotal.feeStats += blockStat.feeStats
+            else:
+                blockStatTotal = blockStat
+        else:
+            self.sizeLimitedBlocks.append([block.height, block.size])
+
+        return blockStatTotal
 
     @staticmethod
-    def _addBlock(block):
+    def _getBlockStat(block):
         try:
             minLeadTime = min([entry['leadTime'] for entry in 
                 block.entries.itervalues() if entry['inBlock']])
@@ -84,6 +95,113 @@ class MiningPool(object):
             minLeadTime = 0
         return BlockStat(block,minLeadTime,bootstrap=useBootstrap)
 
+
+    @classmethod
+    def fromJSON(cls, s):
+        attribs = json.loads(s)
+        return cls(initData=attribs)
+
+    def toJSON(self):
+        return json.dumps(self.__dict__)
+
+    def __repr__(self):
+        return "MP{Name: %s, Prop: %.2f, Size: %d, MFR: %.0f, abovekn: %s, belowkn: %s}" % (
+            self.name, self.proportion, self.maxBlockSize, self.minFeeRate, self.abovekn, self.belowkn)
+
+
+class PoolEstimator(object):
+    def __init__(self):
+        self.pools = {}
+        self.numPoolsEff = None
+        self.poolBlocks = defaultdict(list)
+
+    def getPoolBlocks(self, blockHeightRange):
+        # blockHeightRange is (start, end), inclusive of start but not end - like range()
+        try:
+            self.loadPoolBlocks()
+        except IOError:
+            logWrite('PoolEst: Error loading poolBlocks')
+            loadedHeights = []
+        else:
+            for pool,heights in self.poolBlocks.items():
+                inRangeHeights = filter(lambda x: x >= blockHeightRange[0], heights)
+                if inRangeHeights:
+                    self.poolBlocks[pool] = inRangeHeights
+                else:
+                    del self.poolBlocks[pool]
+
+            loadedHeights = reduce(add, self.poolBlocks.itervalues(), [])
+            logWrite("PoolEst: Loaded %d heights" % len(loadedHeights))
+
+        for height in range(*blockHeightRange):
+            if height not in loadedHeights:
+                try:
+                    block = proxy.getblock(proxy.getblockhash(height))
+                except IndexError:
+                    logWrite("PoolEst: Invalid block height!")
+                    continue
+                coinbaseTx = block.vtx[0]
+                assert coinbaseTx.is_coinbase()
+                coinbaseAddr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
+                self.poolBlocks[coinbaseAddr] += [height]
+                logWrite("PoolEst: Loaded height %d into poolBlocks" % (height,))
+
+        self.calcNumPoolsEff()
+        logWrite("PoolEst: Finished loading poolBlocks, with %.1f numPoolsEff" % self.numPoolsEff)
+        self.savePoolBlocks()
+
+    def estimatePools(self):
+        if not self.poolBlocks:
+            raise ValueError("PoolEst: empty poolBlocks.")
+        for pool, heights in self.poolBlocks.items():
+            proportion = len(heights) / self.totalBlocks
+            self.pools[pool] = MiningPool(pool, proportion)
+            self.pools[pool].estimateParams(heights)
+
+    def loadPoolBlocks(self, dbFile=savePoolBlocksFile):
+        with open(dbFile,'rb') as f:
+            self.poolBlocks = pickle.load(f)
+
+    def savePoolBlocks(self, dbFile=savePoolBlocksFile):
+        if not len(self.poolBlocks):
+            raise ValueError("No poolBlocks to save.")
+        with open(dbFile,'wb') as f:
+            pickle.dump(self.poolBlocks, f)
+
+    def loadPools(self, dbFile=savePoolsFile):
+        db = None
+        try:
+            db = sqlite3.connect(dbFile)
+            poolList = db.execute('SELECT * FROM pools').fetchall()
+            for name,poolJSON in poolList:
+                self.pools[name] = MiningPool.fromJSON(poolJSON)
+        finally:
+            if db:
+                db.close()
+
+    def savePools(self, dbFile=savePoolsFile):
+        if not len(self.pools):
+            raise ValueError("No pools to save.")
+        dbExists = False if not os.path.exists(dbFile) else True
+        db = None
+        try:
+            db = sqlite3.connect(dbFile)
+            if not dbExists:
+                db.execute('CREATE TABLE pools (name TEXT, data TEXT)')
+            with db:
+                db.execute('DELETE FROM pools')
+                db.executemany('INSERT INTO pools VALUES (?, ?)', 
+                    [(name,pool.toJSON()) for name,pool in self.pools.items()])
+        finally:
+            if db:
+                db.close()
+
+    def calcNumPoolsEff(self):
+        poolCounts = [len(heights) for heights in self.poolBlocks.itervalues()]
+        self.totalBlocks = float(sum(poolCounts))
+        poolP = [count / self.totalBlocks for count in poolCounts]
+
+        self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
 
 class Simul(object):
     def __init__(self, currHeight=None, adaptive=0):
