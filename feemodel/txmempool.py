@@ -72,15 +72,19 @@ class TxMempool(threading.Thread):
                     entry['inBlock'] = False
                 entry['leadTime'] = blockTime - entry['time']
                 entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
+                entry['isConflict'] = False
 
             blocks.append(Block(entries,blockHeight,blockSize,blockTime))
             logWrite(str(numMempoolTxsInBlock) + ' of ' + 
                 str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
 
         conflicts = set(currPool) - set(newPool)
-      
+
+        numConflicts = 0
         for block in blocks:
-            block.removeConflicts(conflicts)
+            numConflicts += block.removeConflicts(conflicts)
+
+        logWrite("%d conflicts removed." % numConflicts)
 
         if feemodel.config.apprun:
             for block in blocks:
@@ -98,9 +102,13 @@ class Block(object):
         self.time = blockTime
 
     def removeConflicts(self, conflicts):
+        numConflicts = 0
         for txid in self.entries.keys():
             if txid in conflicts:
-                del self.entries[txid]
+                self.entries[txid]['isConflict'] = True
+                numConflicts += 1
+
+        return numConflicts
 
     def writeHistory(self, dbFile=historyFile):
         db = None

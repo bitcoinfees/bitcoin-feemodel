@@ -43,13 +43,12 @@ except IOError:
     print("io error")
 
 model.start()
-
-if len(sys.argv) > 1:
-    port = int(sys.argv[1])
-else:
-    port = 5001
-
 try:
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    else:
+        port = 5001
+
     app.run(port=port)
 finally:
     model.stop()

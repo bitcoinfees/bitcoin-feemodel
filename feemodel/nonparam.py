@@ -207,7 +207,7 @@ class BlockStat(object):
 
     def _depsCheck(self, entry):
         deps = [self.entries.get(depId) for depId in entry['depends']]
-        return all([dep['inBlock'] if dep else False for dep in deps])
+        return all([dep['inBlock'] if dep else True for dep in deps])
 
     @staticmethod
     def calcMinFeeRateSingle(feeStats):

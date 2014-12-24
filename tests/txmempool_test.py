@@ -54,6 +54,8 @@ class TxMempoolTests(unittest.TestCase):
     def test_processBlocks(self):
         processedBlock = txmempool.TxMempool.processBlocks(self.blockHeightRange,
             self.currPool, deepcopy(self.currPool), self.block.time)[0]
+        for entry in self.block.entries.itervalues():
+            entry['isConflict'] = False # We recently decided to add a new field to track conflicts
         self.assertEqual(processedBlock, self.block)
 
     def test_processEmptyMempool(self):
