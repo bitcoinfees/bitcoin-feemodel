@@ -3,6 +3,7 @@ from feemodel.nonparam import BlockStat
 from feemodel.util import proxy, logWrite
 from feemodel.model import ModelError
 from feemodel.config import savePoolBlocksFile, savePoolsFile
+from feemodel.stranding import txPreprocess, calcStrandingFeeRate
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
 from math import log, exp, ceil
@@ -33,15 +34,14 @@ class MiningPool(object):
             self.proportion = proportion
             self.maxBlockSize = None
             self.minFeeRate = None
-            self.abovekn = None
-            self.belowkn = None
             self.blockHeights = []
             self.feeLimitedBlocks = []
             self.sizeLimitedBlocks = []
+            self.stats = {}
 
     def estimateParams(self, blockHeights):
         self.blockHeights = blockHeights
-        blockStatTotal = None
+        txs = []
         deferredBlocks = []
 
         for height in blockHeights:
@@ -56,45 +56,33 @@ class MiningPool(object):
                     self.maxBlockSize = block.size
                     deferredBlocks.append(block)
                     continue
-                blockStatTotal = self.addBlock(block, blockStatTotal)
+                self.addBlock(block, txs)
 
         for block in deferredBlocks:
-            blockStatTotal = self.addBlock(block, blockStatTotal)
+            self.addBlock(block, txs)
 
-        if not blockStatTotal:
-            blockStatTotal = self._getBlockStat(deferredBlocks[0])
+        if not txs and deferredBlocks:
+            txs.extend(txPreprocess(deferredBlocks[0]))
 
-        blockStatTotal.feeStats.sort(key=lambda x: x.feeRate, reverse=True)
-        feeEstimate = blockStatTotal.calcFee()
-        self.minFeeRate = feeEstimate.mfr95 if useBootstrap else feeEstimate.minFeeRate
-        self.abovekn = list(feeEstimate.abovekn)
-        self.belowkn = list(feeEstimate.belowkn)
+        txs.sort(key=lambda x: x[0], reverse=True)
+
+        try:
+            self.stats = calcStrandingFeeRate(txs)
+            self.minFeeRate = self.stats['sfr']
+        except ValueError:
+            self.minFeeRate = float('inf')
+
         logWrite("Done estimating %s " % repr(self))
 
         # If a pool has fewer than X blocks, use the average max block size of all the pools
 
-    def addBlock(self, block, blockStatTotal):
+    def addBlock(self, block, txs):
         if self.maxBlockSize - block.size > block.avgTxSize:
             self.feeLimitedBlocks.append([block.height, block.size])
-            blockStat = self._getBlockStat(block)
-            if blockStatTotal:
-                blockStatTotal.feeStats += blockStat.feeStats
-            else:
-                blockStatTotal = blockStat
+            txsNew = txPreprocess(block, removeHighPriority=True, removeDeps=True)
+            txs.extend(txsNew)
         else:
             self.sizeLimitedBlocks.append([block.height, block.size])
-
-        return blockStatTotal
-
-    @staticmethod
-    def _getBlockStat(block):
-        try:
-            minLeadTime = min([entry['leadTime'] for entry in 
-                block.entries.itervalues() if entry['inBlock']])
-        except ValueError:
-            minLeadTime = 0
-        return BlockStat(block,minLeadTime,bootstrap=useBootstrap)
-
 
     @classmethod
     def fromJSON(cls, s):
@@ -105,8 +93,8 @@ class MiningPool(object):
         return json.dumps(self.__dict__)
 
     def __repr__(self):
-        return "MP{Name: %s, Prop: %.2f, Size: %d, MFR: %.0f, abovekn: %s, belowkn: %s}" % (
-            self.name, self.proportion, self.maxBlockSize, self.minFeeRate, self.abovekn, self.belowkn)
+        return "MP{Name: %s, Prop: %.2f, Size: %d, MFR: %.0f, %s}" % (
+            self.name, self.proportion, self.maxBlockSize, self.minFeeRate, self.stats)
 
 
 class PoolEstimator(object):

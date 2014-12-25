@@ -7,6 +7,7 @@ from feemodel.util import logWrite
 from testconfig import dbFile, tmpdbFile
 import threading
 from random import choice
+from feemodel.stranding import txPreprocess, calcStrandingFeeRate
 
 nonparam.numBlocksUsed = (6,15)
 
@@ -23,17 +24,29 @@ class PushBlockTests(unittest.TestCase):
         self.assertEquals(feeEstimate.minFeeRate, 23310)
         self.assertEquals(feeEstimate.abovekn, (490,493))
         self.assertEquals(feeEstimate.belowkn, (282,285))
+        
+        txs = txPreprocess(self.block)
+        est = calcStrandingFeeRate(txs)
+        print("regular", est)
+        self.assertEquals(est['sfr'], 23310)
 
     def test_empty(self):
         self.block.entries = {}
         self.np.pushBlocks([self.block])       
         self.assertFalse(self.np.blockEstimates)
 
+        self.assertRaises(ValueError, calcStrandingFeeRate, [])
+
     def test_allInBlock(self):
         self.block.entries = {txid: entry for txid,entry in self.block.entries.iteritems()
             if entry['inBlock']}
         self.np.pushBlocks([self.block])      
         self.assertEquals(self.np.blockEstimates[self.testBlockHeight].feeEstimate.minFeeRate, 13940)
+
+        txs = txPreprocess(self.block)
+        est = calcStrandingFeeRate(txs)
+        print('allinblock', est)
+        self.assertEquals(est['sfr'], 13940)
 
     def test_zeroInBlock(self):
         self.block.entries = {txid: entry for txid,entry in self.block.entries.iteritems()
@@ -51,6 +64,11 @@ class PushBlockTests(unittest.TestCase):
         blockEstimate = self.np.blockEstimates[self.testBlockHeight]
         self.assertEquals(blockEstimate.minLeadTime, p90)
         self.assertEquals(blockEstimate.feeEstimate.minFeeRate, float("inf"))
+
+        txs = txPreprocess(self.block)
+        est = calcStrandingFeeRate(txs)
+        print('zeroinblock', est)
+        self.assertEquals(est['sfr'], float('inf'))
 
     def test_removeStats(self):
         blocks = [txmempool.Block.blockFromHistory(height, dbFile=dbFile)
