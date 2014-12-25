@@ -85,6 +85,11 @@ def calcStrandingSingle(txs):
     
     for idx,tx in enumerate(txs):
         cumk += 1 if tx[1] else -1
+        try:
+            if txs[idx+1][0] == tx[0]:
+                continue
+        except IndexError:
+            pass
         if cumk > maxk:
             maxk = cumk
             maxidx = idx

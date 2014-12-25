@@ -1,0 +1,3 @@
+[submodule "knownpools"]
+	path = knownpools
+	url = https://github.com/blockchain/Blockchain-Known-Pools

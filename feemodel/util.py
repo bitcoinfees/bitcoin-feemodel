@@ -1,10 +1,20 @@
 from bitcoin.rpc import Proxy, JSONRPCException
+from bitcoin.wallet import CBitcoinAddress
 import feemodel.config
 from feemodel.config import logFile, config, historyFile
 from time import ctime
 import sqlite3
 import threading
 from pprint import pprint
+
+def getCoinbaseInfo(blockHeight):
+    block = proxy.getblock(proxy.getblockhash(blockHeight))
+    coinbaseTx = block.vtx[0]
+    assert coinbaseTx.is_coinbase()
+    addr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
+    tag = str(coinbaseTx.vin[0].scriptSig).decode('utf-8', 'ignore')
+
+    return addr, tag
 
 class BlockingProxy(Proxy):
     '''

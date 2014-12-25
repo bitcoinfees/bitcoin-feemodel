@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, shutil
 from setuptools import setup, find_packages
 from appdirs import user_data_dir
 
@@ -11,11 +11,14 @@ with open('feemodel/installinfo.py','w') as f:
 dirwarn = False
 if not os.path.exists(datadir):
     try:
-        os.mkdir(datadir)
+        os.makedirs(datadir)
     except OSError:
         sys.exit("Error: Unable to create data directory " + datadir)
 else:
     dirwarn = True
+
+
+shutil.copyfile('knownpools/pools.json', os.path.join(datadir, 'pools.json'))
 
 setup(
     name=appname,

@@ -1,8 +1,8 @@
 from feemodel.txmempool import Block
 from feemodel.nonparam import BlockStat
-from feemodel.util import proxy, logWrite
+from feemodel.util import proxy, logWrite, getCoinbaseInfo
 from feemodel.model import ModelError
-from feemodel.config import savePoolBlocksFile, savePoolsFile
+from feemodel.config import savePoolBlocksFile, savePoolsFile, poolInfoFile
 from feemodel.stranding import txPreprocess, calcStrandingFeeRate
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
@@ -24,27 +24,42 @@ useBootstrap = False
 mfrPoolPercentile = 95
 
 
-class MiningPool(object):
-    def __init__(self, name=None, proportion=None, initData=None):
+class Pool(object):
+    def __init__(self,initData=None):
         if initData:
             for key in initData:
                 setattr(self, key, initData[key])
         else:
-            self.name = name
-            self.proportion = proportion
-            self.maxBlockSize = None
-            self.minFeeRate = None
-            self.blockHeights = []
+            self.proportion = -1
+            self.maxBlockSize = -1
+            self.minFeeRate = -1
+            self.blockHeights = set()
             self.feeLimitedBlocks = []
             self.sizeLimitedBlocks = []
             self.stats = {}
+            self.unknown = True
 
-    def estimateParams(self, blockHeights):
-        self.blockHeights = blockHeights
+    # def __init__(self, name=None, proportion=None, initData=None):
+    #     if initData:
+    #         for key in initData:
+    #             setattr(self, key, initData[key])
+    #     else:
+    #         self.name = name
+    #         self.proportion = proportion
+    #         self.maxBlockSize = None
+    #         self.minFeeRate = None
+    #         self.blockHeights = []
+    #         self.feeLimitedBlocks = []
+    #         self.sizeLimitedBlocks = []
+    #         self.stats = {}
+
+    def estimateParams(self):
+        # Remember to de-duplicate blockHeights
+        # and also to clear history
         txs = []
         deferredBlocks = []
 
-        for height in blockHeights:
+        for height in self.blockHeights:
             block = Block.blockFromHistory(height)
             if block:
                 blockTxs = [tx for tx in block.entries.itervalues() if tx['inBlock']]
@@ -87,21 +102,92 @@ class MiningPool(object):
     @classmethod
     def fromJSON(cls, s):
         attribs = json.loads(s)
+        attribs['blockHeights'] = set(attribs['blockHeights'])
         return cls(initData=attribs)
 
     def toJSON(self):
-        return json.dumps(self.__dict__)
+        self.blockHeights = list(self.blockHeights)
+        s = json.dumps(self.__dict__)
+        self.blockHeights = set(self.blockHeights)
+        return s
 
     def __repr__(self):
-        return "MP{Name: %s, Prop: %.2f, Size: %d, MFR: %.0f, %s}" % (
-            self.name, self.proportion, self.maxBlockSize, self.minFeeRate, self.stats)
+        return "MP{Prop: %.2f, Size: %d, MFR: %.0f, %s}" % (
+            self.proportion, self.maxBlockSize, self.minFeeRate, self.stats)
 
 
 class PoolEstimator(object):
     def __init__(self):
-        self.pools = {}
+        self.pools = defaultdict(Pool)
         self.numPoolsEff = None
-        self.poolBlocks = defaultdict(list)
+        # self.poolBlocks = defaultdict(set)
+        try:
+            with open(poolInfoFile, 'r') as f:
+                self.poolInfo = json.load(f)
+        except IOError as e:
+            logWrite("Error opening poolInfoFile: pools.json.")
+            raise e
+        else:
+            for idtype in self.poolInfo:
+                for poolprops in self.poolInfo[idtype].values():
+                    poolprops['seen_heights'] = set()
+
+    def estimatePools(self):
+        for pool in self.pools.values():
+            pool.estimateParams()
+
+    def identifyPoolBlocks(self, blockHeightRange):
+        loadedHeights = reduce(add,
+            [list(pool.blockHeights) for pool in self.pools.values()], [])
+
+        for height in range(*blockHeightRange):
+            if height in loadedHeights:
+                continue
+            try:
+                addr, tag = getCoinbaseInfo(height)
+            except IndexError:
+                logWrite("Exceeds best block height.")
+                continue
+
+            foundAddr = foundTag = False
+
+            for pooladdr, poolprops in self.poolInfo['payout_addresses'].items():
+                if pooladdr == addr:
+                    if foundAddr:
+                        assert poolprops['name'] in self.pools
+                    self.pools[poolprops['name']].blockHeights.add(height)
+                    self.pools[poolprops['name']].unknown = False
+                    poolprops['seen_heights'].add(height)
+                    foundAddr = True
+            for pooltag, poolprops in self.poolInfo['coinbase_tags'].items():
+                if pooltag in tag:
+                    if foundTag:
+                        assert poolprops['name'] in self.pools
+                    self.pools[poolprops['name']].blockHeights.add(height)
+                    self.pools[poolprops['name']].unknown = False
+                    poolprops['seen_heights'].add(height)
+                    foundTag = True
+
+            if not foundAddr and not foundTag:
+                self.pools[addr].blockHeights.add(height)
+                self.pools[addr].unknown = True
+            logWrite("idPoolBlocks: added height %d" % height)
+
+        self.calcNumUnknownPools()
+        totalBlocks = float(sum([len(pool.blockHeights) for pool in self.pools.values()]))
+        for pool in self.pools.values():
+            pool.proportion = len(pool.blockHeights) / totalBlocks
+        self.calcUnseenInfo()
+
+    def calcNumUnknownPools(self):
+        self.numUnknownPools = sum([pool.unknown for pool in self.pools.values()])
+
+    def calcUnseenInfo(self):
+        self.unseenInfo = {'coinbase_tags': [], 'payout_addresses': []}
+        for infotype in self.unseenInfo:
+            for pinfo, poolprops in self.poolInfo[infotype].items():
+                if not poolprops['seen_heights']:
+                    self.unseenInfo[infotype].append(pinfo)
 
     def getPoolBlocks(self, blockHeightRange):
         # blockHeightRange is (start, end), inclusive of start but not end - like range()
@@ -138,13 +224,13 @@ class PoolEstimator(object):
         logWrite("PoolEst: Finished loading poolBlocks, with %.1f numPoolsEff" % self.numPoolsEff)
         self.savePoolBlocks()
 
-    def estimatePools(self):
-        if not self.poolBlocks:
-            raise ValueError("PoolEst: empty poolBlocks.")
-        for pool, heights in self.poolBlocks.items():
-            proportion = len(heights) / self.totalBlocks
-            self.pools[pool] = MiningPool(pool, proportion)
-            self.pools[pool].estimateParams(heights)
+    # def estimatePools(self):
+    #     if not self.poolBlocks:
+    #         raise ValueError("PoolEst: empty poolBlocks.")
+    #     for pool, heights in self.poolBlocks.items():
+    #         proportion = len(heights) / self.totalBlocks
+    #         self.pools[pool] = MiningPool(pool, proportion)
+    #         self.pools[pool].estimateParams(heights)
 
     def loadPoolBlocks(self, dbFile=savePoolBlocksFile):
         with open(dbFile,'rb') as f:
@@ -162,7 +248,9 @@ class PoolEstimator(object):
             db = sqlite3.connect(dbFile)
             poolList = db.execute('SELECT * FROM pools').fetchall()
             for name,poolJSON in poolList:
-                self.pools[name] = MiningPool.fromJSON(poolJSON)
+                self.pools[name] = Pool.fromJSON(poolJSON)
+            self.calcNumUnknownPools()
+            self.calcUnseenInfo()
         finally:
             if db:
                 db.close()
@@ -191,109 +279,111 @@ class PoolEstimator(object):
 
         self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
 
-class Simul(object):
-    def __init__(self, currHeight=None, adaptive=0):
-        self.currHeight = currHeight if currHeight else proxy.getblockcount()
-        self.pools = None
-        self.numPoolsEff = None
-        self.txSamples = None
-        self.txRate = None
-        self.avgTxSize = None
-        self.serviceRates = None
-        self.arrivalRates = None
-        self.adaptive = adaptive
-        if not adaptive:
-            self.estimateTxRate()
-            self.estimatePools()
-            self.calcIORates()
-            self.pools.sort(key=lambda x: x.proportion, reverse=True)
-        self.qMetrics = [FeeClass(i*feeResolution, adaptive=adaptive)
-            for i in range(len(self.serviceRates))]
-
-    def pushBlock(self, blockInterval, minFeeRate, currHeight=None, blockHeight=None):
-        for feeClass in self.qMetrics:
-            feeClass.pushBlock(blockInterval,minFeeRate,currHeight,blockHeight)
-
-    def calcIORates(self):
-        # self.maxMFR = int(max([pool.minFeeRate for pool in self.pools
-        #     if pool.minFeeRate != float("inf")]) // feeResolution + 1)
-        poolMFR = [pool.minFeeRate for pool in self.pools if pool.minFeeRate != float("inf")]
-        poolMFR.sort()
-        mfrIdx = int(mfrPoolPercentile*len(poolMFR)//100)
-        self.maxMFR = poolMFR[mfrIdx] // feeResolution + 1
-
-        self.serviceRates = [sum([pool.proportion*pool.maxBlockSize/10/60 for pool in self.pools
-            if pool.minFeeRate <= n*feeResolution]) for n in range(self.maxMFR+1)] # per hour, in bytes
-        self.arrivalRates = [sum([tx[0] for tx in self.txSamples
-            if tx[1] >= n*feeResolution])*self.txRate/len(self.txSamples)
-            for n in range(self.maxMFR+1)]
-
-    def adjustMaxBlockSizes(self):
-        pass
-        # for pool in self.pools:
-        #     if pool.minFeeRate != float("inf"):
-        #         arrivalRate = self.arrivalRates[int(pool.minFeeRate // feeResolution)]
-        #     else:
-        #         arrivalRate = 0
-
-        #     p90size = arrivalRate*1381
-        #     if pool.maxBlockSize < p90size:
-        #         pool.sizeAdjusted = True
-
-        # avgBlockSize = sum([pool.maxBlockSize*pool.proportion
-        #     for pool in self.pools if not pool.sizeAdjusted]) / sum([pool.proportion
-        #     for pool in self.pools if not pool.sizeAdjusted])
-        # for pool in self.pools:
-        #     if pool.sizeAdjusted:
-        #         pool.maxBlockSize = avgBlockSize
 
 
-    def estimatePools(self):
-        poolBlocks = defaultdict(list)
-        heightRange = range(self.currHeight - poolHistoryUsed, self.currHeight+1)
+# class Simul(object):
+#     def __init__(self, currHeight=None, adaptive=0):
+#         self.currHeight = currHeight if currHeight else proxy.getblockcount()
+#         self.pools = None
+#         self.numPoolsEff = None
+#         self.txSamples = None
+#         self.txRate = None
+#         self.avgTxSize = None
+#         self.serviceRates = None
+#         self.arrivalRates = None
+#         self.adaptive = adaptive
+#         if not adaptive:
+#             self.estimateTxRate()
+#             self.estimatePools()
+#             self.calcIORates()
+#             self.pools.sort(key=lambda x: x.proportion, reverse=True)
+#         self.qMetrics = [FeeClass(i*feeResolution, adaptive=adaptive)
+#             for i in range(len(self.serviceRates))]
 
-        for height in heightRange:
-            block = proxy.getblock(proxy.getblockhash(height))
-            coinbaseTx = block.vtx[0]
-            assert coinbaseTx.is_coinbase()
-            coinbaseAddr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
-            poolBlocks[coinbaseAddr] += [height]
+#     def pushBlock(self, blockInterval, minFeeRate, currHeight=None, blockHeight=None):
+#         for feeClass in self.qMetrics:
+#             feeClass.pushBlock(blockInterval,minFeeRate,currHeight,blockHeight)
 
-        # Compute effective number of pools
-        poolCounts = [len(heights) for heights in poolBlocks.itervalues()]
-        totalBlocks = sum(poolCounts)
-        poolP = [float(count) / totalBlocks for count in poolCounts]
+#     def calcIORates(self):
+#         # self.maxMFR = int(max([pool.minFeeRate for pool in self.pools
+#         #     if pool.minFeeRate != float("inf")]) // feeResolution + 1)
+#         poolMFR = [pool.minFeeRate for pool in self.pools if pool.minFeeRate != float("inf")]
+#         poolMFR.sort()
+#         mfrIdx = int(mfrPoolPercentile*len(poolMFR)//100)
+#         self.maxMFR = poolMFR[mfrIdx] // feeResolution + 1
 
-        self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
+#         self.serviceRates = [sum([pool.proportion*pool.maxBlockSize/10/60 for pool in self.pools
+#             if pool.minFeeRate <= n*feeResolution]) for n in range(self.maxMFR+1)] # per hour, in bytes
+#         self.arrivalRates = [sum([tx[0] for tx in self.txSamples
+#             if tx[1] >= n*feeResolution])*self.txRate/len(self.txSamples)
+#             for n in range(self.maxMFR+1)]
 
-        self.pools = []
-        for pool,heights in poolBlocks.items():
-            print("Adding pool " + pool)
-            self.pools.append(MiningPool(
-                pool,len(heights)/float(totalBlocks),self.avgTxSize,blockHeights=heights))
+#     def adjustMaxBlockSizes(self):
+#         pass
+#         # for pool in self.pools:
+#         #     if pool.minFeeRate != float("inf"):
+#         #         arrivalRate = self.arrivalRates[int(pool.minFeeRate // feeResolution)]
+#         #     else:
+#         #         arrivalRate = 0
 
-    def estimateTxRate(self):
-        heightRange = range(self.currHeight - txRateHistoryUsed, self.currHeight+1)
-        prevBlock = None
-        self.txSamples = []
-        totalTime = 0
+#         #     p90size = arrivalRate*1381
+#         #     if pool.maxBlockSize < p90size:
+#         #         pool.sizeAdjusted = True
 
-        for height in heightRange:
-            print(height)
-            block = Block.blockFromHistory(height)
-            if block:
-                if not prevBlock:
-                    prevBlock = block
-                    continue
-                if height == prevBlock.height + 1:
-                    newtxs = set(block.entries) - set(prevBlock.entries)
-                    self.txSamples += [(block.entries[txid]['size'],block.entries[txid]['feeRate'])
-                        for txid in newtxs]
-                    totalTime += block.time - prevBlock.time
-                prevBlock = block
+#         # avgBlockSize = sum([pool.maxBlockSize*pool.proportion
+#         #     for pool in self.pools if not pool.sizeAdjusted]) / sum([pool.proportion
+#         #     for pool in self.pools if not pool.sizeAdjusted])
+#         # for pool in self.pools:
+#         #     if pool.sizeAdjusted:
+#         #         pool.maxBlockSize = avgBlockSize
 
-        self.txRate = len(self.txSamples) / float(totalTime)
-        self.avgTxSize = sum([s[0] for s in self.txSamples])/float(len(self.txSamples))
+
+#     def estimatePools(self):
+#         poolBlocks = defaultdict(list)
+#         heightRange = range(self.currHeight - poolHistoryUsed, self.currHeight+1)
+
+#         for height in heightRange:
+#             block = proxy.getblock(proxy.getblockhash(height))
+#             coinbaseTx = block.vtx[0]
+#             assert coinbaseTx.is_coinbase()
+#             coinbaseAddr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
+#             poolBlocks[coinbaseAddr] += [height]
+
+#         # Compute effective number of pools
+#         poolCounts = [len(heights) for heights in poolBlocks.itervalues()]
+#         totalBlocks = sum(poolCounts)
+#         poolP = [float(count) / totalBlocks for count in poolCounts]
+
+#         self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
+
+#         self.pools = []
+#         for pool,heights in poolBlocks.items():
+#             print("Adding pool " + pool)
+#             self.pools.append(MiningPool(
+#                 pool,len(heights)/float(totalBlocks),self.avgTxSize,blockHeights=heights))
+
+#     def estimateTxRate(self):
+#         heightRange = range(self.currHeight - txRateHistoryUsed, self.currHeight+1)
+#         prevBlock = None
+#         self.txSamples = []
+#         totalTime = 0
+
+#         for height in heightRange:
+#             print(height)
+#             block = Block.blockFromHistory(height)
+#             if block:
+#                 if not prevBlock:
+#                     prevBlock = block
+#                     continue
+#                 if height == prevBlock.height + 1:
+#                     newtxs = set(block.entries) - set(prevBlock.entries)
+#                     self.txSamples += [(block.entries[txid]['size'],block.entries[txid]['feeRate'])
+#                         for txid in newtxs]
+#                     totalTime += block.time - prevBlock.time
+#                 prevBlock = block
+
+#         self.txRate = len(self.txSamples) / float(totalTime)
+#         self.avgTxSize = sum([s[0] for s in self.txSamples])/float(len(self.txSamples))
 
 
 

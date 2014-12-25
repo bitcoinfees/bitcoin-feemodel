@@ -45,4 +45,6 @@ savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
+poolInfoFile = os.path.join(datadir, 'pools.json')
+
 apprun = False # If true, TxMempool.processBlocks will write history, and logWrite will write to the log file
