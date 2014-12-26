@@ -39,20 +39,6 @@ class Pool(object):
             self.stats = {}
             self.unknown = True
 
-    # def __init__(self, name=None, proportion=None, initData=None):
-    #     if initData:
-    #         for key in initData:
-    #             setattr(self, key, initData[key])
-    #     else:
-    #         self.name = name
-    #         self.proportion = proportion
-    #         self.maxBlockSize = None
-    #         self.minFeeRate = None
-    #         self.blockHeights = []
-    #         self.feeLimitedBlocks = []
-    #         self.sizeLimitedBlocks = []
-    #         self.stats = {}
-
     def estimateParams(self):
         # Remember to de-duplicate blockHeights
         # and also to clear history
@@ -189,58 +175,12 @@ class PoolEstimator(object):
                 if not poolprops['seen_heights']:
                     self.unseenInfo[infotype].append(pinfo)
 
-    def getPoolBlocks(self, blockHeightRange):
-        # blockHeightRange is (start, end), inclusive of start but not end - like range()
-        try:
-            self.loadPoolBlocks()
-        except IOError:
-            logWrite('PoolEst: Error loading poolBlocks')
-            loadedHeights = []
-        else:
-            for pool,heights in self.poolBlocks.items():
-                inRangeHeights = filter(lambda x: x >= blockHeightRange[0], heights)
-                if inRangeHeights:
-                    self.poolBlocks[pool] = inRangeHeights
-                else:
-                    del self.poolBlocks[pool]
+    def calcNumPoolsEff(self):
+        poolCounts = [len(heights) for heights in self.poolBlocks.itervalues()]
+        self.totalBlocks = float(sum(poolCounts))
+        poolP = [count / self.totalBlocks for count in poolCounts]
 
-            loadedHeights = reduce(add, self.poolBlocks.itervalues(), [])
-            logWrite("PoolEst: Loaded %d heights" % len(loadedHeights))
-
-        for height in range(*blockHeightRange):
-            if height not in loadedHeights:
-                try:
-                    block = proxy.getblock(proxy.getblockhash(height))
-                except IndexError:
-                    logWrite("PoolEst: Invalid block height!")
-                    continue
-                coinbaseTx = block.vtx[0]
-                assert coinbaseTx.is_coinbase()
-                coinbaseAddr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
-                self.poolBlocks[coinbaseAddr] += [height]
-                logWrite("PoolEst: Loaded height %d into poolBlocks" % (height,))
-
-        self.calcNumPoolsEff()
-        logWrite("PoolEst: Finished loading poolBlocks, with %.1f numPoolsEff" % self.numPoolsEff)
-        self.savePoolBlocks()
-
-    # def estimatePools(self):
-    #     if not self.poolBlocks:
-    #         raise ValueError("PoolEst: empty poolBlocks.")
-    #     for pool, heights in self.poolBlocks.items():
-    #         proportion = len(heights) / self.totalBlocks
-    #         self.pools[pool] = MiningPool(pool, proportion)
-    #         self.pools[pool].estimateParams(heights)
-
-    def loadPoolBlocks(self, dbFile=savePoolBlocksFile):
-        with open(dbFile,'rb') as f:
-            self.poolBlocks = pickle.load(f)
-
-    def savePoolBlocks(self, dbFile=savePoolBlocksFile):
-        if not len(self.poolBlocks):
-            raise ValueError("No poolBlocks to save.")
-        with open(dbFile,'wb') as f:
-            pickle.dump(self.poolBlocks, f)
+        self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
 
     def loadPools(self, dbFile=savePoolsFile):
         db = None
@@ -272,12 +212,7 @@ class PoolEstimator(object):
             if db:
                 db.close()
 
-    def calcNumPoolsEff(self):
-        poolCounts = [len(heights) for heights in self.poolBlocks.itervalues()]
-        self.totalBlocks = float(sum(poolCounts))
-        poolP = [count / self.totalBlocks for count in poolCounts]
 
-        self.numPoolsEff = exp(-sum([p*log(p) for p in poolP]))
 
 
 
