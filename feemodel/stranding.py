@@ -10,6 +10,7 @@ def txPreprocess(block, removeHighPriority=False, removeDeps=False, allowZeroFee
     txs = [(entry['feeRate'], entry['inBlock']) for entry in block.entries.itervalues()
         if _depsCheck(entry, block.entries, removeDeps)
         and entry['leadTime'] >= minLeadTime
+        and not entry.get('isConflict')
         and (entry['feeRate'] if not allowZeroFee else True)
         and (entry['currentpriority'] < 57.6e6 if removeHighPriority else True)]
 
