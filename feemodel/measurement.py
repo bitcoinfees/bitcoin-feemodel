@@ -1,5 +1,8 @@
-from feemodel.util import proxy, logWrite
-from feemodel.config import config, saveWaitFile
+from feemodel.util import proxy, logWrite, Saveable
+from feemodel.config import config, saveWaitFile, saveRatesFile
+from feemodel.txmempool import Block
+from math import exp
+from random import random, choice
 
 try:
     import cPickle as pickle
@@ -8,6 +11,119 @@ except ImportError:
 
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
+samplingInterval = 18
+rateInterval = 2016
+
+class BlockTxRate(object):
+    def __init__(self, block, prevBlock):
+        if not prevBlock or not block.height == prevBlock.height + 1:
+            raise ValueError("Blocks not consecutive.")
+        newtxs = set(block.entries) - set(prevBlock.entries)
+        self.numTxs = len(newtxs)
+        self.timeInterval = block.time - prevBlock.time
+        self.txSamples = [block.entries[txid] for txid in newtxs]
+        for tx in self.txSamples:
+            tx['depends'] = []
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+class TxRates(Saveable):
+    def __init__(self, samplingInterval=samplingInterval, rateInterval=rateInterval):
+        self.blockRates = {}
+        self.txSamples = []
+        self.samplingInterval = samplingInterval
+        self.rateInterval = rateInterval
+        self.prevBlock = None
+        super(TxRates, self).__init__(saveRatesFile)
+
+    def pushBlocks(self, blocks):
+        for block in blocks:
+            if block:
+                try:
+                    self.blockRates[block.height] = BlockTxRate(block, self.prevBlock)
+                except ValueError:
+                    pass
+                for height, blockRate in self.blockRates.items():
+                    samplingThresh = block.height - self.samplingInterval
+                    rateThresh = block.height - self.rateInterval
+                    if height <= samplingThresh:
+                        blockRate.txSamples = []
+                    if height <= rateThresh:
+                        del self.blockRates[height]
+
+                self.txSamples = [] 
+                for height in range(block.height-self.samplingInterval+1, block.height+1):
+                    blockRate = self.blockRates.get(height)
+                    if blockRate:
+                        self.txSamples.extend(blockRate.txSamples)
+
+                logWrite("TR: added block %d" % block.height)
+
+            self.prevBlock = block
+
+    def calcRates(self, interval):
+        totalTxs = 0
+        totalTime = 0
+        for height in range(*interval):
+            blockRate = self.blockRates.get(height)
+            if blockRate:
+                totalTxs += blockRate.numTxs
+                totalTime += blockRate.timeInterval
+
+        if totalTime:
+            return totalTxs / float(totalTime)
+        else:
+            raise ValueError("Time interval is zero.")
+    
+    def generateTxSample(self, expectedNumTxs):
+        k = poissonSample(expectedNumTxs)
+        return [choice(self.txSamples) for i in xrange(k)]
+
+    @staticmethod
+    def loadObject():
+        return super(TxRates,TxRates).loadObject(saveRatesFile)
+
+    def __eq__(self,other):
+        return self.__dict__ == other.__dict__
+
+
+
+    # def calcRates(self, blockHeightRange):
+    #     self.txSamples = {}
+    #     prevBlock = None
+    #     for height in range(*blockHeightRange):
+    #         block = Block.blockFromHistory(height)
+    #         if block and prevBlock:
+    #             newtxs = set(block.entries) - set(prevBlock.entries)
+    #             self.txSamples.update({
+    #                 txid: block.entries[txid]
+    #                 for txid in newtxs
+    #             })
+    #             for txid, entry in block.entries.iteritems():
+    #                 if entry.get('isConflict') and txid in self.txSamples:
+    #                     del self.txSamples[txid]
+    #             self.totalTime += block.time - prevBlock.time
+
+    #         prevBlock = block
+
+    #     if self.totalTime:
+    #         self.txRate = len(self.txSamples) / float(self.totalTime)
+    #     else:
+            # logWrite("TxRates error: measurement interval is zero.")
+
+
+
+def poissonSample(l):
+    # http://en.wikipedia.org/wiki/Poisson_distribution#Generating_Poisson-distributed_random_variables
+    L = exp(-l)
+    k = 0
+    p = 1
+    while p > L:
+        k += 1
+        p *= random()
+    return k - 1
+
 
 class WaitMeasure(object):
     def __init__(self, maxMFR, adaptive, loadFile=saveWaitFile):

@@ -53,12 +53,14 @@ def calcStrandingFeeRate(txs, bootstrap=True):
             altBiasRef = 0
 
         bootstrapEstimates = [calcStrandingSingle(bootstrapSample(txs)) for i in range(1000)]
-        mean = float(sum(bootstrapEstimates)) / len(bootstrapEstimates)
-        std = (sum([(b-mean)**2 for b in bootstrapEstimates]) / (len(bootstrapEstimates)-1))**0.5
-
-        biasRef = max((sfr, abs(mean-sfr)), 
-            (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
-        bias = mean - biasRef
+        if all([b < float("inf") for b in bootstrapEstimates]):
+            mean = float(sum(bootstrapEstimates)) / len(bootstrapEstimates)
+            std = (sum([(b-mean)**2 for b in bootstrapEstimates]) / (len(bootstrapEstimates)-1))**0.5
+            biasRef = max((sfr, abs(mean-sfr)), 
+                (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
+            bias = mean - biasRef
+        else:
+            bias = std = mean = float("inf")
     else:
         bias = std = mean = float("inf")
 

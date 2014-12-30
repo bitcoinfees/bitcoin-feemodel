@@ -78,7 +78,7 @@ class QEOnline(QEstimator):
     def adaptiveCalc(self):
         if not self.bestHeight:
             raise ValueError("QE: Empty blockData.")
-
+        # to-do : shift the clearing up to pushBlocks
         heightThresh = self.bestHeight - self.adaptive
         for height in self.blockData.keys():
             if height < heightThresh:

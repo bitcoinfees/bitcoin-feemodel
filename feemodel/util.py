@@ -7,6 +7,11 @@ import sqlite3
 import threading
 from pprint import pprint
 
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 def getCoinbaseInfo(blockHeight):
     block = proxy.getblock(proxy.getblockhash(blockHeight))
     coinbaseTx = block.vtx[0]
@@ -15,6 +20,21 @@ def getCoinbaseInfo(blockHeight):
     tag = str(coinbaseTx.vin[0].scriptSig).decode('utf-8', 'ignore')
 
     return addr, tag
+
+class Saveable(object):
+    def __init__(self, saveFile):
+        self.saveFile = saveFile
+
+    def saveObject(self):
+        with open(self.saveFile, 'wb') as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def loadObject(saveFile):
+        with open(saveFile, 'rb') as f:
+            obj = pickle.load(f)
+        return obj
+
 
 class BlockingProxy(Proxy):
     '''
