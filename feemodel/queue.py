@@ -13,141 +13,22 @@ feeResolution = config['queue']['feeResolution']
 adaptiveWindow = config['queue']['adaptiveWindow']
 
 class QEstimator(object):
-    def __init__(self, maxMFR):
-        self.qMetrics = [FeeClass(i*feeResolution)
-            for i in range(maxMFR // feeResolution + 1)]
-        self.maxMFR = maxMFR
+    def __init__(self, feeClassValues):
+        self.feeClassValues = feeClassValues 
+        self.qMetrics = [FeeClass(feeRate) for feeRate in self.feeClassValues]
 
     def nextBlock(self, blockHeight, blockInterval, minFeeRate):
         for feeClass in self.qMetrics:
             feeClass.nextBlock(blockHeight, blockInterval, minFeeRate)
 
     def getStats(self):
-        return [repr(self)] + [(fc.feeRate, fc.avgWait, fc.strandedProportion, fc.avgStrandedBlocks)
-            for fc in self.qMetrics]
+        return [repr(fc) for fc in self.qMetrics]
 
     def __eq__(self, other):
         return all([
             self.qMetrics[idx] == other.qMetrics[idx]
             for idx in range(len(self.qMetrics))
         ])
-
-class QEOnline(QEstimator):
-    def __init__(self, maxMFR, adaptive=adaptiveWindow, loadFile=saveQueueFile):
-        super(QEOnline, self).__init__(maxMFR)
-        self.adaptive = adaptive
-        self.blockData = {}
-        self.bestHeight = None
-        self.prevBlock = None
-
-        if loadFile:
-            try:
-                self.loadBlockData(loadFile)
-            except IOError:
-                logWrite("QE: Couldn't load saved blocks.")
-            else:
-                logWrite("QE: Loading blocks; found best height at " + 
-                    str(self.bestHeight if self.bestHeight else -1))
-
-    def pushBlocks(self, blocks, isInit=False):
-        for block in blocks:
-            if block:
-                if self.prevBlock and block.height == self.prevBlock.height + 1:
-                    blockInterval = block.time - self.prevBlock.time
-                    blockInterval = max(blockInterval, 1)
-                    try:
-                        minLeadTime = min([entry['leadTime'] for entry in 
-                            block.entries.itervalues() if entry['inBlock']])
-                    except ValueError:
-                        minLeadTime = 0
-                    blockStat = BlockStat(block,minLeadTime,bootstrap=False,allowZeroFee=True)
-                    minFeeRate = blockStat.calcFee().minFeeRate
-                    self.blockData[block.height] = (blockInterval, minFeeRate)
-                    self.bestHeight = block.height
-                    logWrite("QE: Added block %d with interval %d and mfr %.0f" %
-                        (block.height, blockInterval, minFeeRate))
-                self.prevBlock = block
-
-        if not isInit:
-            self.adaptiveCalc()
-            try:
-                self.saveBlockData()
-            except IOError:
-                logWrite("QE: Error saving blocks.")
-
-    def adaptiveCalc(self):
-        if not self.bestHeight:
-            raise ValueError("QE: Empty blockData.")
-        # to-do : shift the clearing up to pushBlocks
-        heightThresh = self.bestHeight - self.adaptive
-        for height in self.blockData.keys():
-            if height < heightThresh:
-                del self.blockData[height]
-
-        self.qMetrics = [FeeClass(i*feeResolution)
-            for i in range(self.maxMFR // feeResolution + 1)]
-        blockDataItems = self.blockData.items()
-        blockDataItems.sort(key=lambda x: x[0])
-        for height, block in blockDataItems:
-            for feeClass in self.qMetrics:
-                feeClass.nextBlock(height, block[0], block[1])
-
-    def __repr__(self):
-        return "QEO{maxMFR: %d, adaptive: %d, bestHeight: %d, numBlocks: %d}" % (
-            self.maxMFR, self.adaptive, self.bestHeight if self.bestHeight else -1, len(self.blockData))
-
-    def saveBlockData(self, dbFile=saveQueueFile):
-        if not self.blockData:
-            raise ValueError("QE: There's nothing to save.")
-
-        with open(dbFile, 'wb') as f:
-            pickle.dump(self.blockData, f)
-
-    def loadBlockData(self, dbFile=saveQueueFile):
-        with open(dbFile, 'rb') as f:
-            self.blockData = pickle.load(f)
-        try:
-            self.bestHeight = max(self.blockData)
-        except ValueError:
-            self.bestHeight = None
-
-    # def readFromHistory(self, blockHeightRange, dbFile=historyFile):
-    #     # blockHeightRange is (start,end) inclusive at both sides
-    #     # but start won't be counted because it serves as the reference for the first time diff
-    #     try:
-    #         bestHeight = max(self.blocks.keys())
-    #     except ValueError:
-    #         bestHeight = None
-        
-    #     prevBlock = None
-    #     idx = 0
-    #     heights = range(max(bestHeight,blockHeightRange[0]), blockHeightRange[1]+1)
-
-    #     try:
-    #         while not prevBlock:
-    #             prevBlock = Block.blockFromHistory(heights[idx],dbFile=dbFile)
-    #             idx += 1
-    #     except IndexError:
-    #         raise ValueError("No valid blocks.")
-
-    #     for height in heights[idx:]:
-    #         if not (height % 10):
-    #             print(height)
-    #         block = Block.blockFromHistory(height)
-    #         if block:
-    #             if height == prevBlock.height + 1:
-    #                 blockInterval = block.time - prevBlock.time
-    #                 blockInterval = max(blockInterval, 1)
-    #                 try:
-    #                     minLeadTime = min([entry['leadTime'] for entry in 
-    #                         block.entries.itervalues() if entry['inBlock']])
-    #                 except ValueError:
-    #                     minLeadTime = 0
-    #                 blockStat = BlockStat(block,minLeadTime,bootstrap=False,allowZeroFee=True)
-    #                 minFeeRate = blockStat.calcFee().minFeeRate
-    #                 self.blocks[height] = (blockInterval, minFeeRate)
-    #             prevBlock = block
-
 
 class FeeClass(object):
     def __init__(self, feeRate):
@@ -195,8 +76,132 @@ class FeeClass(object):
             + int(stranded)) / float(self.totalBlocks+1)
         self.totalBlocks += 1
 
+    def __repr__(self):
+        return "feeRate: %d, avgWait: %.2f, strandedProportion: %.3f, avgStrandedBlocks: %.2f" % (
+            self.feeRate, self.avgWait, self.strandedProportion, self.avgStrandedBlocks)
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+
+# class QEOnline(QEstimator):
+#     def __init__(self, maxMFR, adaptive=adaptiveWindow, loadFile=saveQueueFile):
+#         super(QEOnline, self).__init__(maxMFR)
+#         self.adaptive = adaptive
+#         self.blockData = {}
+#         self.bestHeight = None
+#         self.prevBlock = None
+
+#         if loadFile:
+#             try:
+#                 self.loadBlockData(loadFile)
+#             except IOError:
+#                 logWrite("QE: Couldn't load saved blocks.")
+#             else:
+#                 logWrite("QE: Loading blocks; found best height at " + 
+#                     str(self.bestHeight if self.bestHeight else -1))
+
+#     def pushBlocks(self, blocks, isInit=False):
+#         for block in blocks:
+#             if block:
+#                 if self.prevBlock and block.height == self.prevBlock.height + 1:
+#                     blockInterval = block.time - self.prevBlock.time
+#                     blockInterval = max(blockInterval, 1)
+#                     try:
+#                         minLeadTime = min([entry['leadTime'] for entry in 
+#                             block.entries.itervalues() if entry['inBlock']])
+#                     except ValueError:
+#                         minLeadTime = 0
+#                     blockStat = BlockStat(block,minLeadTime,bootstrap=False,allowZeroFee=True)
+#                     minFeeRate = blockStat.calcFee().minFeeRate
+#                     self.blockData[block.height] = (blockInterval, minFeeRate)
+#                     self.bestHeight = block.height
+#                     logWrite("QE: Added block %d with interval %d and mfr %.0f" %
+#                         (block.height, blockInterval, minFeeRate))
+#                 self.prevBlock = block
+
+#         if not isInit:
+#             self.adaptiveCalc()
+#             try:
+#                 self.saveBlockData()
+#             except IOError:
+#                 logWrite("QE: Error saving blocks.")
+
+#     def adaptiveCalc(self):
+#         if not self.bestHeight:
+#             raise ValueError("QE: Empty blockData.")
+#         # to-do : shift the clearing up to pushBlocks
+#         heightThresh = self.bestHeight - self.adaptive
+#         for height in self.blockData.keys():
+#             if height < heightThresh:
+#                 del self.blockData[height]
+
+#         self.qMetrics = [FeeClass(i*feeResolution)
+#             for i in range(self.maxMFR // feeResolution + 1)]
+#         blockDataItems = self.blockData.items()
+#         blockDataItems.sort(key=lambda x: x[0])
+#         for height, block in blockDataItems:
+#             for feeClass in self.qMetrics:
+#                 feeClass.nextBlock(height, block[0], block[1])
+
+#     def __repr__(self):
+#         return "QEO{maxMFR: %d, adaptive: %d, bestHeight: %d, numBlocks: %d}" % (
+#             self.maxMFR, self.adaptive, self.bestHeight if self.bestHeight else -1, len(self.blockData))
+
+#     def saveBlockData(self, dbFile=saveQueueFile):
+#         if not self.blockData:
+#             raise ValueError("QE: There's nothing to save.")
+
+#         with open(dbFile, 'wb') as f:
+#             pickle.dump(self.blockData, f)
+
+#     def loadBlockData(self, dbFile=saveQueueFile):
+#         with open(dbFile, 'rb') as f:
+#             self.blockData = pickle.load(f)
+#         try:
+#             self.bestHeight = max(self.blockData)
+#         except ValueError:
+#             self.bestHeight = None
+
+    # def readFromHistory(self, blockHeightRange, dbFile=historyFile):
+    #     # blockHeightRange is (start,end) inclusive at both sides
+    #     # but start won't be counted because it serves as the reference for the first time diff
+    #     try:
+    #         bestHeight = max(self.blocks.keys())
+    #     except ValueError:
+    #         bestHeight = None
+        
+    #     prevBlock = None
+    #     idx = 0
+    #     heights = range(max(bestHeight,blockHeightRange[0]), blockHeightRange[1]+1)
+
+    #     try:
+    #         while not prevBlock:
+    #             prevBlock = Block.blockFromHistory(heights[idx],dbFile=dbFile)
+    #             idx += 1
+    #     except IndexError:
+    #         raise ValueError("No valid blocks.")
+
+    #     for height in heights[idx:]:
+    #         if not (height % 10):
+    #             print(height)
+    #         block = Block.blockFromHistory(height)
+    #         if block:
+    #             if height == prevBlock.height + 1:
+    #                 blockInterval = block.time - prevBlock.time
+    #                 blockInterval = max(blockInterval, 1)
+    #                 try:
+    #                     minLeadTime = min([entry['leadTime'] for entry in 
+    #                         block.entries.itervalues() if entry['inBlock']])
+    #                 except ValueError:
+    #                     minLeadTime = 0
+    #                 blockStat = BlockStat(block,minLeadTime,bootstrap=False,allowZeroFee=True)
+    #                 minFeeRate = blockStat.calcFee().minFeeRate
+    #                 self.blocks[height] = (blockInterval, minFeeRate)
+    #             prevBlock = block
+
+
+
 
 # class QEonline(QEstimator):
 #     def __init__(self, maxMFR, adaptive=adaptiveWindow, currHeight=None):

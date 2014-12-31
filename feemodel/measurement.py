@@ -3,6 +3,9 @@ from feemodel.config import config, saveWaitFile, saveRatesFile
 from feemodel.txmempool import Block
 from math import exp
 from random import random, choice
+from copy import deepcopy
+import threading
+from numpy.random import poisson
 
 try:
     import cPickle as pickle
@@ -14,6 +17,8 @@ priorityThresh = config['measurement']['priorityThresh']
 samplingWindow = 18
 rateWindow = 2016
 waitTimesWindow = 2016
+
+ratesLock = threading.Lock()
 
 class BlockTxRate(object):
     def __init__(self, block, prevBlock):
@@ -34,6 +39,8 @@ class TxRates(Saveable):
     def __init__(self, samplingWindow=samplingWindow, rateWindow=rateWindow):
         self.blockRates = {}
         self.txSamples = []
+        self.blockRatesCache = {}
+        self.txSamplesCache = []
         self.samplingWindow = samplingWindow
         self.rateWindow = rateWindow
         self.prevBlock = None
@@ -46,42 +53,50 @@ class TxRates(Saveable):
                     self.blockRates[block.height] = BlockTxRate(block, self.prevBlock)
                 except ValueError:
                     pass
-                
-                samplingThresh = block.height - self.samplingWindow
-                rateThresh = block.height - self.rateWindow
-                for height, blockRate in self.blockRates.items():
-                    if height <= samplingThresh:
-                        blockRate.txSamples = []
-                    if height <= rateThresh:
-                        del self.blockRates[height]
+                else:
+                    samplingThresh = block.height - self.samplingWindow
+                    rateThresh = block.height - self.rateWindow
+                    for height, blockRate in self.blockRates.items():
+                        if height <= samplingThresh:
+                            blockRate.txSamples = []
+                        if height <= rateThresh:
+                            del self.blockRates[height]
 
-                self.txSamples = [] 
-                for height in range(block.height-self.samplingWindow+1, block.height+1):
-                    blockRate = self.blockRates.get(height)
-                    if blockRate:
-                        self.txSamples.extend(blockRate.txSamples)
+                    self.txSamples = [] 
+                    for height in range(block.height-self.samplingWindow+1, block.height+1):
+                        blockRate = self.blockRates.get(height)
+                        if blockRate:
+                            self.txSamples.extend(blockRate.txSamples)
 
-                logWrite("TR: added block %d" % block.height)
+                    logWrite("TR: added block %d" % block.height)
 
             self.prevBlock = block
 
-    def calcRates(self, interval):
-        totalTxs = 0
-        totalTime = 0
-        for height in range(*interval):
-            blockRate = self.blockRates.get(height)
-            if blockRate:
-                totalTxs += blockRate.numTxs
-                totalTime += blockRate.timeInterval
+        with ratesLock:
+            self.blockRatesCache = deepcopy(self.blockRates)
+            self.txSamplesCache = deepcopy(self.txSamples)
 
-        if totalTime:
-            return totalTxs / float(totalTime)
-        else:
-            raise ValueError("Time interval is zero.")
+    def calcRates(self, interval):
+        with ratesLock:
+            totalTxs = 0
+            totalTime = 0
+            for height in range(*interval):
+                blockRate = self.blockRatesCache.get(height)
+                if blockRate:
+                    totalTxs += blockRate.numTxs
+                    totalTime += blockRate.timeInterval
+
+            if totalTime:
+                return totalTxs / float(totalTime)
+            else:
+                raise ValueError("Time interval is zero.")
     
     def generateTxSample(self, expectedNumTxs):
-        k = poissonSample(expectedNumTxs)
-        return [choice(self.txSamples) for i in xrange(k)]
+        with ratesLock:
+            # k = poissonSample(expectedNumTxs)
+            # k = int(expectedNumTxs)
+            k = poisson(expectedNumTxs)
+            return [choice(self.txSamplesCache) for i in xrange(k)]
 
     @staticmethod
     def loadObject():
@@ -101,7 +116,7 @@ class BlockTxWaitTimes(object):
             if feeClassValue <= feeRate:
                 feeClass = max(feeClass, feeClassValue)
 
-        if feeClass:
+        if feeClass is not None:
             numTxs, prevWaitTime = self.avgWaitTimes[feeClass]
             self.avgWaitTimes[feeClass] = (numTxs+1,
                 (prevWaitTime*numTxs + waitTime) / (numTxs + 1))

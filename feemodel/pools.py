@@ -8,6 +8,7 @@ from collections import defaultdict
 from math import log, exp, ceil
 from operator import add
 from copy import deepcopy
+from random import random
 import threading
 import json
 import os
@@ -60,7 +61,7 @@ class Pool(object):
             self.addBlock(block, txs)
 
         if not txs and deferredBlocks:
-            txs.extend(txPreprocess(deferredBlocks[0]))
+            txs.extend(txPreprocess(deferredBlocks[0], removeHighPriority=True, removeDeps=True))
 
         txs.sort(key=lambda x: x[0], reverse=True)
 
@@ -117,6 +118,11 @@ class PoolEstimator(Saveable):
             pool.estimateParams()
         with poolsCacheLock:
             self.poolsCache = deepcopy(self.pools)
+            self.poolsIdx = []
+            p = 0.
+            for name, pool in self.poolsCache.iteritems():
+                p += pool.proportion
+                self.poolsIdx.append((p, name, pool))
 
     def identifyPoolBlocks(self, blockHeightRange):
         loadedHeights = reduce(add,
@@ -173,6 +179,21 @@ class PoolEstimator(Saveable):
             for pinfo, poolprops in self.poolInfo[infotype].items():
                 if not poolprops['seen_heights']:
                     self.unseenInfo[infotype].append(pinfo)
+
+    def selectRandomPool(self):
+        with poolsCacheLock:
+            if not len(self.poolsCache):
+                raise ValueError("No valid pools.")
+            r = random()
+            for pidx in self.poolsIdx:
+                if r < pidx[0]:
+                    return pidx[1], deepcopy(pidx[2])
+
+            raise IndexError("This shouldn't happen")
+
+    def getPoolMFR(self):
+        with poolsCacheLock:
+            return [pool.minFeeRate for pool in self.poolsCache.values()]
 
     @staticmethod
     def loadObject(savePoolsFile=savePoolsFile):
