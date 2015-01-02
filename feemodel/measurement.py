@@ -17,14 +17,16 @@ samplingWindow = 18
 rateWindow = 2016
 waitTimesWindow = 2016
 
-ratesLock = threading.Lock()
+ratesLock = threading.RLock()
 
 class BlockTxRate(object):
     def __init__(self, block, prevBlock):
         if not prevBlock or not block.height == prevBlock.height + 1:
             raise ValueError("Blocks not consecutive.")
         newtxs = set(block.entries) - set(prevBlock.entries)
-        self.numTxs = len(newtxs)
+        numConflicts = len([1 for entry in block.entries.itervalues()
+            if entry.get('isConflict')])
+        self.numTxs = len(newtxs) - numConflicts
         self.timeInterval = block.time - prevBlock.time
         self.txSamples = [block.entries[txid] for txid in newtxs]
         for tx in self.txSamples:
@@ -85,6 +87,11 @@ class TxRates(Saveable):
                     totalTxs += blockRate.numTxs
                     totalTime += blockRate.timeInterval
 
+            if totalTxs < 0:
+                # This is possible because we count entries removed as 
+                # a result of mempool conflict as a negative tx rate.
+                raise ValueError("Negative total txs.")
+
             if totalTime:
                 return totalTxs / float(totalTime)
             else:
@@ -94,6 +101,18 @@ class TxRates(Saveable):
         with ratesLock:
             k = poissonSample(expectedNumTxs)
             return [choice(self.txSamplesCache) for i in xrange(k)]
+
+    def getByteRate(self, interval, feeClassValues):
+        with ratesLock:
+            txRate = self.calcRates(interval)
+            numSamples = len(self.txSamplesCache)
+            byteRates = [(
+                feeRate,
+                sum([tx['size'] for tx in self.txSamplesCache
+                    if tx['feeRate'] >= feeRate])*txRate/numSamples
+            ) for feeRate in feeClassValues]
+
+            return byteRates
 
     @staticmethod
     def loadObject():
