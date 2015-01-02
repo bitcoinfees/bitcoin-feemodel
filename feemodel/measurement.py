@@ -1,11 +1,10 @@
 from feemodel.util import proxy, logWrite, Saveable
 from feemodel.config import config, saveWaitFile, saveRatesFile
 from feemodel.txmempool import Block
-from math import exp
+from math import exp, cos, sin, sqrt, log, pi
 from random import random, choice
 from copy import deepcopy
 import threading
-from numpy.random import poisson
 
 try:
     import cPickle as pickle
@@ -93,9 +92,7 @@ class TxRates(Saveable):
     
     def generateTxSample(self, expectedNumTxs):
         with ratesLock:
-            # k = poissonSample(expectedNumTxs)
-            # k = int(expectedNumTxs)
-            k = poisson(expectedNumTxs)
+            k = poissonSample(expectedNumTxs)
             return [choice(self.txSamplesCache) for i in xrange(k)]
 
     @staticmethod
@@ -181,6 +178,8 @@ class TxWaitTimes(Saveable):
 
 def poissonSample(l):
     # http://en.wikipedia.org/wiki/Poisson_distribution#Generating_Poisson-distributed_random_variables
+    if l > 30:
+        return int(round(poissonApprox(l)))
     L = exp(-l)
     k = 0
     p = 1
@@ -189,7 +188,13 @@ def poissonSample(l):
         p *= random()
     return k - 1
 
+def poissonApprox(l):
+    # box-muller
+    u = random()
+    v = random()
 
+    z = sqrt(-2*log(u))*cos(2*pi*v)
+    return z*sqrt(l) + l
 
 
 
