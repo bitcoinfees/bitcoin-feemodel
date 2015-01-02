@@ -31,6 +31,8 @@ class TxMempool(threading.Thread):
             self.mapTx = mapTxNew
             self.bestSeenBlock = currHeight
             return True
+            # Be careful here: may have to pass deepcopy of self.mapTx to processBlocks,
+            # if we are going to return self.mapTx for other functions to use.
         else:
             self.mapTx = mapTxNew
             return False
@@ -78,6 +80,7 @@ class TxMempool(threading.Thread):
             logWrite(str(numMempoolTxsInBlock) + ' of ' + 
                 str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
 
+        # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
         conflicts = set(currPool) - set(newPool)
 
         numConflicts = 0

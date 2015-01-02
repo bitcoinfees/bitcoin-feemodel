@@ -1,7 +1,7 @@
 from feemodel.txmempool import Block
 from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable
 from feemodel.model import ModelError
-from feemodel.config import savePoolsFile, poolInfoFile
+from feemodel.config import savePoolsFile, poolInfoFile, config
 from feemodel.stranding import txPreprocess, calcStrandingFeeRate
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
@@ -22,9 +22,9 @@ poolHistoryUsed = 36
 txRateHistoryUsed = 12
 feeResolution = 1000
 
+hardMaxBlockSize = config['hardMaxBlockSize']
 poolBlocksWindow = 2016
-poolsCacheLock = threading.Lock()
-
+poolsCacheLock = threading.RLock()
 
 class Pool(object):
     def __init__(self):
@@ -190,6 +190,25 @@ class PoolEstimator(Saveable):
                     return pidx[1], deepcopy(pidx[2])
 
             raise IndexError("This shouldn't happen")
+
+    def getProcessingRate(self, blockRate):
+        with poolsCacheLock:
+            mfrs = self.getPoolMFR()
+            mfrs = filter(lambda x: x < float("inf"), mfrs)
+            mfrs.sort()
+            processingRate = [
+                sum([pool.proportion*pool.maxBlockSize*blockRate
+                    for pool in self.poolsCache.values()
+                    if pool.minFeeRate <= mfr])
+                for mfr in mfrs
+            ]
+            processingRateUpper = [
+                sum([pool.proportion*hardMaxBlockSize*blockRate
+                    for pool in self.poolsCache.values()
+                    if pool.minFeeRate <= mfr])
+                for mfr in mfrs
+            ]
+            return mfrs, processingRate, processingRateUpper
 
     def getPoolMFR(self):
         with poolsCacheLock:

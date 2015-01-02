@@ -10,6 +10,7 @@ config = {
     "historyDb": "history.db",
     "predictionFeeResolution": 10000,
     "predictionMaxBlocks": 25,
+    "hardMaxBlockSize": 1000000,
     "nonparam": {
         "numBlocksUsed": (6, 144), # ends-inclusive
         "maxBlockAge": 432,
@@ -29,6 +30,7 @@ config = {
         "priorityThresh": 57.6e6
     },
     "simul": {
+        "blockRate": 1./600,
         "savePoolBlocks": "savePoolBlocks.pickle",
         "savePools": "savePools.db"
     },

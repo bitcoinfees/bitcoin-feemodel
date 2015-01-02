@@ -2,9 +2,15 @@ from feemodel.measurement import TxRates
 from feemodel.pools import PoolEstimator
 from feemodel.util import proxy
 from feemodel.queue import QEstimator
+from feemodel.config import config
+from bitcoin.core import COIN
 from random import expovariate
+from copy import deepcopy
 
-blockRate = 1.0/600 # Once every 10 minutes
+blockRate = config['simul']['blockRate'] # Once every 10 minutes
+# blockRate = 1./60000
+rateRatioThresh = 0.9
+convergeThresh = 0.0001
 
 class Simul(object):
     def __init__(self):
@@ -20,40 +26,89 @@ class Simul(object):
             logWrite("Unable to load txRates.")
             self.tr = TxRates()
 
-        self.feeClassValues = None
+    def initCalcs(self, rateInterval):
+        self.feeClassValues = self.getFeeClassValues(100000, 1000, 5000)
+        self.feeRates, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(blockRate)
+        self.txByteRate, self.txRate = self.tr.getByteRate(rateInterval, self.feeRates)
 
-    def steadyState(self, rateInterval, currHeight=None):
-        if not currHeight:
-            currHeight = proxy.getblockcount()
-        txRate = self.tr.calcRates((currHeight-rateInterval+1, currHeight+1))
-        q = QEstimator(self.getFeeClassValues(100000, 1000, 5000))
-        minFeeClass = min(q.feeClassValues)
-        tidxOffset = 0
-        self.mempool = {}
-        # txRate = 2
-
-        for i in range(1000):
-            t = expovariate(blockRate)
-            txSample = self.tr.generateTxSample(t*txRate)
-            self.mempool.update({str(tidx + tidxOffset): tx for tidx, tx in enumerate(txSample)
-                if tx['feeRate'] >= minFeeClass})
-            tidxOffset += len(txSample)
-            name, pool = self.pe.selectRandomPool()
-            sfr = self.processBlock(pool)
-            q.nextBlock(i, t, sfr)
-            if len(self.mempool) > 100000:
-                print("Too many transactions!")
+        self.stableFeeRate = None
+        for idx in range(len(self.feeRates)):
+            if self.txByteRate[idx] / self.processingRate[idx] < rateRatioThresh:
+                self.stableFeeRate = self.feeRates[idx]
                 break
+        if not self.stableFeeRate:
+            raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
 
+    def conditional(self, rateInterval, mempool):
+        self.initCalcs(rateInterval)
+        for entry in mempool.itervalues():
+            if not 'feeRate' in entry:
+                entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
+        waitTimes = {feeRate: [] for feeRate in self.feeClassValues}
+        totaltime = 0.
+
+        for i in range(10000):
+            stranded = self.feeClassValues[:]
+            self.mempool = deepcopy(mempool)
+            blockIdx = 0
+            totaltime = 0.
+            while stranded:
+                t = self.addToMempool(blockIdx)
+                sfr = self.processBlock()
+                totaltime += t
+                blockIdx += 1
+                strandedDel = []
+                for feeRate in stranded:
+                    if feeRate >= sfr:
+                        waitTimes[feeRate].append(totaltime)
+                        strandedDel.append(feeRate)
+                for feeRate in strandedDel:
+                    stranded.remove(feeRate)
+
+        return waitTimes
+
+    def steadyState(self, rateInterval, mempool=None):
+        self.initCalcs(rateInterval)
+        if not mempool:
+            self.mempool = {}
+        else:
+            self.mempool = mempool
+
+        for entry in self.mempool.itervalues():
+            if not 'feeRate' in entry:
+                entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
+
+        q = QEstimator(self.feeClassValues)
+        convergeCount = 0
+        for i in range(1000):
+            t = self.addToMempool(i)
+            sfr = self.processBlock()
+            d = q.nextBlock(i, t, sfr)
+            # if d <= convergeThresh:
+            #     convergeCount += 1
+            # else:
+            #     convergeCount = 0
+            # if convergeCount >= 10:
+            #     break
+        print("Num iters: %d" % i)
         return q.getStats()
 
-    def processBlock(self, pool):
+    def addToMempool(self, blockIdx):
+        t = expovariate(blockRate)
+        txSample = self.tr.generateTxSample(t*self.txRate)
+        self.mempool.update({'%d_%d' % (blockIdx, tidx): tx for tidx, tx in enumerate(txSample)
+            if tx['feeRate'] >= self.stableFeeRate})
+
+        return t
+
+    def processBlock(self):
+        name, pool = self.pe.selectRandomPool()
         maxBlockSize = pool.maxBlockSize
         minFeeRate = pool.minFeeRate 
         
         blockSize = 0
         strandingFeeRate = float("inf")
-        blockSizeLimited = False
+        blockSizeLimited = 0
 
         txDeps = {}
         txNoDeps = []
@@ -66,14 +121,17 @@ class Simul(object):
         txNoDeps.sort(key=lambda x: x[2])
 
         while txNoDeps:
+            # We need to change this to get better stranding fr for size limited blocks. Done.
             newTx = txNoDeps.pop()
             if newTx[2] >= minFeeRate:
                 if newTx[1] + blockSize <= maxBlockSize:
-                    blockSizeLimited = False
+                    if blockSizeLimited > 0:
+                        blockSizeLimited -= 1
+                    else:
+                        strandingFeeRate = newTx[2]
                     blockSize += newTx[1]
-                    strandingFeeRate = newTx[2]
                     depAdded = False
-                    for txid, entry in txDeps.iteritems():
+                    for txid, entry in txDeps.items():
                         try:
                             entry['depends'].remove(newTx[0])
                         except ValueError:
@@ -87,12 +145,13 @@ class Simul(object):
                         txNoDeps.sort(key=lambda x: x[2])
                     del self.mempool[newTx[0]]
                 else:
-                    blockSizeLimited = True
+                    blockSizeLimited += 1
             else:
                 break
 
         return strandingFeeRate if blockSizeLimited else minFeeRate
 
+    # change this to use txSamples-based spacing
     def getFeeClassValues(self, maxMFR, minSpacing, maxSpacing):
         poolMFR = self.pe.getPoolMFR()
         poolMFR = [f for f in poolMFR if f != float("inf")]

@@ -3,6 +3,7 @@ from feemodel.txmempool import Block
 from feemodel.nonparam import BlockStat
 from feemodel.util import proxy, logWrite, pprint
 from feemodel.model import ModelError
+from math import log
 
 try:
     import cPickle as pickle
@@ -15,11 +16,21 @@ adaptiveWindow = config['queue']['adaptiveWindow']
 class QEstimator(object):
     def __init__(self, feeClassValues):
         self.feeClassValues = feeClassValues 
-        self.qMetrics = [FeeClass(feeRate) for feeRate in self.feeClassValues]
+        self.qMetrics = [QFeeClass(feeRate) for feeRate in self.feeClassValues]
 
     def nextBlock(self, blockHeight, blockInterval, minFeeRate):
+        prevWaits = [feeClass.avgWait for feeClass in self.qMetrics]
         for feeClass in self.qMetrics:
             feeClass.nextBlock(blockHeight, blockInterval, minFeeRate)
+        newWaits = [feeClass.avgWait for feeClass in self.qMetrics]
+        try:
+            logChange = [abs(log(newWaits[idx]) - log(prevWaits[idx]))
+                for idx in range(len(newWaits))]
+        except ValueError:
+            return float("inf")
+        else:
+            return max(logChange)
+
 
     def getStats(self):
         return [repr(fc) for fc in self.qMetrics]
@@ -30,7 +41,7 @@ class QEstimator(object):
             for idx in range(len(self.qMetrics))
         ])
 
-class FeeClass(object):
+class QFeeClass(object):
     def __init__(self, feeRate):
         self.feeRate = feeRate
         self.totalTime = 0.

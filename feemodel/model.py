@@ -12,6 +12,7 @@ class Model(TxMempool):
         self.getStats = ModelInterface(self.modelLock)
 
     def processBlocks(self, *args, **kwargs):
+        # To-do: insert rlock here to ensure super.processBlocks executes in sequential order
         blocks = super(Model, self).processBlocks(*args,**kwargs)
         self.pushBlocks(blocks)
         return blocks

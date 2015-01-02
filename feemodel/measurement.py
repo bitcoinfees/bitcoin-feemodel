@@ -102,17 +102,16 @@ class TxRates(Saveable):
             k = poissonSample(expectedNumTxs)
             return [choice(self.txSamplesCache) for i in xrange(k)]
 
-    def getByteRate(self, interval, feeClassValues):
+    def getByteRate(self, interval, feeRates):
         with ratesLock:
             txRate = self.calcRates(interval)
             numSamples = len(self.txSamplesCache)
-            byteRates = [(
-                feeRate,
+            byteRates = [
                 sum([tx['size'] for tx in self.txSamplesCache
                     if tx['feeRate'] >= feeRate])*txRate/numSamples
-            ) for feeRate in feeClassValues]
+            for feeRate in feeRates]
 
-            return byteRates
+            return byteRates, txRate
 
     @staticmethod
     def loadObject():
