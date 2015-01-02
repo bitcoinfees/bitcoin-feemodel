@@ -100,6 +100,7 @@ class TxRates(Saveable):
     def generateTxSample(self, expectedNumTxs):
         with ratesLock:
             k = poissonSample(expectedNumTxs)
+            # may have to make this a copy.
             return [choice(self.txSamplesCache) for i in xrange(k)]
 
     def getByteRate(self, interval, feeRates):
