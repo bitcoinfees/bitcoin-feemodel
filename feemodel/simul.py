@@ -78,7 +78,7 @@ class Simul(object):
 
         q = QEstimator(self.feeClassValues)
         convergeCount = 0
-        for i in range(1000):
+        for i in range(10000):
             t = self.addToMempool(i)
             sfr = self.processBlock()
             d = q.nextBlock(i, t, sfr)
@@ -134,6 +134,7 @@ class Simul(object):
         strandingFeeRate = float("inf")
         blockSizeLimited = 0
 
+        rejectedTx = []
         while self.txNoDeps:
             # We need to change this to get better stranding fr for size limited blocks. Done.
             newTx = self.txNoDeps.pop()
@@ -159,10 +160,13 @@ class Simul(object):
                     if depAdded:
                         self.txNoDeps.sort(key=lambda x: x[2])
                 else:
+                    rejectedTx.append(newTx)
                     blockSizeLimited += 1
             else:
+                rejectedTx.append(newTx)
                 break
 
+        self.txNoDeps.extend(rejectedTx)
         return strandingFeeRate if blockSizeLimited else minFeeRate
 
     # change this to use txSamples-based spacing
