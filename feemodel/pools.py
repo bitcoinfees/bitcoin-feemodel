@@ -218,6 +218,10 @@ class PoolEstimator(Saveable):
     def loadObject(savePoolsFile=savePoolsFile):
         return super(PoolEstimator, PoolEstimator).loadObject(savePoolsFile)
 
+    def saveObject(self):
+        with poolsCacheLock:
+            super(PoolEstimator, self).saveObject()
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
 

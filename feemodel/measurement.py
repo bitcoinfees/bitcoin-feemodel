@@ -118,6 +118,10 @@ class TxRates(Saveable):
     def loadObject():
         return super(TxRates,TxRates).loadObject(saveRatesFile)
 
+    def saveObject(self):
+        with ratesLock:
+            super(TxRates, self).saveObject()
+
     def __eq__(self,other):
         return self.__dict__ == other.__dict__
 
