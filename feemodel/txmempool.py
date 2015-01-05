@@ -12,6 +12,7 @@ from feemodel.util import proxy, logWrite
 
 pollPeriod = config['pollPeriod']
 keepHistory = config['keepHistory']
+historyLock = threading.Lock()
 
 class TxMempool(threading.Thread):
     # Have to handle RPC errors
@@ -55,45 +56,46 @@ class TxMempool(threading.Thread):
 
     @staticmethod
     def processBlocks(blockHeightRange, currPool, newPool, blockTime=None):
-        if not blockTime:
-            blockTime = int(time())
-        blocks = []
-        for blockHeight in blockHeightRange:
-            blockData = proxy.getblock(proxy.getblockhash(blockHeight))
-            blockSize = len(blockData.serialize())
-            blockTxList = [b2lx(tx.GetHash()) for tx in blockData.vtx]
-            entries = deepcopy(currPool)
-            numMempoolTxsInBlock = 0
+        with historyLock:
+            if not blockTime:
+                blockTime = int(time())
+            blocks = []
+            for blockHeight in blockHeightRange:
+                blockData = proxy.getblock(proxy.getblockhash(blockHeight))
+                blockSize = len(blockData.serialize())
+                blockTxList = [b2lx(tx.GetHash()) for tx in blockData.vtx]
+                entries = deepcopy(currPool)
+                numMempoolTxsInBlock = 0
 
-            for txid, entry in entries.iteritems():
-                if txid in blockTxList:
-                    entry['inBlock'] = True
-                    numMempoolTxsInBlock += 1
-                    del currPool[txid]
-                else:
-                    entry['inBlock'] = False
-                entry['leadTime'] = blockTime - entry['time']
-                entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
-                entry['isConflict'] = False
+                for txid, entry in entries.iteritems():
+                    if txid in blockTxList:
+                        entry['inBlock'] = True
+                        numMempoolTxsInBlock += 1
+                        del currPool[txid]
+                    else:
+                        entry['inBlock'] = False
+                    entry['leadTime'] = blockTime - entry['time']
+                    entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
+                    entry['isConflict'] = False
 
-            blocks.append(Block(entries,blockHeight,blockSize,blockTime))
-            logWrite(str(numMempoolTxsInBlock) + ' of ' + 
-                str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
+                blocks.append(Block(entries,blockHeight,blockSize,blockTime))
+                logWrite(str(numMempoolTxsInBlock) + ' of ' + 
+                    str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
 
-        # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
-        conflicts = set(currPool) - set(newPool)
+            # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
+            conflicts = set(currPool) - set(newPool)
 
-        numConflicts = 0
-        for block in blocks:
-            numConflicts += block.removeConflicts(conflicts)
-
-        logWrite("%d conflicts removed." % numConflicts)
-
-        if feemodel.config.apprun:
+            numConflicts = 0
             for block in blocks:
-                block.writeHistory()
+                numConflicts += block.removeConflicts(conflicts)
 
-        return blocks
+            logWrite("%d conflicts removed." % numConflicts)
+
+            if feemodel.config.apprun:
+                for block in blocks:
+                    block.writeHistory()
+
+            return blocks
 
 
 class Block(object):
