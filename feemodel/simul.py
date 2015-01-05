@@ -1,6 +1,6 @@
 from feemodel.measurement import TxRates, TxSample
 from feemodel.pools import PoolEstimator
-from feemodel.util import proxy
+from feemodel.util import proxy, estimateVariance
 from feemodel.queue import QEstimator
 from feemodel.config import config
 from bitcoin.core import COIN
@@ -13,6 +13,7 @@ from bisect import insort
 blockRate = 1./600
 rateRatioThresh = 0.9
 convergeThresh = 0.0001
+predictionLevel = 0.9
 
 class Simul(object):
     def __init__(self):
@@ -40,10 +41,10 @@ class Simul(object):
         if not self.stableFeeRate:
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
 
-    def conditional(self, rateInterval, mempool):
+    def transient(self, rateInterval, mempool):
         self.initCalcs(rateInterval)
         self.initMempool(mempool)
-        waitTimes = {feeRate: [] for feeRate in self.feeClassValues}
+        waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
         txNoDeps = self.txNoDeps
         txDeps = self.txDeps
 
@@ -60,12 +61,15 @@ class Simul(object):
                 strandedDel = []
                 for feeRate in stranded:
                     if feeRate >= sfr:
-                        waitTimes[feeRate].append(totaltime)
+                        waitTimes[feeRate].addWait(totaltime)
                         strandedDel.append(feeRate)
                 for feeRate in strandedDel:
                     stranded.remove(feeRate)
 
-        return waitTimes
+        for wt in waitTimes.values():
+            wt.calcStats()
+
+        return sorted(waitTimes.items())
 
     def steadyState(self, rateInterval, mempool=None):
         self.initCalcs(rateInterval)
@@ -165,6 +169,30 @@ class Simul(object):
                 prevFeeRate = feeRate
 
         return feeClassValues
+
+
+class TransientWait(object):
+    def __init__(self):
+        self.waitTimes = []
+
+    def addWait(self, waitTime):
+        self.waitTimes.append(waitTime)
+
+    def calcStats(self):
+        self.waitTimes.sort()
+        n = len(self.waitTimes)
+        self.mean = float(sum(self.waitTimes)) / n
+        self.variance = estimateVariance(self.waitTimes, self.mean)
+        self.std = self.variance**0.5
+
+        halfInterval = 1.96*(self.variance/n)**0.5
+        self.meanInterval = (self.mean - halfInterval, self.mean + halfInterval) # 95% confidence interval
+        self.predictionInterval = self.waitTimes[max(int(predictionLevel*n) - 1, 0)]
+
+    def __repr__(self):
+        return "TW{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
+            self.mean, self.std, self.meanInterval[0],
+            self.meanInterval[1], int(predictionLevel*100), self.predictionInterval)
 
 
 

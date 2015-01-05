@@ -98,6 +98,9 @@ def getHistory(dbFile=historyFile):
         if db:
             db.close()
 
+def estimateVariance(x, xbar):
+    return float(sum([(x_i - xbar)**2 for x_i in x])) / (len(x) - 1)
+
 
 proxy = BatchProxy()
 toStdOut = config['logging']['toStdOut']
