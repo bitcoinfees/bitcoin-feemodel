@@ -1,4 +1,4 @@
-from feemodel.measurement import TxRates
+from feemodel.measurement import TxRates, TxSample
 from feemodel.pools import PoolEstimator
 from feemodel.util import proxy
 from feemodel.queue import QEstimator
@@ -6,7 +6,8 @@ from feemodel.config import config
 from bitcoin.core import COIN
 from collections import defaultdict
 from random import expovariate
-from copy import deepcopy
+from copy import deepcopy, copy
+from bisect import insort
 
 # blockRate = config['simul']['blockRate'] # Once every 10 minutes
 blockRate = 1./600
@@ -15,7 +16,6 @@ convergeThresh = 0.0001
 
 class Simul(object):
     def __init__(self):
-        self.mempool = {}
         try:
             self.pe = PoolEstimator.loadObject()
         except IOError:
@@ -42,21 +42,21 @@ class Simul(object):
 
     def conditional(self, rateInterval, mempool):
         self.initCalcs(rateInterval)
-        mempool, txNoDeps, depMap = self.initMempool(mempool)
+        self.initMempool(mempool)
         waitTimes = {feeRate: [] for feeRate in self.feeClassValues}
+        txNoDeps = self.txNoDeps
+        txDeps = self.txDeps
 
         for i in range(1000):
             stranded = self.feeClassValues[:]
-            self.mempool = deepcopy(mempool)
-            self.txNoDeps = deepcopy(txNoDeps)
-            self.depMap = deepcopy(depMap)
-            blockIdx = 0
+            self.txNoDeps = txNoDeps[:]
+            self.txDeps = {txid: {'tx': txDeps[txid]['tx'], 'depends': txDeps[txid]['depends'][:]}
+                for txid in txDeps}
             totaltime = 0.
             while stranded:
-                t = self.addToMempool(blockIdx)
+                t = self.addToMempool()
                 sfr = self.processBlock()
                 totaltime += t
-                blockIdx += 1
                 strandedDel = []
                 for feeRate in stranded:
                     if feeRate >= sfr:
@@ -69,17 +69,12 @@ class Simul(object):
 
     def steadyState(self, rateInterval, mempool=None):
         self.initCalcs(rateInterval)
-        if not mempool:
-            self.mempool = {}
-        else:
-            self.mempool = mempool
-
-        self.mempool, self.txNoDeps, self.depMap = self.initMempool(self.mempool)
+        self.initMempool(mempool)
 
         q = QEstimator(self.feeClassValues)
         convergeCount = 0
         for i in range(10000):
-            t = self.addToMempool(i)
+            t = self.addToMempool()
             sfr = self.processBlock()
             d = q.nextBlock(i, t, sfr)
             # if d <= convergeThresh:
@@ -91,45 +86,35 @@ class Simul(object):
         print("Num iters: %d" % i)
         return q.getStats()
 
-    def addToMempool(self, blockIdx):
+    def addToMempool(self):
         t = expovariate(blockRate)
         txSample = self.tr.generateTxSample(t*self.txRate)
-        self.txNoDeps.extend([
-            (
-                '%d_%d' % (blockIdx, tidx),
-                tx['size'],
-                tx['feeRate']
-            )
-            for tidx, tx in enumerate(txSample)
-            if tx['feeRate'] >= self.stableFeeRate
-        ])
-        self.txNoDeps.sort(key=lambda x: x[2])
+        self.txNoDeps.extend([tx for tx in txSample if tx.feeRate >= self.stableFeeRate])
+        self.txNoDeps.sort(key=lambda x: x.feeRate)
 
         return t
 
     def initMempool(self, mempool):
-        txNoDeps = []
-        depMap = defaultdict(list)
+        self.txNoDeps = []
+        self.txDeps = {}
+        self.depMap = defaultdict(list)
 
         for txid, entry in mempool.items():
             if not 'feeRate' in entry:
                 entry['feeRate'] = int(entry['fee']*COIN) * 1000 // entry['size']
             if not entry['depends']:
-                txNoDeps.append((txid, entry['size'], entry['feeRate']))
-                del mempool[txid]
+                self.txNoDeps.append(TxSample(txid, entry['size'], entry['feeRate']))
             else:
                 for dep in entry['depends']:
-                    depMap[dep].append(txid)
+                    self.depMap[dep].append(txid)
+                self.txDeps[txid] = {'tx': TxSample(txid, entry['size'], entry['feeRate']),
+                    'depends': entry['depends']}
 
-        txNoDeps.sort(key=lambda x: x[2])
-
-        return mempool, txNoDeps, depMap
+        self.txNoDeps.sort(key=lambda x: x.feeRate)
 
     def processBlock(self):
-        name, pool = self.pe.selectRandomPool()
-        maxBlockSize = pool.maxBlockSize
-        minFeeRate = pool.minFeeRate 
-        
+        maxBlockSize, minFeeRate = self.pe.selectRandomPool()
+
         blockSize = 0
         strandingFeeRate = float("inf")
         blockSizeLimited = 0
@@ -138,27 +123,22 @@ class Simul(object):
         while self.txNoDeps:
             # We need to change this to get better stranding fr for size limited blocks. Done.
             newTx = self.txNoDeps.pop()
-            if newTx[2] >= minFeeRate:
-                if newTx[1] + blockSize <= maxBlockSize:
+            if newTx.feeRate >= minFeeRate:
+                if newTx.size + blockSize <= maxBlockSize:
                     if blockSizeLimited > 0:
                         blockSizeLimited -= 1
                     else:
-                        strandingFeeRate = newTx[2]
-                    blockSize += newTx[1]
-                    depAdded = False
+                        strandingFeeRate = min(newTx.feeRate, strandingFeeRate)
 
-                    dependants = self.depMap.get(newTx[0])
+                    blockSize += newTx.size
+
+                    dependants = self.depMap.get(newTx.txid)
                     if dependants:
                         for txid in dependants:
-                            entry = self.mempool[txid]
-                            entry['depends'].remove(newTx[0])
+                            entry = self.txDeps[txid]
+                            entry['depends'].remove(newTx.txid)
                             if not entry['depends']:
-                                self.txNoDeps.append((txid, entry['size'], entry['feeRate']))
-                                del self.mempool[txid]
-                                depAdded = True
-                        del self.depMap[newTx[0]]
-                    if depAdded:
-                        self.txNoDeps.sort(key=lambda x: x[2])
+                                insort(self.txNoDeps, entry['tx'])
                 else:
                     rejectedTx.append(newTx)
                     blockSizeLimited += 1

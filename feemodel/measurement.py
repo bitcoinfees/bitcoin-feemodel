@@ -19,6 +19,21 @@ waitTimesWindow = 2016
 
 ratesLock = threading.RLock()
 
+
+class TxSample(object):
+    def __init__(self, txid, size, feeRate):
+        self.txid = txid
+        self.size = size
+        self.feeRate = feeRate
+
+    def __cmp__(self, other):
+        return cmp(self.feeRate, other.feeRate)
+
+    def __repr__(self):
+        return "TxSample{txid: %s, size: %d, feeRate: %d}" % (
+            self.txid, self.size, self.feeRate)
+
+
 class BlockTxRate(object):
     def __init__(self, block, prevBlock):
         if not prevBlock or not block.height == prevBlock.height + 1:
@@ -28,9 +43,8 @@ class BlockTxRate(object):
             if entry.get('isConflict')])
         self.numTxs = len(newtxs) - numConflicts
         self.timeInterval = block.time - prevBlock.time
-        self.txSamples = [block.entries[txid] for txid in newtxs]
-        for tx in self.txSamples:
-            tx['depends'] = []
+        self.txSamples = [TxSample('0', block.entries[txid]['size'], block.entries[txid]['feeRate'])
+            for txid in newtxs]
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -100,17 +114,22 @@ class TxRates(Saveable):
     def generateTxSample(self, expectedNumTxs):
         with ratesLock:
             k = poissonSample(expectedNumTxs)
+            n = len(self.txSamplesCache)
             # may have to make this a copy.
-            return [choice(self.txSamplesCache) for i in xrange(k)]
+            try:
+                return [self.txSamplesCache[int(random()*n)] for i in range(k)]
+            except IndexError:
+                return [choice(self.txSamplesCache) for i in range(k)]
 
     def getByteRate(self, interval, feeRates):
         with ratesLock:
             txRate = self.calcRates(interval)
             numSamples = len(self.txSamplesCache)
             byteRates = [
-                sum([tx['size'] for tx in self.txSamplesCache
-                    if tx['feeRate'] >= feeRate])*txRate/numSamples
-            for feeRate in feeRates]
+                sum([tx.size for tx in self.txSamplesCache
+                    if tx.feeRate >= feeRate])*txRate/numSamples
+                for feeRate in feeRates
+            ]
 
             return byteRates, txRate
 

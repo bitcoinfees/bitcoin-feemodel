@@ -7,7 +7,7 @@ from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
 from math import log, exp, ceil
 from operator import add
-from copy import deepcopy
+from copy import deepcopy, copy
 from random import random
 import threading
 import json
@@ -187,7 +187,7 @@ class PoolEstimator(Saveable):
             r = random()
             for pidx in self.poolsIdx:
                 if r < pidx[0]:
-                    return pidx[1], deepcopy(pidx[2])
+                    return pidx[2].maxBlockSize, pidx[2].minFeeRate
 
             raise IndexError("This shouldn't happen")
 

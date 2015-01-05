@@ -3,5 +3,6 @@
 *.ipynb
 *.log
 *-info
+*.swp
 feemodel/installinfo.py
 venv
