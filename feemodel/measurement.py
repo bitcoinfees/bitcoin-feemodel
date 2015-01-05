@@ -1,4 +1,4 @@
-from feemodel.util import proxy, logWrite, Saveable
+from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp
 from feemodel.config import config, saveWaitFile, saveRatesFile
 from feemodel.txmempool import Block
 from math import exp, cos, sin, sqrt, log, pi
@@ -14,7 +14,7 @@ except ImportError:
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
 samplingWindow = 18
-rateWindow = 2016
+txRateWindow = 2016
 waitTimesWindow = 2016
 
 ratesLock = threading.RLock()
@@ -51,13 +51,13 @@ class BlockTxRate(object):
 
 
 class TxRates(Saveable):
-    def __init__(self, samplingWindow=samplingWindow, rateWindow=rateWindow):
-        self.blockRates = {}
+    def __init__(self, samplingWindow=samplingWindow, txRateWindow=txRateWindow):
+        self.blockTxRates = {}
         self.txSamples = []
-        self.blockRatesCache = {}
+        self.blockTxRatesCache = {}
         self.txSamplesCache = []
         self.samplingWindow = samplingWindow
-        self.rateWindow = rateWindow
+        self.txRateWindow = txRateWindow
         self.prevBlock = None
         super(TxRates, self).__init__(saveRatesFile)
 
@@ -65,30 +65,30 @@ class TxRates(Saveable):
         for block in blocks:
             if block:
                 try:
-                    self.blockRates[block.height] = BlockTxRate(block, self.prevBlock)
+                    self.blockTxRates[block.height] = BlockTxRate(block, self.prevBlock)
                 except ValueError:
                     pass
                 else:
                     samplingThresh = block.height - self.samplingWindow
-                    rateThresh = block.height - self.rateWindow
-                    for height, blockRate in self.blockRates.items():
+                    rateThresh = block.height - self.txRateWindow
+                    for height, blockTxRate in self.blockTxRates.items():
                         if height <= samplingThresh:
-                            blockRate.txSamples = []
+                            blockTxRate.txSamples = []
                         if height <= rateThresh:
-                            del self.blockRates[height]
+                            del self.blockTxRates[height]
 
                     self.txSamples = [] 
                     for height in range(block.height-self.samplingWindow+1, block.height+1):
-                        blockRate = self.blockRates.get(height)
-                        if blockRate:
-                            self.txSamples.extend(blockRate.txSamples)
+                        blockTxRate = self.blockTxRates.get(height)
+                        if blockTxRate:
+                            self.txSamples.extend(blockTxRate.txSamples)
 
                     logWrite("TR: added block %d" % block.height)
 
             self.prevBlock = block
 
         with ratesLock:
-            self.blockRatesCache = deepcopy(self.blockRates)
+            self.blockTxRatesCache = deepcopy(self.blockTxRates)
             self.txSamplesCache = deepcopy(self.txSamples)
 
     def calcRates(self, interval):
@@ -96,10 +96,10 @@ class TxRates(Saveable):
             totalTxs = 0
             totalTime = 0
             for height in range(*interval):
-                blockRate = self.blockRatesCache.get(height)
-                if blockRate:
-                    totalTxs += blockRate.numTxs
-                    totalTime += blockRate.timeInterval
+                blockTxRate = self.blockTxRatesCache.get(height)
+                if blockTxRate:
+                    totalTxs += blockTxRate.numTxs
+                    totalTime += blockTxRate.timeInterval
 
             if totalTxs < 0:
                 # This is possible because we count entries removed as 
@@ -217,6 +217,18 @@ class TxWaitTimes(Saveable):
     @staticmethod
     def loadObject():
         return super(TxWaitTimes,TxWaitTimes).loadObject(saveWaitFile)
+
+def getBlockInterval(interval):
+    '''Estimates the block interval from blocks in range(interval[0], interval[1])'''
+    numBlocks = interval[1]-interval[0]-1
+    if numBlocks < 144:
+        raise ValueError("Interval must be at least 144 blocks.")
+    timeInterval = getBlockTimeStamp(interval[1]-1) - getBlockTimeStamp(interval[0])
+    sampleMean = timeInterval / float(numBlocks)
+    halfInterval = 1.96*sampleMean/numBlocks**0.5
+    confInterval = (sampleMean - halfInterval, sampleMean + halfInterval)
+
+    return sampleMean, confInterval
 
 def poissonSample(l):
     # http://en.wikipedia.org/wiki/Poisson_distribution#Generating_Poisson-distributed_random_variables

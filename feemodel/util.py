@@ -21,6 +21,10 @@ def getCoinbaseInfo(blockHeight):
 
     return addr, tag
 
+def getBlockTimeStamp(blockHeight):
+    block = proxy.getblock(proxy.getblockhash(blockHeight))
+    return block.nTime
+
 class Saveable(object):
     def __init__(self, saveFile):
         self.saveFile = saveFile

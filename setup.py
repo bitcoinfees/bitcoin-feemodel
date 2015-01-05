@@ -17,7 +17,7 @@ if not os.path.exists(datadir):
 else:
     dirwarn = True
 
-
+# We must run git submodule init and update
 shutil.copyfile('knownpools/pools.json', os.path.join(datadir, 'pools.json'))
 
 setup(

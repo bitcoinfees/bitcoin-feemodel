@@ -1,4 +1,4 @@
-from feemodel.measurement import TxRates, TxSample
+from feemodel.measurement import TxRates, TxSample, getBlockInterval
 from feemodel.pools import PoolEstimator
 from feemodel.util import proxy, estimateVariance
 from feemodel.queue import QEstimator
@@ -29,6 +29,7 @@ class Simul(object):
             self.tr = TxRates()
 
     def initCalcs(self, rateInterval):
+        self.blockInterval, self.blockIntervalCI = getBlockInterval() # To be continued...
         self.feeClassValues = self.getFeeClassValues(100000, 1000, 5000)
         self.feeRates, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(blockRate)
         self.txByteRate, self.txRate = self.tr.getByteRate(rateInterval, self.feeRates)
