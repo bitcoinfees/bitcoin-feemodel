@@ -272,6 +272,13 @@ class PoolEstimatorOnline(StoppableThread, PoolEstimator):
         self.poolEstimatePeriod = poolEstimatePeriod
         StoppableThread.__init__(self)
         PoolEstimator.__init__(poolBlocksWindow)
+        try:
+            peSave = PoolEstimator.loadObject()
+        except IOError:
+            logWrite("Unable to load pool estimator; loading from scratch.")
+        else:
+            for key,val in peSave.__dict__.items():
+                setattr(self, key, val)
 
     def run(self):
         logWrite("Starting pool estimator.")
