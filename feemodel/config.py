@@ -20,18 +20,18 @@ config = {
         "minP": 0.3
     },
     "queue": {
-        "saveQueue": "saveQueue.pickle",
+        "saveQueue": "savequeue.pickle",
         "feeResolution": 1000,
         "adaptiveWindow": 2016
     },
     "measurement": {
-        "saveWait": "saveWait.pickle",
-        "saveRates": "saveRates.pickle",
+        "saveWait": "savewait.pickle",
+        "saveRates": "saverates.pickle",
         "priorityThresh": 57.6e6
     },
     "simul": {
         "blockRate": 1./600,
-        "savePools": "savePools.db"
+        "savePools": "savepools.pickle"
     },
     "logging": {
         "logFile": 'debug.log',
