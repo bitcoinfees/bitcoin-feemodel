@@ -17,22 +17,20 @@ testPoolsFile = 'data/testPools.pickle'
 blockRate = 1./600
 
 class PoolEstimatorTests(unittest.TestCase):
-    def setUp(self):
-        self.pe = PoolEstimator(savePoolsFile)
-        feemodel.pools.poolBlocksWindow = 2016
-
     def test_poolIO(self):
+        self.pe = PoolEstimator(savePoolsFile=savePoolsFile)
         self.pe.identifyPoolBlocks((333931,333953))
         self.pe.estimatePools()
         self.assertEqual(self.pe.poolsCache, self.pe.pools)
         self.pe.saveObject()
         pe2 = PoolEstimator.loadObject(savePoolsFile)
         self.assertEqual(self.pe,pe2)
+        print(self.pe)
 
         os.remove(savePoolsFile)
 
     def test_poolClears(self):
-        feemodel.pools.poolBlocksWindow = 5
+        self.pe = PoolEstimator(5, savePoolsFile)
         self.pe.identifyPoolBlocks((333931,333953))
         self.pe.estimatePools()
         heights = reduce(add, [list(pool.blockHeights) for pool in self.pe.poolsCache.values()], [])
@@ -55,7 +53,7 @@ class RandomPoolTest(unittest.TestCase):
         mfrs, pr, upr = self.pe.getProcessingRate(blockRate)
         sampleProcessingRate = [ProcessingRate(mfr) for mfr in mfrs]
         totaltime = 0.
-        for i in xrange(100000):
+        for i in xrange(500000):
             totaltime += expovariate(blockRate)
             maxBlockSize, minFeeRate = self.pe.selectRandomPool()
             for feeRate in sampleProcessingRate:

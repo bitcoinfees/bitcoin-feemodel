@@ -25,6 +25,26 @@ def getBlockTimeStamp(blockHeight):
     block = proxy.getblock(proxy.getblockhash(blockHeight))
     return block.nTime
 
+
+class StoppableThread(threading.Thread):
+    def __init__(self):
+        super(StoppableThread, self).__init__()
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
+
+    def isStopped(self):
+        return self._stop.is_set()
+
+    def sleep(self, secs):
+        '''Sleep but wakeup immediately on stop()'''
+        self._stop.wait(timeout=secs)
+
+    def getStopObject(self):
+        return self._stop
+
+
 class Saveable(object):
     def __init__(self, saveFile):
         self.saveFile = saveFile

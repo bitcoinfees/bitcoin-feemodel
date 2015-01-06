@@ -8,20 +8,17 @@ import decimal
 from bitcoin.core import COIN, b2lx
 import feemodel.config
 from feemodel.config import config, historyFile
-from feemodel.util import proxy, logWrite
+from feemodel.util import proxy, logWrite, StoppableThread
 
 pollPeriod = config['pollPeriod']
 keepHistory = config['keepHistory']
 historyLock = threading.Lock()
 
-class TxMempool(threading.Thread):
+class TxMempool(StoppableThread):
     # Have to handle RPC errors
-    def __init__(self):
-        # Writehistory means write to db the mempool state at each block.
-        # We keep <keepHistory> number of past blocks.
-        super(TxMempool, self).__init__()
-        self._stop = threading.Event()        
-    
+    # Writehistory means write to db the mempool state at each block.
+    # We keep <keepHistory> number of past blocks.
+
     def update(self):
         currHeight, mapTxNew = proxy.pollMempool()
         if currHeight > self.bestSeenBlock:
@@ -42,17 +39,14 @@ class TxMempool(threading.Thread):
         feemodel.config.apprun = True
         logWrite("Starting mempool")
         self.bestSeenBlock, self.mapTx = proxy.pollMempool()
-        while not self._stop.is_set():
+        while not self.isStopped():
             self.update()
-            self._stop.wait(timeout=pollPeriod)
+            self.sleep(pollPeriod)
         logWrite("Closing up mempool...")
         for thread in threading.enumerate():
             if thread.name.startswith('mempool'):
                 thread.join()
         logWrite("Finished everything.")
-
-    def stop(self):
-        self._stop.set()
 
     @staticmethod
     def processBlocks(blockHeightRange, currPool, newPool, blockTime=None):

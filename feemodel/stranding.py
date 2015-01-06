@@ -1,4 +1,4 @@
-from random import random
+from random import random, choice
 
 def txPreprocess(block, removeHighPriority=False, removeDeps=False, allowZeroFee=False):
     try:
@@ -69,7 +69,10 @@ def calcStrandingFeeRate(txs, bootstrap=True):
 
 def bootstrapSample(txs):
     n = len(txs)
-    sample = [txs[int(random()*n)] for idx in xrange(n)]
+    try:
+        sample = [txs[int(random()*n)] for idx in range(n)]
+    except IndexError:
+        sample = [choice(txs) for idx in range(n)]
     sample.sort(key=lambda x: x[0], reverse=True)
     return sample
 

@@ -13,11 +13,12 @@ except ImportError:
 
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
-samplingWindow = 18
-txRateWindow = 2016
-waitTimesWindow = 2016
+defaultSamplingWindow = 18
+defaultTxRateWindow = 2016
+defaultWaitTimesWindow = 2016
 
 ratesLock = threading.RLock()
+waitLock = threading.lock()
 
 
 class TxSample(object):
@@ -51,7 +52,7 @@ class BlockTxRate(object):
 
 
 class TxRates(Saveable):
-    def __init__(self, samplingWindow=samplingWindow, txRateWindow=txRateWindow):
+    def __init__(self, samplingWindow=defaultSamplingWindow, txRateWindow=defaultTxRateWindow):
         self.blockTxRates = {}
         self.txSamples = []
         self.blockTxRatesCache = {}
@@ -133,6 +134,10 @@ class TxRates(Saveable):
 
             return byteRates, txRate
 
+    def getBestHeight(self):
+        with ratesLock:
+            return max(self.blockTxRatesCache) if self.blockTxRates else None
+
     @staticmethod
     def loadObject(saveRatesFile=saveRatesFile):
         return super(TxRates,TxRates).loadObject(saveRatesFile)
@@ -162,10 +167,13 @@ class BlockTxWaitTimes(object):
 
 
 class TxWaitTimes(Saveable):
-    def __init__(self, feeClassValues):
+    def __init__(self, feeClassValues, waitTimesWindow=defaultWaitTimesWindow):
         self.blockWaitTimes = {}
         self.feeClassValues = feeClassValues
         self.waitTimes = {}
+        self.waitTimesWindow = waitTimesWindow
+        self.waitTimesCache = {}
+        self.bestHeight = None
         super(TxWaitTimes, self).__init__(saveWaitFile)
         
     def pushBlocks(self, blocks):
@@ -179,7 +187,7 @@ class TxWaitTimes(Saveable):
                         entry['feeRate'], block.time - entry['time'])
             logWrite("WT: Added block %d" % block.height)
 
-            heightThresh = block.height - waitTimesWindow
+            heightThresh = block.height - self.waitTimesWindow
             for height in self.blockWaitTimes.keys():
                 if height <= heightThresh:
                     del self.blockWaitTimes[height]
@@ -205,6 +213,13 @@ class TxWaitTimes(Saveable):
                 )
             else:
                 self.waitTimes[feeClassValue] = (-1, totalTxs)
+        with waitLock:
+            self.waitTimesCache = deepcopy(self.waitTimes)
+            self.bestHeight = max(self.blockWaitTimes)
+
+    def getBestHeight(self):
+        with waitLock:
+            return self.bestHeight
 
     @staticmethod
     def _countTx(entry):
@@ -218,7 +233,12 @@ class TxWaitTimes(Saveable):
     def loadObject():
         return super(TxWaitTimes,TxWaitTimes).loadObject(saveWaitFile)
 
-def getBlockInterval(interval):
+    def saveObject():
+        with waitLock:
+            super(TxWaitTimes, self).saveObject()
+
+
+def estimateBlockInterval(interval):
     '''Estimates the block interval from blocks in range(interval[0], interval[1])'''
     numBlocks = interval[1]-interval[0]-1
     if numBlocks < 144:
