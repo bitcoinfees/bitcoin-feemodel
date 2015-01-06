@@ -59,6 +59,7 @@ class Pool(object):
             self.addBlock(block, txs)
 
         if not txs and deferredBlocks:
+            # All the blocks are close to the max block size. So we just take one block.
             txs.extend(txPreprocess(deferredBlocks[0], removeHighPriority=True, removeDeps=True))
 
         txs.sort(key=lambda x: x[0], reverse=True)
@@ -85,15 +86,17 @@ class Pool(object):
         self.blockHeights = set(filter(lambda x: x > heightThresh, self.blockHeights))
 
     def getBestHeight(self):
-        maxFeeLimited = max(self.feeLimitedBlocks) if self.feeLimitedBlocks else None
-        maxSizeLimited = max(self.sizeLimitedBlocks) if self.sizeLimitedBlocks else None
-        return max(maxFeeLimited, maxSizeLimited)
+        if self.blockHeights:
+            return max(self.blockHeights)
+        else:
+            return None
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
     def __repr__(self):
-        return "MP{Prop: %.2f, Size: %d, MFR: %.0f, %s}" % (
+        return "MP{NumBlocks: %d, Prop: %.2f, Size: %d, MFR: %.0f, %s}" % (
+            len(self.feeLimitedBlocks)+len(self.sizeLimitedBlocks),
             self.proportion, self.maxBlockSize, self.minFeeRate, self.stats)
 
 
@@ -265,20 +268,13 @@ class PoolEstimator(Saveable):
             self.numPoolsEff, len(self.poolsCache), self.numUnknownPools)
 
 
-class PoolEstimatorOnline(StoppableThread, PoolEstimator):
+class PoolEstimatorOnline(StoppableThread):
     '''Compute pool estimates every <poolEstimatePeriod> blocks
     '''
-    def __init__(self, poolBlocksWindow, poolEstimatePeriod):
+    def __init__(self, pe, poolEstimatePeriod):
+        super(PoolEstimatorOnline, self).__init__()
+        self.pe = pe
         self.poolEstimatePeriod = poolEstimatePeriod
-        StoppableThread.__init__(self)
-        PoolEstimator.__init__(poolBlocksWindow)
-        try:
-            peSave = PoolEstimator.loadObject()
-        except IOError:
-            logWrite("Unable to load pool estimator; loading from scratch.")
-        else:
-            for key,val in peSave.__dict__.items():
-                setattr(self, key, val)
 
     def run(self):
         logWrite("Starting pool estimator.")
@@ -288,10 +284,10 @@ class PoolEstimatorOnline(StoppableThread, PoolEstimator):
         logWrite("Closed up pool estimator.")
 
     def updateEstimates(self):
-        bestHeight = self.getBestHeight()
+        bestHeight = self.pe.getBestHeight()
         currHeight = proxy.getblockcount()
-        if not bestHeight or currHeight - bestHeight > poolEstimatePeriod:
-            blockHeightRange = (currHeight-self.poolBlocksWindow+1, currHeight+1)
-            self.runEstimate(blockHeightRange, self.getStopObject())
+        if not bestHeight or currHeight - bestHeight > self.poolEstimatePeriod:
+            blockHeightRange = (currHeight-self.pe.poolBlocksWindow+1, currHeight+1)
+            self.pe.runEstimate(blockHeightRange, self.getStopObject())
 
 
