@@ -83,7 +83,8 @@ class TxMempool(StoppableThread):
             for block in blocks:
                 numConflicts += block.removeConflicts(conflicts)
 
-            logWrite("%d conflicts removed." % numConflicts)
+            if numConflicts:
+                logWrite("%d conflicts removed." % numConflicts)
 
             if feemodel.config.apprun:
                 for block in blocks:
