@@ -18,7 +18,7 @@ defaultTxRateWindow = 2016
 defaultWaitTimesWindow = 2016
 
 ratesLock = threading.RLock()
-waitLock = threading.lock()
+waitLock = threading.Lock()
 
 
 class TxSample(object):

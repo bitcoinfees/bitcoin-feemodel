@@ -25,19 +25,23 @@ poolsCacheLock = threading.RLock()
 class Pool(object):
     def __init__(self):
         self.proportion = -1
+        self.blockHeights = set()
+        self.unknown = True
+        self.resetParams()
+
+    def resetParams(self):
         self.maxBlockSize = 0
         self.minFeeRate = float("inf")
-        self.blockHeights = set()
         self.feeLimitedBlocks = []
         self.sizeLimitedBlocks = []
         self.stats = {}
-        self.unknown = True
 
     def estimateParams(self, stopFlag=None):
         # Remember to de-duplicate blockHeights
         # and also to clear history <tick>
         txs = []
         deferredBlocks = []
+        self.resetParams()
 
         for height in self.blockHeights:
             if stopFlag and stopFlag.is_set():
@@ -221,6 +225,7 @@ class PoolEstimator(Saveable):
             raise IndexError("This shouldn't happen")
 
     def getProcessingRate(self, blockRate):
+        '''mfrs, processingRate, processingRateUpper = PoolEstimator.getProcessingRate(self, blockRate)'''
         with poolsCacheLock:
             mfrs = self.getPoolMFR()
             mfrs = filter(lambda x: x < float("inf"), mfrs)
