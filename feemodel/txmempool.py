@@ -73,8 +73,8 @@ class TxMempool(StoppableThread):
                     entry['isConflict'] = False
 
                 blocks.append(Block(entries,blockHeight,blockSize,blockTime))
-                logWrite(str(numMempoolTxsInBlock) + ' of ' + 
-                    str(len(blockTxList)-1) + ' in block ' + str(blockHeight))
+                logWrite('%d of %d in block %d' % (
+                    numMempoolTxsInBlock, len(blockTxList)-1, blockHeight))
 
             # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
             conflicts = set(currPool) - set(newPool)
@@ -118,13 +118,15 @@ class Block(object):
                 with db:
                     db.execute('CREATE TABLE blocks (height INTEGER UNIQUE, size INTEGER, time REAL)')
                     db.execute('CREATE TABLE txs (blockheight INTEGER, txid TEXT, data TEXT)')
+            db.execute('CREATE INDEX IF NOT EXISTS heightidx ON txs (blockheight)')
             with db:
                 db.execute('INSERT INTO blocks VALUES (?,?,?)', (self.height, self.size, self.time))
                 db.executemany('INSERT INTO txs VALUES (?,?,?)',
                     [(self.height, txid, json.dumps(entry,default=decimalDefault))
                     for txid,entry in self.entries.iteritems()])
-                historyLimit = self.height - keepHistory
-                if keepHistory > 0:
+            historyLimit = self.height - keepHistory
+            if keepHistory > 0:
+                with db:
                     db.execute('DELETE FROM blocks WHERE height<=?', (historyLimit,))
                     db.execute('DELETE FROM txs WHERE blockheight<=?', (historyLimit,))
         except Exception as e:
