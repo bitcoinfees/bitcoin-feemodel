@@ -24,7 +24,7 @@ txRateWindow = 2016 # The number of recent blocks to store tx rate info for.
 ssRateIntervalLen = txRateWindow # the number of recent blocks used to estimate tx rate
 poolBlocksWindow = 2016
 minFeeSpacing = 500
-defaultFeeValues = range(0, 100000, 1000)
+defaultFeeValues = tuple(range(0, 100000, 1000))
 poolEstimatePeriod = 144 # Re-estimate pools every x blocks
 ssPeriod = 144 # Re-simulate steady state every x blocks
 txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
@@ -346,6 +346,7 @@ class TransientWait(object):
 
 def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
     poolmfrs = [f for f in poolmfrs if f != float("inf")]
+    feeValues = list(feeValues)
     feeValues.extend(poolmfrs)
     feeValues.sort(reverse=True)
     
