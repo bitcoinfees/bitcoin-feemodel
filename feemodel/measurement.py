@@ -52,7 +52,8 @@ class BlockTxRate(object):
 
 
 class TxRates(Saveable):
-    def __init__(self, samplingWindow=defaultSamplingWindow, txRateWindow=defaultTxRateWindow):
+    def __init__(self, samplingWindow=defaultSamplingWindow,
+            txRateWindow=defaultTxRateWindow, saveRatesFile=saveRatesFile):
         self.blockTxRates = {}
         self.txSamples = []
         self.blockTxRatesCache = {}
@@ -93,6 +94,7 @@ class TxRates(Saveable):
             self.txSamplesCache = deepcopy(self.txSamples)
 
     def calcRates(self, interval):
+        '''Returns the number of transactions per second over the specified block interval'''
         with ratesLock:
             totalTxs = 0
             totalTime = 0
@@ -123,6 +125,7 @@ class TxRates(Saveable):
                 return [choice(self.txSamplesCache) for i in range(k)]
 
     def getByteRate(self, interval, feeRates):
+        '''Returns bytes per second as a function of tx feerate.'''
         with ratesLock:
             txRate = self.calcRates(interval)
             numSamples = len(self.txSamplesCache)
@@ -138,16 +141,14 @@ class TxRates(Saveable):
         with ratesLock:
             return max(self.blockTxRatesCache) if self.blockTxRates else None
 
+    def getNumBlocks(self, rateInterval):
+        with ratesLock:
+            return len([height for height in self.blockTxRatesCache
+                if height >= rateInterval[0] and height < rateInterval[1]])
+
     @staticmethod
     def loadObject(saveRatesFile=saveRatesFile):
         return super(TxRates,TxRates).loadObject(saveRatesFile)
-
-    def saveObject(self):
-        with ratesLock:
-            super(TxRates, self).saveObject()
-
-    def __eq__(self,other):
-        return self.__dict__ == other.__dict__
 
 
 class BlockTxWaitTimes(object):
@@ -165,9 +166,12 @@ class BlockTxWaitTimes(object):
             self.avgWaitTimes[feeClass] = (numTxs+1,
                 (prevWaitTime*numTxs + waitTime) / (numTxs + 1))
 
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
 
 class TxWaitTimes(Saveable):
-    def __init__(self, feeClassValues, waitTimesWindow=defaultWaitTimesWindow):
+    def __init__(self, feeClassValues, waitTimesWindow=defaultWaitTimesWindow, saveWaitFile=saveWaitFile):
         self.blockWaitTimes = {}
         self.feeClassValues = feeClassValues
         self.waitTimes = {}
@@ -221,6 +225,10 @@ class TxWaitTimes(Saveable):
         with waitLock:
             return self.bestHeight
 
+    def getWaitTimes(self):
+        with waitLock:
+            return self.waitTimesCache
+
     @staticmethod
     def _countTx(entry):
         return (
@@ -230,12 +238,8 @@ class TxWaitTimes(Saveable):
         )
 
     @staticmethod
-    def loadObject():
+    def loadObject(saveWaitFile=saveWaitFile):
         return super(TxWaitTimes,TxWaitTimes).loadObject(saveWaitFile)
-
-    def saveObject():
-        with waitLock:
-            super(TxWaitTimes, self).saveObject()
 
 
 def estimateBlockInterval(interval):

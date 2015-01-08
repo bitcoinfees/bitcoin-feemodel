@@ -46,7 +46,7 @@ class TxMempool(StoppableThread):
         for thread in threading.enumerate():
             if thread.name.startswith('mempool'):
                 thread.join()
-        logWrite("Finished everything.")
+        logWrite("Closed mempool.")
 
     @staticmethod
     def processBlocks(blockHeightRange, currPool, newPool, blockTime=None):

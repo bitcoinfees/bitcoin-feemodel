@@ -257,13 +257,19 @@ class PoolEstimator(Saveable):
 
             return bestHeight
 
+    def getNumBlocks(self):
+        with poolsCacheLock:
+            return sum([len(pool.feeLimitedBlocks)+len(pool.sizeLimitedBlocks)
+                for pool in self.poolsCache.values()])
+
     @staticmethod
     def loadObject(savePoolsFile=savePoolsFile):
         return super(PoolEstimator, PoolEstimator).loadObject(savePoolsFile)
 
-    def saveObject(self):
+    def copyObject(self):
+        '''We return a copy in which poolsCache integrity is preserved'''
         with poolsCacheLock:
-            super(PoolEstimator, self).saveObject()
+            return deepcopy(self)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__

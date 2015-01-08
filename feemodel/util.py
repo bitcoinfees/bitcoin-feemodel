@@ -6,6 +6,7 @@ from time import ctime
 import sqlite3
 import threading
 from pprint import pprint
+from contextlib import contextmanager
 
 try:
     import cPickle as pickle
@@ -41,6 +42,13 @@ class StoppableThread(threading.Thread):
         '''Sleep but wakeup immediately on stop()'''
         self._stop.wait(timeout=secs)
 
+    @contextmanager
+    def threadStart(self):
+        self.start()
+        yield
+        self.stop()
+        self.join()
+
     def getStopObject(self):
         return self._stop
 
@@ -58,6 +66,9 @@ class Saveable(object):
         with open(saveFile, 'rb') as f:
             obj = pickle.load(f)
         return obj
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 class BlockingProxy(Proxy):
