@@ -1,14 +1,9 @@
 from feemodel.config import saveQueueFile, historyFile, config
 from feemodel.txmempool import Block
 from feemodel.nonparam import BlockStat
-from feemodel.util import proxy, logWrite, pprint
+from feemodel.util import proxy, logWrite, pprint, pickle
 from feemodel.model import ModelError
 from math import log
-
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 feeResolution = config['queue']['feeResolution']
 adaptiveWindow = config['queue']['adaptiveWindow']
@@ -31,9 +26,8 @@ class QEstimator(object):
         else:
             return max(logChange)
 
-
     def getStats(self):
-        return [repr(fc) for fc in self.qMetrics]
+        return self.qMetrics
 
     def __eq__(self, other):
         return all([

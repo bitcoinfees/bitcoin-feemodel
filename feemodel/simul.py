@@ -1,49 +1,56 @@
-from feemodel.measurement import TxRates, TxSample, getBlockInterval
-from feemodel.pools import PoolEstimator
-from feemodel.util import proxy, estimateVariance
+from feemodel.txmempool import TxMempool, LoadHistory
+from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
+from feemodel.pools import PoolEstimator, PoolEstimatorOnline
+from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle
 from feemodel.queue import QEstimator
-from feemodel.config import config
+from feemodel.config import config, saveSSFile
 from bitcoin.core import COIN
 from collections import defaultdict
 from random import expovariate
 from copy import deepcopy, copy
 from bisect import insort
+import threading
+from pprint import pprint
+from time import time
 
 # blockRate = config['simul']['blockRate'] # Once every 10 minutes
 blockRate = 1./600
 rateRatioThresh = 0.9
 convergeThresh = 0.0001
 predictionLevel = 0.9
+waitTimesWindow = 2016
+samplingWindow = 18 # The number of recent blocks to get tx samples from.
+txRateWindow = 2016 # The number of recent blocks to store tx rate info for.
+ssRateIntervalLen = txRateWindow # the number of recent blocks used to estimate tx rate
+poolBlocksWindow = 2016
+minFeeSpacing = 500
+defaultFeeValues = range(0, 100000, 1000)
+poolEstimatePeriod = 144 # Re-estimate pools every x blocks
+ssPeriod = 144 # Re-simulate steady state every x blocks
+txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
 
 class Simul(object):
-    def __init__(self):
-        try:
-            self.pe = PoolEstimator.loadObject()
-        except IOError:
-            logWrite("Unable to load poolEstimator")
-            self.pe = PoolEstimator()
-        try:
-            self.tr = TxRates.loadObject()
-        except IOError:
-            logWrite("Unable to load txRates.")
-            self.tr = TxRates()
+    def __init__(self, pe, tr):
+        self.pe = pe
+        self.tr = tr
+        self.feeClassValues = None
 
-    def initCalcs(self, rateInterval):
-        self.blockInterval, self.blockIntervalCI = getBlockInterval() # To be continued...
-        self.feeClassValues = self.getFeeClassValues(100000, 1000, 5000)
-        self.feeRates, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(blockRate)
-        self.txByteRate, self.txRate = self.tr.getByteRate(rateInterval, self.feeRates)
+    def initCalcs(self):
+        self.poolmfrs, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(blockRate)
+        self.txByteRate, self.txRate = self.tr.getByteRate(self.poolmfrs)
 
         self.stableFeeRate = None
-        for idx in range(len(self.feeRates)):
-            if self.txByteRate[idx] / self.processingRate[idx] < rateRatioThresh:
-                self.stableFeeRate = self.feeRates[idx]
+        for idx in range(len(self.poolmfrs)):
+            if self.txByteRate[idx]*txRateMultiplier / self.processingRate[idx] < rateRatioThresh:
+                self.stableFeeRate = self.poolmfrs[idx]
                 break
         if not self.stableFeeRate:
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
+        # Remove the unstable fee classes here, instead of in queue.py
+        self.feeClassValues = getFeeClassValues(self.poolmfrs, self.stableFeeRate)
 
-    def transient(self, rateInterval, mempool):
-        self.initCalcs(rateInterval)
+    def transient(self, mempool):
+        self.initCalcs()
         self.initMempool(mempool)
         waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
         txNoDeps = self.txNoDeps
@@ -72,28 +79,32 @@ class Simul(object):
 
         return sorted(waitTimes.items())
 
-    def steadyState(self, rateInterval, mempool=None):
-        self.initCalcs(rateInterval)
+    def steadyState(self, miniters=10000, maxiters=1000000, maxtime=3600, mempool=None, stopFlag=None):
+        self.initCalcs()
+        if not mempool:
+            mempool = {}
         self.initMempool(mempool)
 
         q = QEstimator(self.feeClassValues)
-        convergeCount = 0
-        for i in range(10000):
+        starttime = time()
+        for i in range(maxiters):
+            if stopFlag and stopFlag.is_set():
+                raise ValueError("Simulation terminated.")
+            elapsedtime = time() - starttime
+            if elapsedtime > maxtime:
+                break
             t = self.addToMempool()
             sfr = self.processBlock()
             d = q.nextBlock(i, t, sfr)
-            # if d <= convergeThresh:
-            #     convergeCount += 1
-            # else:
-            #     convergeCount = 0
-            # if convergeCount >= 10:
-            #     break
-        print("Num iters: %d" % i)
-        return q.getStats()
+        i += 1
+        if i < miniters:
+            raise ValueError("Too few iterations in the allotted time.")
+        #print("Num iters: %d" % i)
+        return q.getStats(), elapsedtime, i
 
     def addToMempool(self):
         t = expovariate(blockRate)
-        txSample = self.tr.generateTxSample(t*self.txRate)
+        txSample = self.tr.generateTxSample(t*self.txRate*txRateMultiplier)
         self.txNoDeps.extend([tx for tx in txSample if tx.feeRate >= self.stableFeeRate])
         self.txNoDeps.sort(key=lambda x: x.feeRate)
 
@@ -154,22 +165,159 @@ class Simul(object):
         self.txNoDeps.extend(rejectedTx)
         return strandingFeeRate if blockSizeLimited else minFeeRate
 
-    # change this to use txSamples-based spacing
-    def getFeeClassValues(self, maxMFR, minSpacing, maxSpacing):
-        poolMFR = self.pe.getPoolMFR()
-        poolMFR = [f for f in poolMFR if f != float("inf")]
-        feeRates = range(min(poolMFR), maxMFR, maxSpacing)
-        feeRates.extend(poolMFR)
-        feeRates.sort(reverse=True)
-        
-        prevFeeRate = feeRates[0]
-        feeClassValues = [prevFeeRate]
-        for feeRate in feeRates[1:]:
-            if prevFeeRate - feeRate >= minSpacing:
-                feeClassValues.append(feeRate)
-                prevFeeRate = feeRate
 
-        return feeClassValues
+class SimulOnline(TxMempool):
+    def __init__(self):
+        self.waitTimes = ()
+        self.processLock = threading.Lock()
+        self.dataLock = threading.Lock()
+        try:
+            self.pe = PoolEstimator.loadObject()
+        except IOError:
+            logWrite("Unable to load poolEstimator")
+            self.pe = PoolEstimator(poolBlocksWindow)
+        try:
+            self.tr = TxRates.loadObject()
+        except IOError:
+            logWrite("Unable to load txRates.")
+            self.tr = TxRates(samplingWindow, txRateWindow)
+        try:
+            self.wt = TxWaitTimes.loadObject()
+        except IOError:
+            logWrite("Unable to load txWaitTimes.")
+            self.wt = TxWaitTimes(defaultFeeValues, waitTimesWindow)
+
+        self.peo = PoolEstimatorOnline(self.pe, poolEstimatePeriod)
+        logWrite("Updating pool estimates..")
+        self.peo.updateEstimates()
+        logWrite("Done.")
+
+        trBestHeight = self.tr.getBestHeight()
+        wtBestHeight = self.wt.getBestHeight()
+        currHeight = proxy.getblockcount()
+        trBlockHeightRange = (max(trBestHeight, currHeight-txRateWindow+1), currHeight+20)
+        wtBlockHeightRange = (max(wtBestHeight, currHeight-waitTimesWindow+1), currHeight+20)
+
+        logWrite("Loading TxRates and TxWaitTimes estimators...")
+        lh = LoadHistory()
+        lh.registerFn(self.tr.pushBlocks, trBlockHeightRange)
+        lh.registerFn(self.wt.pushBlocks, wtBlockHeightRange)
+        lh.loadBlocks()
+        logWrite("Done.")
+
+        self.tr.saveObject()
+        self.wt.saveObject()
+
+        self.updateData()
+
+        self.ssSim = SteadyStateSim(self.pe, self.tr)
+        super(SimulOnline, self).__init__()
+
+    def processBlocks(self, *args, **kwargs):
+        with self.processLock:
+            blocks = super(SimulOnline, self).processBlocks(*args, **kwargs)
+            self.tr.pushBlocks(blocks)
+            self.wt.pushBlocks(blocks)
+            self.tr.saveObject()
+            self.wt.saveObject()
+            self.updateData()
+
+    def run(self):
+        with self.peo.threadStart(), self.ssSim.threadStart():
+            super(SimulOnline, self).run()
+            logWrite("Stopping SimulOnline...")
+        logWrite("Done. SimulOnline finished.")
+
+    def updateData(self):
+        with self.dataLock:
+            try:
+                self.waitTimes = self.wt.getWaitTimes()
+            except ValueError:
+                pass
+
+    def getWaitTimes(self):
+        with self.dataLock:
+            return self.waitTimes
+
+    def getSteadyStats(self):
+        return self.ssSim.getStats()
+        
+
+class SteadyStateSim(StoppableThread):
+    '''Simulate steady-state every <ssPeriod> blocks'''
+    def __init__(self, pe, tr, ssPeriod=ssPeriod):
+        self.ssPeriod = ssPeriod
+        self.pe = pe
+        self.tr = tr
+        self.statLock = threading.Lock()
+        self.status = 'idle'
+        try:
+            self.loadStats()
+        except IOError:
+            logWrite("SS: Unable to load saved stats - starting from scratch.")
+            self.statsCache = (0, {})
+        super(SteadyStateSim, self).__init__()
+
+    def run(self):
+        logWrite("Starting steady-state sim.")
+        while not self.isStopped():
+            self.simulate()
+            self.sleep(600)
+        logWrite("Closed up steady-state sim.")
+
+    def simulate(self):
+        pe = self.pe.copyObject()
+        tr = self.tr.copyObject()
+        tr.setRateIntervalLen(ssRateIntervalLen)
+        sim = Simul(pe, tr)
+
+        bestHeight = self.statsCache[0]
+        currHeight = proxy.getblockcount()
+        if currHeight - bestHeight <= self.ssPeriod:
+            return
+
+        try:
+            self.status = 'running'
+            stats, timespent, numiters = sim.steadyState(maxiters=10000,stopFlag=self.getStopObject())
+        except ValueError as e:
+            logWrite("SteadyStateSim error:")
+            logWrite(str(e))
+        else:
+            logWrite("ss simul completed with time %.1f seconds and %d iterations." % (
+                timespent, numiters))
+            currHeight = proxy.getblockcount()
+            qstats = {
+                    'stats': [(stat.feeRate, stat.avgWait, stat.strandedProportion, stat.avgStrandedBlocks)
+                        for stat in stats],
+                    'txByteRate': sim.txByteRate, 
+                    'txRate': sim.txRate,
+                    'poolmfrs': sim.poolmfrs,
+                    'processingRate': sim.processingRate,
+                    'processingRateUpper': sim.processingRateUpper,
+                    'stableFeeRate': sim.stableFeeRate,
+                    'timespent': timespent,
+                    'numiters': numiters
+            }
+            with self.statLock:
+                self.statsCache = (currHeight, qstats)
+                try:
+                    self.saveStats()
+                except IOError:
+                    logWrite("Unable to save ss stats.")
+        finally:
+            self.status = 'idle'
+
+    def getStats(self):
+        with self.statLock:
+            return self.statsCache
+
+    def saveStats(self):
+        with open(saveSSFile, 'wb') as f:
+            pickle.dump(self.statsCache, f)
+
+    def loadStats(self):
+        with open(saveSSFile, 'rb') as f:
+            self.statsCache = pickle.load(f)
 
 
 class TransientWait(object):
@@ -194,6 +342,23 @@ class TransientWait(object):
         return "TW{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
             self.mean, self.std, self.meanInterval[0],
             self.meanInterval[1], int(predictionLevel*100), self.predictionInterval)
+
+
+def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
+    poolmfrs = [f for f in poolmfrs if f != float("inf")]
+    feeValues.extend(poolmfrs)
+    feeValues.sort(reverse=True)
+    
+    prevFeeRate = feeValues[0]
+    feeClassValues = [prevFeeRate]
+    for feeRate in feeValues[1:]:
+        if feeRate < stableFeeRate:
+            break
+        if prevFeeRate - feeRate >= minFeeSpacing:
+            feeClassValues.append(feeRate)
+            prevFeeRate = feeRate
+
+    return feeClassValues
 
 
 

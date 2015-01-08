@@ -15,6 +15,8 @@ feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
 defaultSamplingWindow = 18
 defaultTxRateWindow = 2016
+minRateBlocks = 6
+minWaitBlocks = 12
 defaultWaitTimesWindow = 2016
 
 ratesLock = threading.RLock()
@@ -58,9 +60,14 @@ class TxRates(Saveable):
         self.txSamples = []
         self.blockTxRatesCache = {}
         self.txSamplesCache = []
+        self.prevBlock = None
+
         self.samplingWindow = samplingWindow
         self.txRateWindow = txRateWindow
-        self.prevBlock = None
+        # interval over which rates are estimated defaults to the entire window over
+        # which rates are collected
+        self.rateIntervalLen = self.txRateWindow 
+
         super(TxRates, self).__init__(saveRatesFile)
 
     def pushBlocks(self, blocks):
@@ -98,16 +105,21 @@ class TxRates(Saveable):
         with ratesLock:
             totalTxs = 0
             totalTime = 0
+            totalBlocks = 0
             for height in range(*interval):
                 blockTxRate = self.blockTxRatesCache.get(height)
                 if blockTxRate:
                     totalTxs += blockTxRate.numTxs
                     totalTime += blockTxRate.timeInterval
+                    totalBlocks += 1
 
             if totalTxs < 0:
                 # This is possible because we count entries removed as 
                 # a result of mempool conflict as a negative tx rate.
                 raise ValueError("Negative total txs.")
+
+            if totalBlocks < minRateBlocks:
+                raise ValueError("Too few rate blocks.")
 
             if totalTime:
                 return totalTxs / float(totalTime)
@@ -124,8 +136,13 @@ class TxRates(Saveable):
             except IndexError:
                 return [choice(self.txSamplesCache) for i in range(k)]
 
-    def getByteRate(self, interval, feeRates):
+    def getByteRate(self, feeRates, interval=None):
         '''Returns bytes per second as a function of tx feerate.'''
+        if not interval:
+            if not self.rateIntervalLen > 0:
+                raise ValueError("rateIntervalLen not set.")
+            currHeight = proxy.getblockcount()
+            interval = (currHeight - self.rateIntervalLen + 1, currHeight + 1)
         with ratesLock:
             txRate = self.calcRates(interval)
             numSamples = len(self.txSamplesCache)
@@ -146,9 +163,16 @@ class TxRates(Saveable):
             return len([height for height in self.blockTxRatesCache
                 if height >= rateInterval[0] and height < rateInterval[1]])
 
+    def setRateIntervalLen(self, rateIntervalLen):
+        self.rateIntervalLen = rateIntervalLen
+
     @staticmethod
     def loadObject(saveRatesFile=saveRatesFile):
         return super(TxRates,TxRates).loadObject(saveRatesFile)
+
+    def copyObject(self):
+        with ratesLock:
+            return deepcopy(self)
 
 
 class BlockTxWaitTimes(object):
@@ -226,8 +250,13 @@ class TxWaitTimes(Saveable):
             return self.bestHeight
 
     def getWaitTimes(self):
+        numBlocks = len(self.blockWaitTimes)
+        if len(self.blockWaitTimes) < minWaitBlocks:
+            raise ValueError("Not enough wait blocks")
         with waitLock:
-            return self.waitTimesCache
+            waitTimes = self.waitTimesCache.items()
+            waitTimes.sort()
+            return (waitTimes, numBlocks, self.waitTimesWindow)
 
     @staticmethod
     def _countTx(entry):

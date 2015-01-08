@@ -1,7 +1,7 @@
 from feemodel.txmempool import Block
 from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable, StoppableThread
 from feemodel.model import ModelError
-from feemodel.config import savePoolsFile, poolInfoFile, config
+from feemodel.config import savePoolsFile, poolInfoFile, config, historyFile
 from feemodel.stranding import txPreprocess, calcStrandingFeeRate
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
@@ -21,6 +21,7 @@ except ImportError:
 hardMaxBlockSize = config['hardMaxBlockSize']
 defaultPoolBlocksWindow = 2016
 poolsCacheLock = threading.RLock()
+minPoolBlocks = 144 # Minimum number of blocks used to estimate pools
 
 class Pool(object):
     def __init__(self):
@@ -36,7 +37,7 @@ class Pool(object):
         self.sizeLimitedBlocks = []
         self.stats = {}
 
-    def estimateParams(self, stopFlag=None):
+    def estimateParams(self, stopFlag=None, dbFile=historyFile):
         # Remember to de-duplicate blockHeights
         # and also to clear history <tick>
         txs = []
@@ -46,7 +47,7 @@ class Pool(object):
         for height in self.blockHeights:
             if stopFlag and stopFlag.is_set():
                 return
-            block = Block.blockFromHistory(height)
+            block = Block.blockFromHistory(height, dbFile)
             if block:
                 blockTxs = [tx for tx in block.entries.itervalues() if tx['inBlock']]
                 if blockTxs:
@@ -74,7 +75,6 @@ class Pool(object):
         except ValueError:
             pass
 
-        logWrite("Done estimating %s " % repr(self))
 
         # If a pool has fewer than X blocks, use the average max block size of all the pools
 
@@ -94,6 +94,9 @@ class Pool(object):
             return max(self.blockHeights)
         else:
             return None
+
+    def getNumBlocks(self):
+        return len(self.feeLimitedBlocks) + len(self.sizeLimitedBlocks)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -136,19 +139,43 @@ class PoolEstimator(Saveable):
 
         logWrite("Pool estimate updated %s" % self)
 
-    def estimatePools(self, stopFlag=None):
-        for pool in self.pools.values():
+    def estimatePools(self, stopFlag=None, dbFile=historyFile):
+        for name, pool in self.pools.items():
             if stopFlag and stopFlag.is_set():
                 self.pools = deepcopy(self.poolsCache) # Restore to previous state
                 return
-            pool.estimateParams(stopFlag)
+            pool.estimateParams(stopFlag, dbFile)
+            logWrite("Done estimating %s " % name)
+        try:
+            self.calcPoolProportions()
+        except ValueError:
+            logWrite("No blocks found.")
+        else:
+            # Debug print
+            for name, pool in self.pools.items():
+                if pool.proportion > 0:
+                    print(name, pool)
+
         with poolsCacheLock:
             self.poolsCache = deepcopy(self.pools)
             self.poolsIdx = []
             p = 0.
             for name, pool in self.poolsCache.iteritems():
-                p += pool.proportion
-                self.poolsIdx.append((p, name, pool))
+                if pool.proportion > 0:
+                    p += pool.proportion
+                    self.poolsIdx.append((p, name, pool))
+            assert abs(p-1) < 0.001
+
+    def calcPoolProportions(self):
+        totalBlocks = float(sum([pool.getNumBlocks() for pool in self.pools.values()]))
+        if not totalBlocks:
+            raise ValueError("No blocks found.")
+        for pool in self.pools.values():
+            pool.proportion = pool.getNumBlocks() / totalBlocks
+
+        logP = [pool.proportion*log(pool.proportion) if pool.proportion else 0
+            for pool in self.pools.values()]
+        self.numPoolsEff = exp(-sum(logP))
 
     def identifyPoolBlocks(self, blockHeightRange, stopFlag=None):
         loadedHeights = reduce(add,
@@ -199,14 +226,6 @@ class PoolEstimator(Saveable):
 
         self.numUnknownPools = sum([pool.unknown for pool in self.pools.values()])
 
-        totalBlocks = float(sum([len(pool.blockHeights) for pool in self.pools.values()]))
-        for pool in self.pools.values():
-            pool.proportion = len(pool.blockHeights) / totalBlocks
-
-        logP = [pool.proportion*log(pool.proportion) if pool.proportion else 0
-            for pool in self.pools.values()]
-        self.numPoolsEff = exp(-sum(logP))
-
         self.unseenInfo = {'coinbase_tags': [], 'payout_addresses': []}
         for infotype in self.unseenInfo:
             for pinfo, poolprops in self.poolInfo[infotype].items():
@@ -214,6 +233,8 @@ class PoolEstimator(Saveable):
                     self.unseenInfo[infotype].append(pinfo)
 
     def selectRandomPool(self):
+        if self.getNumBlocks() < minPoolBlocks:
+            raise ValueError("Too few pool blocks.")
         with poolsCacheLock:
             if not len(self.poolsCache):
                 raise ValueError("No valid pools.")
@@ -226,6 +247,8 @@ class PoolEstimator(Saveable):
 
     def getProcessingRate(self, blockRate):
         '''mfrs, processingRate, processingRateUpper = PoolEstimator.getProcessingRate(self, blockRate)'''
+        if self.getNumBlocks() < minPoolBlocks:
+            raise ValueError("Too few pool blocks.")
         with poolsCacheLock:
             mfrs = self.getPoolMFR()
             mfrs = filter(lambda x: x < float("inf"), mfrs)
@@ -259,8 +282,7 @@ class PoolEstimator(Saveable):
 
     def getNumBlocks(self):
         with poolsCacheLock:
-            return sum([len(pool.feeLimitedBlocks)+len(pool.sizeLimitedBlocks)
-                for pool in self.poolsCache.values()])
+            return sum([pool.getNumBlocks() for pool in self.poolsCache.values()])
 
     @staticmethod
     def loadObject(savePoolsFile=savePoolsFile):

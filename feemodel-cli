@@ -4,12 +4,14 @@ import json
 import urllib2
 import sys
 
-if len(sys.argv) > 1:
-    port = sys.argv[1]
-else:
-    port = '5001'
+port = '5001'
+#if len(sys.argv) > 1:
+#    port = sys.argv[1]
+#else:
+#    port = '5001'
 
-url = 'http://127.0.0.1:' + port + "/txstats"
+route = sys.argv[1]
+url = 'http://127.0.0.1:' + port + '/' + route
 s = json.load(urllib2.urlopen(url))
 
-pprint(s)
+pprint(s, width=80)

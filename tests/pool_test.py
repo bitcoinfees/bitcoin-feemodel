@@ -16,11 +16,30 @@ savePoolsFile = 'data/savePools.pickle'
 testPoolsFile = 'data/testPools.pickle'
 blockRate = 1./600
 
+feemodel.pools.minPoolBlocks = 1
+pe = PoolEstimator(savePoolsFile=savePoolsFile)
+pe.identifyPoolBlocks((333931, 333953))
+pe.estimatePools(dbFile=dbFile)
+
 class PoolEstimatorTests(unittest.TestCase):
+    def setUp(self):
+        feemodel.pools.minPoolBlocks = 1
+
     def test_poolIO(self):
-        self.pe = PoolEstimator(savePoolsFile=savePoolsFile)
+        self.assertEqual(pe.poolsCache, pe.pools)
+        pe.saveObject()
+        pe2 = PoolEstimator.loadObject(savePoolsFile)
+        self.assertEqual(pe,pe2)
+        print(pe)
+
+        os.remove(savePoolsFile)
+
+    def test_poolClears(self):
+        self.pe = PoolEstimator(5, savePoolsFile)
         self.pe.identifyPoolBlocks((333931,333953))
-        self.pe.estimatePools()
+        self.pe.estimatePools(dbFile=dbFile)
+        heights = reduce(add, [list(pool.blockHeights) for pool in self.pe.poolsCache.values()], [])
+        self.assertEqual(len(heights), 5)
         self.assertEqual(self.pe.poolsCache, self.pe.pools)
         self.pe.saveObject()
         pe2 = PoolEstimator.loadObject(savePoolsFile)
@@ -29,23 +48,13 @@ class PoolEstimatorTests(unittest.TestCase):
 
         os.remove(savePoolsFile)
 
-    def test_poolClears(self):
-        self.pe = PoolEstimator(5, savePoolsFile)
-        self.pe.identifyPoolBlocks((333931,333953))
-        self.pe.estimatePools()
-        heights = reduce(add, [list(pool.blockHeights) for pool in self.pe.poolsCache.values()], [])
-        self.assertEqual(len(heights), 5)
-        self.assertEqual(self.pe.poolsCache, self.pe.pools)
-        self.pe.saveObject()
-        pe2 = PoolEstimator.loadObject(savePoolsFile)
-        self.assertEqual(self.pe,pe2)
-
-        os.remove(savePoolsFile)
 
 
 class RandomPoolTest(unittest.TestCase):
     def setUp(self):
-        self.pe = PoolEstimator.loadObject(testPoolsFile)
+        #self.pe = PoolEstimator.loadObject(testPoolsFile)
+        self.pe = pe
+        feemodel.pools.minPoolBlocks = 1
 
     def test_processingConverges(self):
         '''Crude convergence test. This is probabilistic but we just want to make sure
@@ -64,6 +73,11 @@ class RandomPoolTest(unittest.TestCase):
         print("max ratesDiff: %.4f" % max(ratesDiff))
         pprint([(mfrs[idx], rates[idx], pr[idx]) for idx in range(len(mfrs))])
         self.assertTrue(max(ratesDiff) < 0.1)
+
+    def test_insufficientPools(self):
+        feemodel.pools.minPoolBlocks = 2016
+        self.assertRaises(ValueError, self.pe.selectRandomPool)
+        self.assertRaises(ValueError, self.pe.getProcessingRate, 1./600)
 
 
 class ProcessingRate(object):
