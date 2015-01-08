@@ -271,8 +271,8 @@ class SteadyStateSim(StoppableThread):
         tr = self.tr.copyObject()
         tr.setRateIntervalLen(ssRateIntervalLen)
         currHeight = proxy.getblockcount()
-        blockRate = 1. / estimateBlockInterval((currHeight-txRateWindow, currHeight+1))
-        sim = Simul(pe, tr, blockRate=blockRate)
+        blockRateStat = estimateBlockInterval((currHeight-txRateWindow, currHeight+1))
+        sim = Simul(pe, tr, blockRate=1./blockRateStat[0])
 
         bestHeight = self.statsCache[0]
         currHeight = proxy.getblockcount()
@@ -294,7 +294,7 @@ class SteadyStateSim(StoppableThread):
                         for stat in stats],
                     'txByteRate': sim.txByteRate, 
                     'txRate': sim.txRate,
-                    'blockRate': sim.blockRate,
+                    'blockRate': blockRateStat,
                     'poolmfrs': sim.poolmfrs,
                     'processingRate': sim.processingRate,
                     'processingRateUpper': sim.processingRateUpper,
