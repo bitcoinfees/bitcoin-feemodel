@@ -14,7 +14,7 @@ from pprint import pprint
 from time import time
 
 # blockRate = config['simul']['blockRate'] # Once every 10 minutes
-blockRate = 1./600
+defaultBlockRate = 1./600
 rateRatioThresh = 0.9
 convergeThresh = 0.0001
 predictionLevel = 0.9
@@ -30,13 +30,14 @@ ssPeriod = 144 # Re-simulate steady state every x blocks
 txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
 
 class Simul(object):
-    def __init__(self, pe, tr):
+    def __init__(self, pe, tr, blockRate=defaultBlockRate):
         self.pe = pe
         self.tr = tr
         self.feeClassValues = None
+        self.blockRate = blockRate
 
     def initCalcs(self):
-        self.poolmfrs, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(blockRate)
+        self.poolmfrs, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(self.blockRate)
         self.txByteRate, self.txRate = self.tr.getByteRate(self.poolmfrs)
 
         self.stableFeeRate = None
@@ -103,7 +104,7 @@ class Simul(object):
         return q.getStats(), elapsedtime, i
 
     def addToMempool(self):
-        t = expovariate(blockRate)
+        t = expovariate(self.blockRate)
         txSample = self.tr.generateTxSample(t*self.txRate*txRateMultiplier)
         self.txNoDeps.extend([tx for tx in txSample if tx.feeRate >= self.stableFeeRate])
         self.txNoDeps.sort(key=lambda x: x.feeRate)
@@ -269,7 +270,9 @@ class SteadyStateSim(StoppableThread):
         pe = self.pe.copyObject()
         tr = self.tr.copyObject()
         tr.setRateIntervalLen(ssRateIntervalLen)
-        sim = Simul(pe, tr)
+        currHeight = proxy.getblockcount()
+        blockRate = 1. / estimateBlockInterval((currHeight-txRateWindow, currHeight+1))
+        sim = Simul(pe, tr, blockRate=blockRate)
 
         bestHeight = self.statsCache[0]
         currHeight = proxy.getblockcount()
@@ -278,7 +281,7 @@ class SteadyStateSim(StoppableThread):
 
         try:
             self.status = 'running'
-            stats, timespent, numiters = sim.steadyState(maxiters=10000,stopFlag=self.getStopObject())
+            stats, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
         except ValueError as e:
             logWrite("SteadyStateSim error:")
             logWrite(str(e))
@@ -291,6 +294,7 @@ class SteadyStateSim(StoppableThread):
                         for stat in stats],
                     'txByteRate': sim.txByteRate, 
                     'txRate': sim.txRate,
+                    'blockRate': sim.blockRate,
                     'poolmfrs': sim.poolmfrs,
                     'processingRate': sim.processingRate,
                     'processingRateUpper': sim.processingRateUpper,
