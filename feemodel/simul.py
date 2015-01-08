@@ -196,7 +196,7 @@ class SimulOnline(TxMempool):
         wtBestHeight = self.wt.getBestHeight()
         currHeight = proxy.getblockcount()
         trBlockHeightRange = (max(trBestHeight, currHeight-txRateWindow+1), currHeight+20)
-        wtBlockHeightRange = (max(wtBestHeight+1, currHeight-waitTimesWindow+1), currHeight+20)
+        wtBlockHeightRange = (max(wtBestHeight, currHeight-waitTimesWindow)+1, currHeight+20)
 
         logWrite("Loading TxRates and TxWaitTimes estimators...")
         lh = LoadHistory()

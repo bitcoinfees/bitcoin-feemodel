@@ -94,7 +94,7 @@ class TxRates(Saveable):
 
                     logWrite("TR: added block %d" % block.height)
 
-            self.prevBlock = block
+                self.prevBlock = block
 
         with ratesLock:
             self.blockTxRatesCache = deepcopy(self.blockTxRates)
