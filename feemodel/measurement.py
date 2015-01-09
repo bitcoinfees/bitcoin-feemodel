@@ -2,7 +2,7 @@ from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp
 from feemodel.config import config, saveWaitFile, saveRatesFile, historyFile
 from feemodel.txmempool import Block
 from math import exp, cos, sin, sqrt, log, pi
-from random import random, choice
+from random import random, choice, sample
 from copy import deepcopy
 import threading
 
@@ -75,33 +75,21 @@ class TxRates(Saveable):
             combinedSample = self.txSamples + newTxSample
         else:
             oldProp = float(self.totalTxs) / newTotalTxs
-            n = len(self.txSamples)
-            m = len(newTxSample)
-            try:
-                combinedSample = [
-                    self.txSamples[int(random()*n)]
-                    if random() < oldProp
-                    else newTxSample[int(random()*m)]
-                    for i in xrange(self.maxSamples)
-                ]
-            except IndexError:
-                combinedSample = [
-                    choice(self.txSamples)
-                    if random() < oldProp
-                    else choice(newTxSample)
-                    for i in xrange(self.maxSamples)
-                ]
+            numKeepOld = int(oldProp*self.maxSamples)
+            numAddNew = self.maxSamples - numKeepOld
+            combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
         self.totalTxs += len(newtxs)
         conflicts = [txid for txid, entry in block.entries.iteritems() if entry.get('isConflict')]
 
         self.txSamples = filter(lambda x: x.txid not in conflicts, combinedSample)
         n = len(self.txSamples)
-        lendiff = len(combinedSample) - n
-        try:
-            replacementSamples = [self.txSamples[int(random()*n)] for i in xrange(lendiff)]
-        except IndexError:
-            replacementSamples = [choice(self.txSamples) for i in xrange(lendiff)]
-        self.txSamples.extend(replacementSamples)
+        if n:
+            lendiff = len(combinedSample) - n
+            try:
+                replacementSamples = [self.txSamples[int(random()*n)] for i in xrange(lendiff)]
+            except IndexError:
+                replacementSamples = [choice(self.txSamples) for i in xrange(lendiff)]
+            self.txSamples.extend(replacementSamples)
         self.totalTxs -= len(conflicts)
         self.totalTime += block.time - prevBlock.time
 
