@@ -14,8 +14,6 @@ except ImportError:
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
 defaultMaxSamples = 10000
-defaultSamplingWindow = 18
-defaultTxRateWindow = 2016
 defaultMinRateTime = 3600 # 1 hour
 minWaitBlocks = 12
 defaultWaitTimesWindow = 2016
@@ -43,6 +41,7 @@ class TxRates(Saveable):
             saveRatesFile=saveRatesFile):
         self.txSamples = []
         self.txRate = None
+        self.bestHeight = 0
         self.maxSamples = maxSamples
         self.minRateTime = minRateTime
         super(TxRates, self).__init__(saveRatesFile)
@@ -56,6 +55,8 @@ class TxRates(Saveable):
             block = Block.blockFromHistory(height, dbFile)
             self.addBlock(block, prevBlock)
             prevBlock = block
+            if block:
+                self.bestHeight = height
 
         if self.totalTime < self.minRateTime:
             raise ValueError("Time elapsed must be greater than %ds" % self.minRateTime)
