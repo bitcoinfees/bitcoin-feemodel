@@ -13,6 +13,7 @@ from feemodel.util import proxy, logWrite, StoppableThread
 pollPeriod = config['pollPeriod']
 keepHistory = config['keepHistory']
 historyLock = threading.Lock()
+mempoolLock = threading.Lock()
 
 class TxMempool(StoppableThread):
     # Have to handle RPC errors
@@ -21,19 +22,21 @@ class TxMempool(StoppableThread):
 
     def update(self):
         currHeight, mapTxNew = proxy.pollMempool()
-        if currHeight > self.bestSeenBlock:
-            threading.Thread(target=self.processBlocks,
-                args=(range(self.bestSeenBlock+1,currHeight+1),
-                    self.mapTx, deepcopy(mapTxNew)),
-                name='mempool-processBlocks').start()
-            self.mapTx = mapTxNew
-            self.bestSeenBlock = currHeight
-            return True
-            # Be careful here: may have to pass deepcopy of self.mapTx to processBlocks,
-            # if we are going to return self.mapTx for other functions to use.
-        else:
-            self.mapTx = mapTxNew
-            return False
+        with mempoolLock:
+            print("now with mempool lock.")
+            if currHeight > self.bestSeenBlock:
+                threading.Thread(target=self.processBlocks,
+                    args=(range(self.bestSeenBlock+1,currHeight+1),
+                        deepcopy(self.mapTx), deepcopy(mapTxNew)),
+                    name='mempool-processBlocks').start()
+                self.mapTx = mapTxNew
+                self.bestSeenBlock = currHeight
+                return True
+                # Be careful here: may have to pass deepcopy of self.mapTx to processBlocks,
+                # if we are going to return self.mapTx for other functions to use.
+            else:
+                self.mapTx = mapTxNew
+                return False
 
     def run(self):
         feemodel.config.apprun = True
@@ -91,6 +94,10 @@ class TxMempool(StoppableThread):
                     block.writeHistory()
 
             return blocks
+
+    def getMempool(self):
+        with mempoolLock:
+            return deepcopy(self.mapTx)
 
 
 class Block(object):
