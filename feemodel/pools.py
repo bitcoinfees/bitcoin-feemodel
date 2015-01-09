@@ -150,11 +150,11 @@ class PoolEstimator(Saveable):
             self.calcPoolProportions()
         except ValueError:
             logWrite("No blocks found.")
-        else:
-            # Debug print
-            for name, pool in self.pools.items():
-                if pool.proportion > 0:
-                    print(name, pool)
+#        else:
+#            # Debug print
+#            for name, pool in self.pools.items():
+#                if pool.proportion > 0:
+#                    print(name, pool)
 
         with poolsCacheLock:
             self.poolsCache = deepcopy(self.pools)
@@ -233,8 +233,7 @@ class PoolEstimator(Saveable):
                     self.unseenInfo[infotype].append(pinfo)
 
     def selectRandomPool(self):
-        if self.getNumBlocks() < minPoolBlocks:
-            raise ValueError("Too few pool blocks.")
+        self.checkNumBlocks()
         with poolsCacheLock:
             if not len(self.poolsCache):
                 raise ValueError("No valid pools.")
@@ -247,12 +246,9 @@ class PoolEstimator(Saveable):
 
     def getProcessingRate(self, blockRate):
         '''mfrs, processingRate, processingRateUpper = PoolEstimator.getProcessingRate(self, blockRate)'''
-        if self.getNumBlocks() < minPoolBlocks:
-            raise ValueError("Too few pool blocks.")
+        self.checkNumBlocks()
         with poolsCacheLock:
             mfrs = self.getPoolMFR()
-            mfrs = filter(lambda x: x < float("inf"), mfrs)
-            mfrs.sort()
             processingRate = [
                 sum([pool.proportion*pool.maxBlockSize*blockRate
                     for pool in self.poolsCache.values()
@@ -267,9 +263,15 @@ class PoolEstimator(Saveable):
             ]
             return mfrs, processingRate, processingRateUpper
 
+    def getPools(self):
+        self.checkNumBlocks()
+        with poolsCacheLock:
+            return sorted(self.poolsCache.items(), key=lambda x: x[1].proportion, reverse=True)
+
     def getPoolMFR(self):
         with poolsCacheLock:
-            return [pool.minFeeRate for pool in self.poolsCache.values()]
+            return sorted(set([pool.minFeeRate for pool in self.poolsCache.values()
+                if pool.minFeeRate < float("inf")]))
 
     def getBestHeight(self):
         with poolsCacheLock:
@@ -279,6 +281,10 @@ class PoolEstimator(Saveable):
                 bestHeight = None
 
             return bestHeight
+
+    def checkNumBlocks(self):
+        if self.getNumBlocks() < minPoolBlocks:
+            raise ValueError("Too few pool blocks.")
 
     def getNumBlocks(self):
         with poolsCacheLock:

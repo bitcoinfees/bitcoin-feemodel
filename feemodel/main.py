@@ -10,10 +10,8 @@ def addPreTag(fn):
         return '<pre>' + s + '</pre>'
     return decorated
 
-def json_pprint(s):
-    return json.dumps(s, indent=4, separators=(',', ': '))
 
-def main():
+def main(port=5001):
     s = SimulOnline()
     app = Flask(__name__)
 
@@ -25,8 +23,12 @@ def main():
     def getSteadyStats():
         return json.dumps(s.getSteadyStats())
 
+    @app.route('/pools')
+    def getPools():
+        return json.dumps(s.getPools())
+
     with s.threadStart():
-        app.run(port=5001, debug=True, use_reloader=False)
+        app.run(port=port, debug=True, use_reloader=False)
 
 
 

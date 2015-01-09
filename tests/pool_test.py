@@ -31,6 +31,7 @@ class PoolEstimatorTests(unittest.TestCase):
         pe2 = PoolEstimator.loadObject(savePoolsFile)
         self.assertEqual(pe,pe2)
         print(pe)
+        pprint(pe.getPools())
 
         os.remove(savePoolsFile)
 

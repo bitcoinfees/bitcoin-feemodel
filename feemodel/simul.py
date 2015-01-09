@@ -170,6 +170,8 @@ class Simul(object):
 class SimulOnline(TxMempool):
     def __init__(self):
         self.waitTimes = ()
+        self.pools = []
+        self.steadyStats = []
         self.processLock = threading.Lock()
         self.dataLock = threading.Lock()
         try:
@@ -209,9 +211,9 @@ class SimulOnline(TxMempool):
         self.tr.saveObject()
         self.wt.saveObject()
 
+        self.ssSim = SteadyStateSim(self.pe, self.tr)
         self.updateData()
 
-        self.ssSim = SteadyStateSim(self.pe, self.tr)
         super(SimulOnline, self).__init__()
 
     def processBlocks(self, *args, **kwargs):
@@ -230,18 +232,29 @@ class SimulOnline(TxMempool):
         logWrite("Done. SimulOnline finished.")
 
     def updateData(self):
-        with self.dataLock:
-            try:
-                self.waitTimes = self.wt.getWaitTimes()
-            except ValueError:
-                pass
+        self.updateSingle('waitTimes', self.wt.getWaitTimes)
+        self.updateSingle('pools', self.pe.getPools)
+        self.updateSingle('steadyStats', self.ssSim.getStats)
+
+    def updateSingle(self, attr, targetFn):
+        try:
+            with self.dataLock:
+                setattr(self, attr, targetFn())
+        except ValueError:
+            # Have to find some way to indicate the status, when first loading up.
+            pass
 
     def getWaitTimes(self):
         with self.dataLock:
             return self.waitTimes
 
     def getSteadyStats(self):
-        return self.ssSim.getStats()
+        with self.dataLock:
+            return self.steadyStats
+
+    def getPools(self):
+        with self.dataLock:
+            return self.pools
         
 
 class SteadyStateSim(StoppableThread):
@@ -349,7 +362,6 @@ class TransientWait(object):
 
 
 def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
-    poolmfrs = [f for f in poolmfrs if f != float("inf")]
     feeValues = list(feeValues)
     feeValues.extend(poolmfrs)
     feeValues.sort(reverse=True)
@@ -365,6 +377,37 @@ def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
 
     return feeClassValues
 
+
+#class CircularBuffer(Saveable):
+#    def __init__(self, retention, saveFile):
+#        self.retention = retention
+#        self.data = {}
+#        super(CircularBuffer, self).__init__(saveFile)
+#
+#    def pushData(self, key, val):
+#        self.data[key] = val
+#        thresh = key - self.retention
+#        for k in self.data.keys():
+#            if k <= thresh:
+#                del self.data[k]
+#
+#    def getData(self):
+#        return self.data
+#
+#    def getBestHeight(self):
+#        if self.data:
+#            return max(self.data)
+#        else:
+#            return None
+#
+#
+#class MempoolSize(CircularBuffer):
+#    def pushBlocks(blocks):
+#        for block in blocks:
+#            if block:
+#                mempoolSize = sum([entry['size'] for entry in block.entries.itervalues()
+#                    if not entry['inBlock']])
+#                self.pushData(block.height, mempoolSize)
 
 
 
