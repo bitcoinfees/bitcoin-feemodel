@@ -48,6 +48,7 @@ class TxRatesTest(unittest.TestCase):
         print("txRate is %.2f" % txRate)
         print("num samples is %d" % len(tr.txSamples))
         print("total time is %.2f" % tr.totalTime)
+        print("num unique samples: %d" % len(set([s.txid for s in tr.txSamples])))
         tr.saveObject()
         tr2 = TxRates.loadObject(tmpSaveFile)
         self.assertEqual(tr, tr2)
@@ -67,6 +68,7 @@ class TxRatesTest(unittest.TestCase):
         print("txRate is %.2f" % txRate)
         print("num samples is %d" % len(tr.txSamples))
         print("total time is %.2f" % tr.totalTime)
+        print("num unique samples: %d" % len(set([s.txid for s in tr.txSamples])))
 
 
 class WaitTest(unittest.TestCase):
