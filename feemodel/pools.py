@@ -134,8 +134,9 @@ class PoolEstimator(Saveable):
             return
         try:
             self.saveObject()
-        except IOError:
+        except IOError as e:
             logWrite("Error saving PoolEstimator.")
+            logWrite(str(e))
 
         logWrite("Pool estimate updated %s" % self)
 
@@ -266,7 +267,11 @@ class PoolEstimator(Saveable):
     def getPools(self):
         self.checkNumBlocks()
         with poolsCacheLock:
-            return sorted(self.poolsCache.items(), key=lambda x: x[1].proportion, reverse=True)
+            pitems = [(name, pool.proportion, pool.stats)
+                for name, pool in self.poolsCache.items()]
+            pitems.sort(key=lambda x: x[1], reverse=True)
+
+            return pitems
 
     def getPoolMFR(self):
         with poolsCacheLock:
