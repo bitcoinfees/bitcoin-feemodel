@@ -22,6 +22,7 @@ waitTimesWindow = 2016
 samplingWindow = 18 # The number of recent blocks to get tx samples from.
 txRateWindow = 2016 # The number of recent blocks to store tx rate info for.
 ssRateIntervalLen = txRateWindow # the number of recent blocks used to estimate tx rate
+transRateIntervalLen = 18 # The number of recent blocks used to estimate tx rate for transient analysis
 poolBlocksWindow = 2016
 minFeeSpacing = 500
 defaultFeeValues = tuple(range(0, 100000, 1000))
@@ -336,6 +337,17 @@ class SteadyStateSim(StoppableThread):
         with open(saveSSFile, 'rb') as f:
             self.statsCache = pickle.load(f)
 
+class TransientSim(StoppableThread):
+    '''Constantly simulate transient behavior'''
+    def __init__(self, pe, tr, mempool):
+        self.pe = pe
+        self.tr = tr
+        self.mempool = mempool
+
+    def simulate(self):
+        pe = self.pe.copyObject()
+        tr = self.tr.copyObject()
+        tr.setRateIntervalLen(transRateIntervalLen)
 
 class TransientWait(object):
     def __init__(self):
