@@ -37,6 +37,7 @@ class TxSample(object):
 
 
 class TxRates(Saveable):
+    # Need to make stoppable.
     def __init__(self, maxSamples=defaultMaxSamples, minRateTime=defaultMinRateTime,
             saveRatesFile=saveRatesFile):
         self.txSamples = []
