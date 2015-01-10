@@ -23,7 +23,6 @@ class TxMempool(StoppableThread):
     def update(self):
         currHeight, mapTxNew = proxy.pollMempool()
         with mempoolLock:
-            print("now with mempool lock.")
             if currHeight > self.bestSeenBlock:
                 threading.Thread(target=self.processBlocks,
                     args=(range(self.bestSeenBlock+1,currHeight+1),

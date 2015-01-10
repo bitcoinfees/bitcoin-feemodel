@@ -21,7 +21,7 @@ except ImportError:
 hardMaxBlockSize = config['hardMaxBlockSize']
 defaultPoolBlocksWindow = 2016
 poolsCacheLock = threading.RLock()
-minPoolBlocks = 144 # Minimum number of blocks used to estimate pools
+defaultMinPoolBlocks = 144 # Minimum number of blocks used to estimate pools
 
 class Pool(object):
     def __init__(self):
@@ -108,10 +108,12 @@ class Pool(object):
 
 
 class PoolEstimator(Saveable):
-    def __init__(self, poolBlocksWindow=defaultPoolBlocksWindow, savePoolsFile=savePoolsFile):
+    def __init__(self, poolBlocksWindow=defaultPoolBlocksWindow, minPoolBlocks=defaultMinPoolBlocks,
+            savePoolsFile=savePoolsFile):
         self.pools = defaultdict(Pool)
         self.poolsCache = {}
         self.poolBlocksWindow = poolBlocksWindow
+        self.minPoolBlocks = minPoolBlocks
         self.numUnknownPools = 0
         self.numPoolsEff = 0.
 
@@ -127,9 +129,11 @@ class PoolEstimator(Saveable):
                     poolprops['seen_heights'] = set()
         super(PoolEstimator, self).__init__(savePoolsFile)
 
-    def runEstimate(self, blockHeightRange, stopFlag=None):
-        self.identifyPoolBlocks(blockHeightRange, stopFlag)
-        self.estimatePools(stopFlag)
+    def runEstimate(self, blockHeightRange, stopFlag=None, dbFile=historyFile):
+        # The stopping can be simplified - use raise Exception instead.
+        # And also move the saving to PEO
+        self.identifyPoolBlocks(blockHeightRange, stopFlag=stopFlag)
+        self.estimatePools(stopFlag=stopFlag, dbFile=dbFile)
         if stopFlag and stopFlag.is_set():
             return
         try:
@@ -288,7 +292,7 @@ class PoolEstimator(Saveable):
             return bestHeight
 
     def checkNumBlocks(self):
-        if self.getNumBlocks() < minPoolBlocks:
+        if self.getNumBlocks() < self.minPoolBlocks:
             raise ValueError("Too few pool blocks.")
 
     def getNumBlocks(self):

@@ -1,15 +1,10 @@
-from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp
+from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp, pickle
 from feemodel.config import config, saveWaitFile, saveRatesFile, historyFile
 from feemodel.txmempool import Block
 from math import exp, cos, sin, sqrt, log, pi
 from random import random, choice, sample
 from copy import deepcopy
 import threading
-
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
@@ -40,19 +35,25 @@ class TxRates(Saveable):
     # Need to make stoppable.
     def __init__(self, maxSamples=defaultMaxSamples, minRateTime=defaultMinRateTime,
             saveRatesFile=saveRatesFile):
-        self.txSamples = []
-        self.txRate = None
-        self.bestHeight = 0
+        self.resetParams()
         self.maxSamples = maxSamples
         self.minRateTime = minRateTime
         super(TxRates, self).__init__(saveRatesFile)
 
-    def calcRates(self, blockHeightRange, dbFile=historyFile):
+    def resetParams(self):
         self.txSamples = []
+        self.txRate = None
+        self.bestHeight = 0
         self.totalTime = 0.
         self.totalTxs = 0
+
+    def calcRates(self, blockHeightRange, dbFile=historyFile, stopFlag=None):
+        self.resetParams()
         prevBlock = None
         for height in range(*blockHeightRange):
+            if stopFlag and stopFlag.is_set():
+                self.resetParams()
+                raise ValueError("calcRates terminated.")
             block = Block.blockFromHistory(height, dbFile)
             self.addBlock(block, prevBlock)
             prevBlock = block
@@ -147,7 +148,7 @@ class TxWaitTimes(Saveable):
         self.waitTimesCache = {}
         self.bestHeight = None
         super(TxWaitTimes, self).__init__(saveWaitFile)
-        
+
     def pushBlocks(self, blocks):
         for block in blocks:
             if not block:
@@ -163,7 +164,7 @@ class TxWaitTimes(Saveable):
             for height in self.blockWaitTimes.keys():
                 if height <= heightThresh:
                     del self.blockWaitTimes[height]
-            
+
             self.calcWaitTimes()
 
     def calcWaitTimes(self):

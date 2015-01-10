@@ -11,20 +11,17 @@ from operator import add
 from random import expovariate
 from math import log
 from pprint import pprint
+from copy import deepcopy
 
 savePoolsFile = 'data/savePools.pickle'
 testPoolsFile = 'data/testPools.pickle'
 blockRate = 1./600
 
-feemodel.pools.minPoolBlocks = 1
-pe = PoolEstimator(savePoolsFile=savePoolsFile)
+pe = PoolEstimator(savePoolsFile=savePoolsFile, minPoolBlocks=1)
 pe.identifyPoolBlocks((333931, 333953))
 pe.estimatePools(dbFile=dbFile)
 
 class PoolEstimatorTests(unittest.TestCase):
-    def setUp(self):
-        feemodel.pools.minPoolBlocks = 1
-
     def test_poolIO(self):
         self.assertEqual(pe.poolsCache, pe.pools)
         pe.saveObject()
@@ -36,7 +33,7 @@ class PoolEstimatorTests(unittest.TestCase):
         os.remove(savePoolsFile)
 
     def test_poolClears(self):
-        self.pe = PoolEstimator(5, savePoolsFile)
+        self.pe = PoolEstimator(poolBlocksWindow=5, savePoolsFile=savePoolsFile)
         self.pe.identifyPoolBlocks((333931,333953))
         self.pe.estimatePools(dbFile=dbFile)
         heights = reduce(add, [list(pool.blockHeights) for pool in self.pe.poolsCache.values()], [])
@@ -54,8 +51,7 @@ class PoolEstimatorTests(unittest.TestCase):
 class RandomPoolTest(unittest.TestCase):
     def setUp(self):
         #self.pe = PoolEstimator.loadObject(testPoolsFile)
-        self.pe = pe
-        feemodel.pools.minPoolBlocks = 1
+        self.pe = deepcopy(pe)
 
     def test_processingConverges(self):
         '''Crude convergence test. This is probabilistic but we just want to make sure
@@ -68,7 +64,7 @@ class RandomPoolTest(unittest.TestCase):
             maxBlockSize, minFeeRate = self.pe.selectRandomPool()
             for feeRate in sampleProcessingRate:
                 feeRate.nextBlock(maxBlockSize, minFeeRate)
-                
+
         rates = [feeRate.calcAvgRate(totaltime) for feeRate in sampleProcessingRate]
         ratesDiff = [abs(log(rates[idx]) - log(pr[idx])) for idx in range(len(mfrs))]
         print("max ratesDiff: %.4f" % max(ratesDiff))
@@ -76,7 +72,7 @@ class RandomPoolTest(unittest.TestCase):
         self.assertTrue(max(ratesDiff) < 0.1)
 
     def test_insufficientPools(self):
-        feemodel.pools.minPoolBlocks = 2016
+        self.pe.minPoolBlocks = 2016
         self.assertRaises(ValueError, self.pe.selectRandomPool)
         self.assertRaises(ValueError, self.pe.getProcessingRate, 1./600)
 

@@ -27,6 +27,10 @@ def main(port=5001):
     def getPools():
         return json.dumps(s.getPools())
 
+    @app.route('/transientstats')
+    def getTransientStats():
+        return json.dumps(s.getTransientStats())
+
     with s.threadStart():
         app.run(port=port, debug=True, use_reloader=False)
 
@@ -34,4 +38,4 @@ def main(port=5001):
 
 if __name__ == '__main__':
     main()
-    
+
