@@ -1,8 +1,8 @@
 from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp
-from feemodel.config import config, saveWaitFile, saveRatesFile
+from feemodel.config import config, saveWaitFile, saveRatesFile, historyFile
 from feemodel.txmempool import Block
 from math import exp, cos, sin, sqrt, log, pi
-from random import random, choice
+from random import random, choice, sample
 from copy import deepcopy
 import threading
 
@@ -13,9 +13,8 @@ except ImportError:
 
 feeResolution = config['queue']['feeResolution']
 priorityThresh = config['measurement']['priorityThresh']
-defaultSamplingWindow = 18
-defaultTxRateWindow = 2016
-minRateBlocks = 6
+defaultMaxSamples = 10000
+defaultMinRateTime = 3600 # 1 hour
 minWaitBlocks = 12
 defaultWaitTimesWindow = 2016
 
@@ -37,142 +36,87 @@ class TxSample(object):
             self.txid, self.size, self.feeRate)
 
 
-class BlockTxRate(object):
-    def __init__(self, block, prevBlock):
-        if not prevBlock or not block.height == prevBlock.height + 1:
-            raise ValueError("Blocks not consecutive.")
-        newtxs = set(block.entries) - set(prevBlock.entries)
-        numConflicts = len([1 for entry in block.entries.itervalues()
-            if entry.get('isConflict')])
-        self.numTxs = len(newtxs) - numConflicts
-        self.timeInterval = block.time - prevBlock.time
-        self.txSamples = [TxSample('0', block.entries[txid]['size'], block.entries[txid]['feeRate'])
-            for txid in newtxs]
-
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
-
-
 class TxRates(Saveable):
-    def __init__(self, samplingWindow=defaultSamplingWindow,
-            txRateWindow=defaultTxRateWindow, saveRatesFile=saveRatesFile):
-        self.blockTxRates = {}
+    # Need to make stoppable.
+    def __init__(self, maxSamples=defaultMaxSamples, minRateTime=defaultMinRateTime,
+            saveRatesFile=saveRatesFile):
         self.txSamples = []
-        self.blockTxRatesCache = {}
-        self.txSamplesCache = []
-        self.prevBlock = None
-
-        self.samplingWindow = samplingWindow
-        self.txRateWindow = txRateWindow
-        # interval over which rates are estimated defaults to the entire window over
-        # which rates are collected
-        self.rateIntervalLen = self.txRateWindow 
-
+        self.txRate = None
+        self.bestHeight = 0
+        self.maxSamples = maxSamples
+        self.minRateTime = minRateTime
         super(TxRates, self).__init__(saveRatesFile)
 
-    def pushBlocks(self, blocks):
-        for block in blocks:
+    def calcRates(self, blockHeightRange, dbFile=historyFile):
+        self.txSamples = []
+        self.totalTime = 0.
+        self.totalTxs = 0
+        prevBlock = None
+        for height in range(*blockHeightRange):
+            block = Block.blockFromHistory(height, dbFile)
+            self.addBlock(block, prevBlock)
+            prevBlock = block
             if block:
-                try:
-                    self.blockTxRates[block.height] = BlockTxRate(block, self.prevBlock)
-                except ValueError:
-                    pass
-                else:
-                    samplingThresh = block.height - self.samplingWindow
-                    rateThresh = block.height - self.txRateWindow
-                    for height, blockTxRate in self.blockTxRates.items():
-                        if height <= samplingThresh:
-                            blockTxRate.txSamples = []
-                        if height <= rateThresh:
-                            del self.blockTxRates[height]
+                self.bestHeight = height
 
-                    self.txSamples = [] 
-                    for height in range(block.height-self.samplingWindow+1, block.height+1):
-                        blockTxRate = self.blockTxRates.get(height)
-                        if blockTxRate:
-                            self.txSamples.extend(blockTxRate.txSamples)
+        if self.totalTime < self.minRateTime:
+            raise ValueError("Time elapsed must be greater than %ds" % self.minRateTime)
+        if self.totalTxs < 0:
+            raise ValueError("Negative total txs.")
+        self.txRate = self.totalTxs / self.totalTime
 
-                    logWrite("TR: added block %d" % block.height)
+    def addBlock(self, block, prevBlock):
+        if not block or not prevBlock or block.height != prevBlock.height + 1:
+            return
+        newtxs = set(block.entries) - set(prevBlock.entries)
+        newTxSample = [TxSample(txid, block.entries[txid]['size'], block.entries[txid]['feeRate'])
+            for txid in newtxs]
+        newTotalTxs = self.totalTxs + len(newtxs)
+        if newTotalTxs <= self.maxSamples:
+            combinedSample = self.txSamples + newTxSample
+        else:
+            oldProp = float(self.totalTxs) / newTotalTxs
+            numKeepOld = int(oldProp*self.maxSamples)
+            numAddNew = self.maxSamples - numKeepOld
+            combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
+        self.totalTxs += len(newtxs)
+        conflicts = [txid for txid, entry in block.entries.iteritems() if entry.get('isConflict')]
 
-                self.prevBlock = block
-
-        with ratesLock:
-            self.blockTxRatesCache = deepcopy(self.blockTxRates)
-            self.txSamplesCache = deepcopy(self.txSamples)
-
-    def calcRates(self, interval):
-        '''Returns the number of transactions per second over the specified block interval'''
-        with ratesLock:
-            totalTxs = 0
-            totalTime = 0
-            totalBlocks = 0
-            for height in range(*interval):
-                blockTxRate = self.blockTxRatesCache.get(height)
-                if blockTxRate:
-                    totalTxs += blockTxRate.numTxs
-                    totalTime += blockTxRate.timeInterval
-                    totalBlocks += 1
-
-            if totalTxs < 0:
-                # This is possible because we count entries removed as 
-                # a result of mempool conflict as a negative tx rate.
-                raise ValueError("Negative total txs.")
-
-            if totalBlocks < minRateBlocks:
-                raise ValueError("Too few rate blocks.")
-
-            if totalTime:
-                return totalTxs / float(totalTime)
-            else:
-                raise ValueError("Time interval is zero.")
-    
-    def generateTxSample(self, expectedNumTxs):
-        with ratesLock:
-            k = poissonSample(expectedNumTxs)
-            n = len(self.txSamplesCache)
-            # may have to make this a copy.
+        self.txSamples = filter(lambda x: x.txid not in conflicts, combinedSample)
+        n = len(self.txSamples)
+        if n:
+            lendiff = len(combinedSample) - n
             try:
-                return [self.txSamplesCache[int(random()*n)] for i in range(k)]
+                replacementSamples = [self.txSamples[int(random()*n)] for i in xrange(lendiff)]
             except IndexError:
-                return [choice(self.txSamplesCache) for i in range(k)]
+                replacementSamples = [choice(self.txSamples) for i in xrange(lendiff)]
+            self.txSamples.extend(replacementSamples)
+        self.totalTxs -= len(conflicts)
+        self.totalTime += block.time - prevBlock.time
 
-    def getByteRate(self, feeRates, interval=None):
-        '''Returns bytes per second as a function of tx feerate.'''
-        if not interval:
-            if not self.rateIntervalLen > 0:
-                raise ValueError("rateIntervalLen not set.")
-            currHeight = proxy.getblockcount()
-            interval = (currHeight - self.rateIntervalLen + 1, currHeight + 1)
-        with ratesLock:
-            txRate = self.calcRates(interval)
-            numSamples = len(self.txSamplesCache)
-            byteRates = [
-                sum([tx.size for tx in self.txSamplesCache
-                    if tx.feeRate >= feeRate])*txRate/numSamples
-                for feeRate in feeRates
-            ]
+    def getByteRate(self, feeRates):
+        if not self.txRate:
+            raise ValueError("Need to run calcRates first.")
+        n = len(self.txSamples)
+        byteRates = [
+            sum([tx.size for tx in self.txSamples
+                if tx.feeRate >= feeRate])*self.txRate/n
+            for feeRate in feeRates
+        ]
 
-            return byteRates, txRate
+        return byteRates, self.txRate
 
-    def getBestHeight(self):
-        with ratesLock:
-            return max(self.blockTxRatesCache) if self.blockTxRates else None
-
-    def getNumBlocks(self, rateInterval):
-        with ratesLock:
-            return len([height for height in self.blockTxRatesCache
-                if height >= rateInterval[0] and height < rateInterval[1]])
-
-    def setRateIntervalLen(self, rateIntervalLen):
-        self.rateIntervalLen = rateIntervalLen
+    def generateTxSample(self, expectedNumTxs):
+        k = poissonSample(expectedNumTxs)
+        n = len(self.txSamples)
+        try:
+            return [self.txSamples[int(random()*n)] for i in range(k)]
+        except IndexError:
+            return [choice(self.txSamples) for i in range(k)]
 
     @staticmethod
     def loadObject(saveRatesFile=saveRatesFile):
-        return super(TxRates,TxRates).loadObject(saveRatesFile)
-
-    def copyObject(self):
-        with ratesLock:
-            return deepcopy(self)
+        return super(TxRates, TxRates).loadObject(saveRatesFile)
 
 
 class BlockTxWaitTimes(object):
@@ -302,4 +246,5 @@ def poissonApprox(l):
 
     z = sqrt(-2*log(u))*cos(2*pi*v)
     return z*sqrt(l) + l
+
 

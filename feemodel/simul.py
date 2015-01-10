@@ -20,9 +20,10 @@ convergeThresh = 0.0001
 predictionLevel = 0.9
 waitTimesWindow = 2016
 samplingWindow = 18 # The number of recent blocks to get tx samples from.
-txRateWindow = 2016 # The number of recent blocks to store tx rate info for.
-ssRateIntervalLen = txRateWindow # the number of recent blocks used to estimate tx rate
 transRateIntervalLen = 18 # The number of recent blocks used to estimate tx rate for transient analysis
+blockIntervalWindow = 2016 # The number of blocks used to estimate block interval
+ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
+ssMinRateTime = 3600*24 # Min amount of time needed to estimate tx rates for ss
 poolBlocksWindow = 2016
 minFeeSpacing = 500
 defaultFeeValues = tuple(range(0, 100000, 1000))
@@ -181,11 +182,6 @@ class SimulOnline(TxMempool):
             logWrite("Unable to load poolEstimator")
             self.pe = PoolEstimator(poolBlocksWindow)
         try:
-            self.tr = TxRates.loadObject()
-        except IOError:
-            logWrite("Unable to load txRates.")
-            self.tr = TxRates(samplingWindow, txRateWindow)
-        try:
             self.wt = TxWaitTimes.loadObject()
         except IOError:
             logWrite("Unable to load txWaitTimes.")
@@ -196,23 +192,19 @@ class SimulOnline(TxMempool):
         self.peo.updateEstimates()
         logWrite("Done.")
 
-        trBestHeight = self.tr.getBestHeight()
         wtBestHeight = self.wt.getBestHeight()
         currHeight = proxy.getblockcount()
-        trBlockHeightRange = (max(trBestHeight, currHeight-txRateWindow+1), currHeight+20)
         wtBlockHeightRange = (max(wtBestHeight, currHeight-waitTimesWindow)+1, currHeight+20)
 
-        logWrite("Loading TxRates and TxWaitTimes estimators...")
+        logWrite("Loading TxWaitTimes estimator...")
         lh = LoadHistory()
-        lh.registerFn(self.tr.pushBlocks, trBlockHeightRange)
         lh.registerFn(self.wt.pushBlocks, wtBlockHeightRange)
         lh.loadBlocks()
         logWrite("Done.")
 
-        self.tr.saveObject()
         self.wt.saveObject()
 
-        self.ssSim = SteadyStateSim(self.pe, self.tr)
+        self.ssSim = SteadyStateSim(self.pe)
         self.updateData()
 
         super(SimulOnline, self).__init__()
@@ -220,9 +212,7 @@ class SimulOnline(TxMempool):
     def processBlocks(self, *args, **kwargs):
         with self.processLock:
             blocks = super(SimulOnline, self).processBlocks(*args, **kwargs)
-            self.tr.pushBlocks(blocks)
             self.wt.pushBlocks(blocks)
-            self.tr.saveObject()
             self.wt.saveObject()
             self.updateData()
 
@@ -260,10 +250,9 @@ class SimulOnline(TxMempool):
 
 class SteadyStateSim(StoppableThread):
     '''Simulate steady-state every <ssPeriod> blocks'''
-    def __init__(self, pe, tr, ssPeriod=ssPeriod):
+    def __init__(self, pe, ssPeriod=ssPeriod):
         self.ssPeriod = ssPeriod
         self.pe = pe
-        self.tr = tr
         self.statLock = threading.Lock()
         self.status = 'idle'
         try:
@@ -271,6 +260,12 @@ class SteadyStateSim(StoppableThread):
         except IOError:
             logWrite("SS: Unable to load saved stats - starting from scratch.")
             self.statsCache = (0, {})
+        try:
+            self.tr = TxRates.loadObject()
+        except IOError:
+            logWrite("Unable to load txRates, calculating from scratch.")
+            self.tr = TxRates(minRateTime=ssMinRateTime)
+
         super(SteadyStateSim, self).__init__()
 
     def run(self):
@@ -281,20 +276,22 @@ class SteadyStateSim(StoppableThread):
         logWrite("Closed up steady-state sim.")
 
     def simulate(self):
-        pe = self.pe.copyObject()
-        tr = self.tr.copyObject()
-        tr.setRateIntervalLen(ssRateIntervalLen)
-        currHeight = proxy.getblockcount()
-        blockRateStat = estimateBlockInterval((currHeight-txRateWindow, currHeight+1))
-        sim = Simul(pe, tr, blockRate=1./blockRateStat[0])
-
         bestHeight = self.statsCache[0]
         currHeight = proxy.getblockcount()
         if currHeight - bestHeight <= self.ssPeriod:
             return
 
+        pe = self.pe.copyObject()
+        blockRateStat = estimateBlockInterval((currHeight-blockIntervalWindow+1, currHeight+1))
+        sim = Simul(pe, self.tr, blockRate=1./blockRateStat[0])
+
         try:
             self.status = 'running'
+            if currHeight - self.tr.bestHeight > self.ssPeriod:
+                logWrite("Starting tr.calcRates")
+                self.tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1))
+                logWrite("Finished tr.calcRates")
+                self.tr.saveObject()
             stats, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
         except ValueError as e:
             logWrite("SteadyStateSim error:")

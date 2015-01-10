@@ -283,7 +283,7 @@ class PoolEstimator(Saveable):
             try:
                 bestHeight = max([pool.getBestHeight() for pool in self.poolsCache.values()])
             except ValueError:
-                bestHeight = None
+                bestHeight = 0
 
             return bestHeight
 
@@ -330,7 +330,7 @@ class PoolEstimatorOnline(StoppableThread):
     def updateEstimates(self):
         bestHeight = self.pe.getBestHeight()
         currHeight = proxy.getblockcount()
-        if not bestHeight or currHeight - bestHeight > self.poolEstimatePeriod:
+        if currHeight - bestHeight > self.poolEstimatePeriod:
             blockHeightRange = (currHeight-self.pe.poolBlocksWindow+1, currHeight+1)
             self.pe.runEstimate(blockHeightRange, self.getStopObject())
 
