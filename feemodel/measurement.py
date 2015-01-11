@@ -129,6 +129,7 @@ class TxRates(Saveable):
 class BlockTxWaitTimes(object):
     def __init__(self, feeClassValues):
         self.avgWaitTimes = {feeRate: (0, 0.) for feeRate in feeClassValues}
+        self.blacklist = []
 
     def addTx(self, feeRate, waitTime):
         feeClass = None
@@ -141,10 +142,15 @@ class BlockTxWaitTimes(object):
             self.avgWaitTimes[feeClass] = (numTxs+1,
                 (prevWaitTime*numTxs + waitTime) / (numTxs + 1))
 
+    def blacklistTx(self, txid):
+        self.blacklist.append(txid)
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
 
+# It's not enough that the tx has no deps at the time of block inclusion.
+# It must have no deps at the time of mempool entry.
 class TxWaitTimes(Saveable):
     def __init__(self, feeClassValues, waitTimesWindow=defaultWaitTimesWindow, saveWaitFile=saveWaitFile):
         self.blockWaitTimes = {}
@@ -155,15 +161,19 @@ class TxWaitTimes(Saveable):
         self.bestHeight = None
         super(TxWaitTimes, self).__init__(saveWaitFile)
 
-    def pushBlocks(self, blocks):
+    def pushBlocks(self, blocks, init=False):
         for block in blocks:
             if not block:
                 continue
             self.blockWaitTimes[block.height] = BlockTxWaitTimes(self.feeClassValues)
-            for entry in block.entries.itervalues():
+            whitelist = filter(lambda x: self.notBlacklist(x, block.entries), block.entries)
+            for txid in whitelist:
+                entry = block.entries[txid]
                 if self._countTx(entry):
                     self.blockWaitTimes[block.height].addTx(
                         entry['feeRate'], block.time - entry['time'])
+                if self._toBlacklist(entry):
+                    self.blockWaitTimes[block.height].blacklistTx(txid)
             logWrite("WT: Added block %d" % block.height)
 
             heightThresh = block.height - self.waitTimesWindow
@@ -171,7 +181,8 @@ class TxWaitTimes(Saveable):
                 if height <= heightThresh:
                     del self.blockWaitTimes[height]
 
-            self.calcWaitTimes()
+            if not init:
+                self.calcWaitTimes()
 
     def calcWaitTimes(self):
         if not len(self.blockWaitTimes):
@@ -209,12 +220,28 @@ class TxWaitTimes(Saveable):
             waitTimes.sort()
             return (waitTimes, numBlocks, self.waitTimesWindow)
 
+    def notBlacklist(self, txid, entries):
+        for wtBlock in self.blockWaitTimes.values():
+            if txid in wtBlock.blacklist:
+                if entries[txid]['inBlock'] or entries[txid]['isConflict']:
+                    wtBlock.blacklist.remove(txid)
+                return False
+
+        return True
+
     @staticmethod
     def _countTx(entry):
         return (
             entry['inBlock'] and
             not entry['depends'] and
             entry['currentpriority'] < priorityThresh
+        )
+
+    @staticmethod
+    def _toBlacklist(entry):
+        return (
+            not entry['inBlock'] and
+            entry['depends']
         )
 
     @staticmethod
