@@ -268,7 +268,7 @@ class PoolEstimator(Saveable):
     def getPools(self):
         self.checkNumBlocks()
         with poolsCacheLock:
-            pitems = [(name, pool.proportion, pool.stats)
+            pitems = [(name, pool.proportion, pool.size, pool.minFeeRate, pool.stats)
                 for name, pool in self.poolsCache.items()]
             pitems.sort(key=lambda x: x[1], reverse=True)
 
