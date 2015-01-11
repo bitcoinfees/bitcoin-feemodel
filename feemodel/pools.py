@@ -46,7 +46,7 @@ class Pool(object):
 
         for height in self.blockHeights:
             if stopFlag and stopFlag.is_set():
-                return
+                raise ValueError("Pool estimation terminated.")
             block = Block.blockFromHistory(height, dbFile)
             if block:
                 blockTxs = [tx for tx in block.entries.itervalues() if tx['inBlock']]
@@ -71,9 +71,10 @@ class Pool(object):
 
         try:
             self.stats = calcStrandingFeeRate(txs)
-            self.minFeeRate = self.stats['sfr']
         except ValueError:
             pass
+        else:
+            self.minFeeRate = self.stats['sfr']
 
 
         # If a pool has fewer than X blocks, use the average max block size of all the pools
@@ -132,24 +133,18 @@ class PoolEstimator(Saveable):
     def runEstimate(self, blockHeightRange, stopFlag=None, dbFile=historyFile):
         # The stopping can be simplified - use raise Exception instead.
         # And also move the saving to PEO
-        self.identifyPoolBlocks(blockHeightRange, stopFlag=stopFlag)
-        self.estimatePools(stopFlag=stopFlag, dbFile=dbFile)
-        if stopFlag and stopFlag.is_set():
-            return
         try:
-            self.saveObject()
-        except IOError as e:
-            logWrite("Error saving PoolEstimator.")
-            logWrite(str(e))
-
-        logWrite("Pool estimate updated %s" % self)
+            self.identifyPoolBlocks(blockHeightRange, stopFlag=stopFlag)
+            self.estimatePools(stopFlag=stopFlag, dbFile=dbFile)
+        except ValueError as e:
+            self.pools = deepcopy(self.poolsCache)
+            logWrite("Pool estimation terminated.")
+        else:
+            logWrite("Pool estimate updated %s" % self)
 
     def estimatePools(self, stopFlag=None, dbFile=historyFile):
         for name, pool in self.pools.items():
-            if stopFlag and stopFlag.is_set():
-                self.pools = deepcopy(self.poolsCache) # Restore to previous state
-                return
-            pool.estimateParams(stopFlag, dbFile)
+            pool.estimateParams(stopFlag=stopFlag, dbFile=dbFile)
             logWrite("Done estimating %s " % name)
         try:
             self.calcPoolProportions()
@@ -188,7 +183,7 @@ class PoolEstimator(Saveable):
 
         for height in range(*blockHeightRange):
             if stopFlag and stopFlag.is_set():
-                return
+                raise ValueError("Pool estimation terminated.")
             if height in loadedHeights:
                 continue
             try:
@@ -337,5 +332,11 @@ class PoolEstimatorOnline(StoppableThread):
         if currHeight - bestHeight > self.poolEstimatePeriod:
             blockHeightRange = (currHeight-self.pe.poolBlocksWindow+1, currHeight+1)
             self.pe.runEstimate(blockHeightRange, self.getStopObject())
+            try:
+                self.saveObject()
+            except IOError as e:
+                logWrite("Error saving PoolEstimator.")
+                logWrite(str(e))
+
 
 

@@ -52,7 +52,6 @@ class TxRates(Saveable):
         prevBlock = None
         for height in range(*blockHeightRange):
             if stopFlag and stopFlag.is_set():
-                self.resetParams()
                 raise ValueError("calcRates terminated.")
             block = Block.blockFromHistory(height, dbFile)
             self.addBlock(block, prevBlock)
@@ -65,6 +64,9 @@ class TxRates(Saveable):
         if self.totalTxs < 0:
             raise ValueError("Negative total txs.")
         self.txRate = self.totalTxs / self.totalTime
+        for tx in self.txSamples:
+            tx.txid = tx.txid + '_'
+
 
     def addBlock(self, block, prevBlock):
         if not block or not prevBlock or block.height != prevBlock.height + 1:
