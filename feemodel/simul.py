@@ -202,10 +202,11 @@ class SimulOnline(TxMempool):
 
         logWrite("Loading TxWaitTimes estimator...")
         lh = LoadHistory()
-        lh.registerFn(self.wt.pushBlocks, wtBlockHeightRange)
+        lh.registerFn(lambda blocks: self.wt.pushBlocks(blocks, init=True), wtBlockHeightRange)
         lh.loadBlocks()
         logWrite("Done.")
 
+        self.wt.calcWaitTimes()
         self.wt.saveObject()
 
         self.steadySim = SteadyStateSim(self.pe)

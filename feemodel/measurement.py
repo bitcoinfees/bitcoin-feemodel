@@ -129,7 +129,6 @@ class TxRates(Saveable):
 class BlockTxWaitTimes(object):
     def __init__(self, feeClassValues):
         self.avgWaitTimes = {feeRate: (0, 0.) for feeRate in feeClassValues}
-        self.blacklist = []
 
     def addTx(self, feeRate, waitTime):
         feeClass = None
@@ -141,9 +140,6 @@ class BlockTxWaitTimes(object):
             numTxs, prevWaitTime = self.avgWaitTimes[feeClass]
             self.avgWaitTimes[feeClass] = (numTxs+1,
                 (prevWaitTime*numTxs + waitTime) / (numTxs + 1))
-
-    def blacklistTx(self, txid):
-        self.blacklist.append(txid)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -159,6 +155,7 @@ class TxWaitTimes(Saveable):
         self.waitTimesWindow = waitTimesWindow
         self.waitTimesCache = {}
         self.bestHeight = None
+        self.blacklist = set()
         super(TxWaitTimes, self).__init__(saveWaitFile)
 
     def pushBlocks(self, blocks, init=False):
@@ -166,14 +163,16 @@ class TxWaitTimes(Saveable):
             if not block:
                 continue
             self.blockWaitTimes[block.height] = BlockTxWaitTimes(self.feeClassValues)
-            whitelist = filter(lambda x: self.notBlacklist(x, block.entries), block.entries)
+            blocktxidset = set(block.entries)
+            self.blacklist = self.blacklist & blocktxidset
+            whitelist = blocktxidset - self.blacklist
             for txid in whitelist:
                 entry = block.entries[txid]
                 if self._countTx(entry):
                     self.blockWaitTimes[block.height].addTx(
                         entry['feeRate'], block.time - entry['time'])
                 if self._toBlacklist(entry):
-                    self.blockWaitTimes[block.height].blacklistTx(txid)
+                    self.blacklist.add(txid)
             logWrite("WT: Added block %d" % block.height)
 
             heightThresh = block.height - self.waitTimesWindow
@@ -219,15 +218,6 @@ class TxWaitTimes(Saveable):
             waitTimes = self.waitTimesCache.items()
             waitTimes.sort()
             return (waitTimes, numBlocks, self.waitTimesWindow)
-
-    def notBlacklist(self, txid, entries):
-        for wtBlock in self.blockWaitTimes.values():
-            if txid in wtBlock.blacklist:
-                if entries[txid]['inBlock'] or entries[txid]['isConflict']:
-                    wtBlock.blacklist.remove(txid)
-                return False
-
-        return True
 
     @staticmethod
     def _countTx(entry):
