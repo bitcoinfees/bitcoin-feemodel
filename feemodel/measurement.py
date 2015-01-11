@@ -73,7 +73,7 @@ class TxRates(Saveable):
         newTxSample = [TxSample(txid, block.entries[txid]['size'], block.entries[txid]['feeRate'])
             for txid in newtxs]
         newTotalTxs = self.totalTxs + len(newtxs)
-        if newTotalTxs <= self.maxSamples:
+        if len(self.txSamples) + len(newtxs) <= self.maxSamples:
             combinedSample = self.txSamples + newTxSample
         else:
             oldProp = float(self.totalTxs) / newTotalTxs
@@ -92,8 +92,12 @@ class TxRates(Saveable):
             except IndexError:
                 replacementSamples = [choice(self.txSamples) for i in xrange(lendiff)]
             self.txSamples.extend(replacementSamples)
-        self.totalTxs -= len(conflicts)
-        self.totalTime += block.time - prevBlock.time
+        # You should only subtract the conflicts if time interval is not zero.
+        # Done.
+        interBlockTime = block.time - prevBlock.time
+        self.totalTime += interBlockTime
+        if interBlockTime:
+            self.totalTxs -= len(conflicts)
 
     def getByteRate(self, feeRates):
         if not self.txRate:

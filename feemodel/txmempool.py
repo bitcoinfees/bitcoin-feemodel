@@ -81,12 +81,14 @@ class TxMempool(StoppableThread):
             # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
             conflicts = set(currPool) - set(newPool)
 
-            numConflicts = 0
+            # Redo this: the set(conflicts) are exactly (?) the txs you need to mark.
+            # Also, you are double counting.
+            # Done.
             for block in blocks:
-                numConflicts += block.removeConflicts(conflicts)
+                block.labelConflicts(conflicts)
 
-            if numConflicts:
-                logWrite("%d conflicts removed." % numConflicts)
+            if len(conflicts):
+                logWrite("%d conflicts removed." % len(conflicts))
 
             if feemodel.config.apprun:
                 for block in blocks:
@@ -107,14 +109,9 @@ class Block(object):
         self.size = blockSize
         self.time = blockTime
 
-    def removeConflicts(self, conflicts):
-        numConflicts = 0
-        for txid in self.entries.keys():
-            if txid in conflicts:
-                self.entries[txid]['isConflict'] = True
-                numConflicts += 1
-
-        return numConflicts
+    def labelConflicts(self, conflicts):
+        for txid in conflicts:
+            self.entries[txid]['isConflict'] = True
 
     def writeHistory(self, dbFile=historyFile):
         db = None
