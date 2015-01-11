@@ -158,9 +158,11 @@ class PoolEstimator(Saveable):
 
         with poolsCacheLock:
             self.poolsCache = deepcopy(self.pools)
+            poolItems = self.poolsCache.items()
+            poolItems.sort(key=lambda x: x[1].proportion, reverse=True)
             self.poolsIdx = []
             p = 0.
-            for name, pool in self.poolsCache.iteritems():
+            for name, pool in poolItems:
                 if pool.proportion > 0:
                     p += pool.proportion
                     self.poolsIdx.append((p, name, pool))
