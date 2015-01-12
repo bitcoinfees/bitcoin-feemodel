@@ -357,6 +357,7 @@ class TransientSim(StoppableThread):
         self.pe = pe
         self.mempool = mempool
         self.tr = TxRates(minRateTime=transMinRateTime, maxSamples=maxTxSamples)
+        self.simLock = threading.Lock()
         self.statLock = threading.Lock()
         self.qstats = {}
         super(TransientSim, self).__init__()
@@ -364,10 +365,9 @@ class TransientSim(StoppableThread):
     def run(self):
         logWrite("Starting transient sim.")
         while not self.isStopped():
-            if not any([thread.name == 'transient-sim' for thread in threading.enumerate()]):
-                threading.Thread(target=self.simulate, name='transient-sim').start()
-            else:
-                logWrite("warning: transient sim is blocked.")
+            with self.simLock:
+                pass
+            threading.Thread(target=self.simulate, name='transient-sim').start()
             self.sleep(60)
         for thread in threading.enumerate():
             if thread.name == 'transient-sim':
@@ -375,34 +375,35 @@ class TransientSim(StoppableThread):
         logWrite("Closed up transient sim.")
 
     def simulate(self):
-        currHeight = proxy.getblockcount()
-        blockRateStat = estimateBlockInterval((currHeight-transBlockIntervalWindow+1, currHeight+1))
-        sim = Simul(self.pe, self.tr, blockRate=1./blockRateStat[0])
-        try:
-            if currHeight > self.tr.bestHeight:
-                logWrite("Starting tr.calcRates")
-                self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1))
-                logWrite("Finished tr.calcRates")
-            mapTx = self.mempool.getMempool()
-            waitTimes, timespent = sim.transient(mapTx, stopFlag=self.getStopObject())
-        except ValueError as e:
-            logWrite("TransientSim error:")
-            logWrite(e.message)
-        else:
-            logWrite("transient simul completed with time %.1f seconds." % timespent)
-            with self.statLock:
-                self.qstats = {
-                    'stats': [(feeRate, tw.getStats()) for feeRate, tw in waitTimes],
-                    'txByteRate': sim.txByteRate,
-                    'txRate': sim.txRate,
-                    'blockRate': blockRateStat,
-                    'poolmfrs': sim.poolmfrs,
-                    'processingRate': sim.processingRate,
-                    'processingRateUpper': sim.processingRateUpper,
-                    'stableFeeRate': sim.stableFeeRate,
-                    'timespent': timespent,
-                    'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
-                }
+        with self.simLock:
+            currHeight = proxy.getblockcount()
+            blockRateStat = estimateBlockInterval((currHeight-transBlockIntervalWindow+1, currHeight+1))
+            sim = Simul(self.pe, self.tr, blockRate=1./blockRateStat[0])
+            try:
+                if currHeight > self.tr.bestHeight:
+                    logWrite("Starting tr.calcRates")
+                    self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1))
+                    logWrite("Finished tr.calcRates")
+                mapTx = self.mempool.getMempool()
+                waitTimes, timespent = sim.transient(mapTx, stopFlag=self.getStopObject())
+            except ValueError as e:
+                logWrite("TransientSim error:")
+                logWrite(e.message)
+            else:
+                logWrite("transient simul completed with time %.1f seconds." % timespent)
+                with self.statLock:
+                    self.qstats = {
+                        'stats': [(feeRate, tw.getStats()) for feeRate, tw in waitTimes],
+                        'txByteRate': sim.txByteRate,
+                        'txRate': sim.txRate,
+                        'blockRate': blockRateStat,
+                        'poolmfrs': sim.poolmfrs,
+                        'processingRate': sim.processingRate,
+                        'processingRateUpper': sim.processingRateUpper,
+                        'stableFeeRate': sim.stableFeeRate,
+                        'timespent': timespent,
+                        'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
+                    }
 
     def getStats(self):
         with self.statLock:
