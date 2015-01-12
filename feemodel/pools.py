@@ -335,7 +335,7 @@ class PoolEstimatorOnline(StoppableThread):
             blockHeightRange = (currHeight-self.pe.poolBlocksWindow+1, currHeight+1)
             self.pe.runEstimate(blockHeightRange, self.getStopObject())
             try:
-                self.saveObject()
+                self.pe.saveObject()
             except IOError as e:
                 logWrite("Error saving PoolEstimator.")
                 logWrite(str(e))

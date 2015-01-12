@@ -19,6 +19,7 @@ rateRatioThresh = 0.9
 convergeThresh = 0.0001
 predictionLevel = 0.9
 waitTimesWindow = 2016
+maxTxSamples = 1000
 transBlockIntervalWindow = 432
 transRateIntervalLen = 18 # The number of recent blocks used to estimate tx rate for transient analysis
 transMinRateTime = 3600
@@ -53,7 +54,7 @@ class Simul(object):
         # Remove the unstable fee classes here, instead of in queue.py
         self.feeClassValues = getFeeClassValues(self.poolmfrs, self.stableFeeRate)
 
-    def transient(self, mempool, numiters=1000):
+    def transient(self, mempool, numiters=1000, stopFlag=None):
         self.initCalcs()
         self.initMempool(mempool)
         waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
@@ -62,6 +63,8 @@ class Simul(object):
 
         starttime = time()
         for i in range(numiters):
+            if stopFlag and stopFlag.is_set():
+                raise ValueError("transient simulation terminated.")
             stranded = self.feeClassValues[:]
             self.txNoDeps = txNoDeps[:]
             self.txDeps = {txid: {'tx': txDeps[txid]['tx'], 'depends': txDeps[txid]['depends'][:]}
@@ -295,7 +298,7 @@ class SteadyStateSim(StoppableThread):
             tr = TxRates.loadObject()
         except IOError:
             logWrite("Unable to load txRates, calculating from scratch.")
-            tr = TxRates(minRateTime=ssMinRateTime)
+            tr = TxRates(maxSamples=maxTxSamples, minRateTime=ssMinRateTime)
 
         sim = Simul(pe, tr, blockRate=1./blockRateStat[0])
 
@@ -353,7 +356,7 @@ class TransientSim(StoppableThread):
     def __init__(self, pe, mempool):
         self.pe = pe
         self.mempool = mempool
-        self.tr = TxRates(minRateTime=transMinRateTime)
+        self.tr = TxRates(minRateTime=transMinRateTime, maxSamples=maxTxSamples)
         self.statLock = threading.Lock()
         self.qstats = {}
         super(TransientSim, self).__init__()
@@ -361,8 +364,14 @@ class TransientSim(StoppableThread):
     def run(self):
         logWrite("Starting transient sim.")
         while not self.isStopped():
-            self.simulate()
+            if not any([thread.name == 'transient-sim' for thread in threading.enumerate()]):
+                threading.Thread(target=self.simulate, name='transient-sim').start()
+            else:
+                logWrite("warning: transient sim is blocked.")
             self.sleep(60)
+        for thread in threading.enumerate():
+            if thread.name == 'transient-sim':
+                thread.join()
         logWrite("Closed up transient sim.")
 
     def simulate(self):
@@ -375,7 +384,7 @@ class TransientSim(StoppableThread):
                 self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1))
                 logWrite("Finished tr.calcRates")
             mapTx = self.mempool.getMempool()
-            waitTimes, timespent = sim.transient(mapTx)
+            waitTimes, timespent = sim.transient(mapTx, stopFlag=self.getStopObject())
         except ValueError as e:
             logWrite("TransientSim error:")
             logWrite(e.message)
