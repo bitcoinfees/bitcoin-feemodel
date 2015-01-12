@@ -28,7 +28,8 @@ ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
 ssMinRateTime = 3600*24 # Min amount of time needed to estimate tx rates for ss
 poolBlocksWindow = 2016
 minFeeSpacing = 500
-defaultFeeValues = tuple(range(0, 100000, 1000))
+#defaultFeeValues = tuple(range(0, 100000, 1000))
+defaultFeeValues = tuple(range(0, 10000, 1000) + range(10000, 100000, 10000))
 poolEstimatePeriod = 144 # Re-estimate pools every x blocks
 ssPeriod = 144 # Re-simulate steady state every x blocks
 txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
@@ -53,6 +54,7 @@ class Simul(object):
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
         # Remove the unstable fee classes here, instead of in queue.py
         self.feeClassValues = getFeeClassValues(self.poolmfrs, self.stableFeeRate)
+        #self.feeClassValues = filter(lambda x: x >= self.stableFeeRate, self.poolmfrs)
 
     def transient(self, mempool, numiters=1000, stopFlag=None):
         self.initCalcs()
@@ -382,7 +384,8 @@ class TransientSim(StoppableThread):
             try:
                 if currHeight > self.tr.bestHeight:
                     logWrite("Starting tr.calcRates")
-                    self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1))
+                    self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1),
+                        stopFlag=self.getStopObject())
                     logWrite("Finished tr.calcRates")
                 mapTx = self.mempool.getMempool()
                 waitTimes, timespent = sim.transient(mapTx, stopFlag=self.getStopObject())

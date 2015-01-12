@@ -1,5 +1,5 @@
 from feemodel.txmempool import Block
-from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable, StoppableThread
+from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable, StoppableThread, pickle
 from feemodel.model import ModelError
 from feemodel.config import savePoolsFile, poolInfoFile, config, historyFile
 from feemodel.stranding import txPreprocess, calcStrandingFeeRate
@@ -13,15 +13,12 @@ import threading
 import json
 import os
 
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 hardMaxBlockSize = config['hardMaxBlockSize']
 defaultPoolBlocksWindow = 2016
 poolsCacheLock = threading.RLock()
 defaultMinPoolBlocks = 144 # Minimum number of blocks used to estimate pools
+getMFRSpacing = 0.05 # The percentage spacing when using getpoolmfr
 
 class Pool(object):
     def __init__(self):
@@ -276,8 +273,26 @@ class PoolEstimator(Saveable):
 
     def getPoolMFR(self):
         with poolsCacheLock:
-            return sorted(set([pool.minFeeRate for pool in self.poolsCache.values()
-                if pool.minFeeRate < float("inf")]))
+            pools = [(pool.minFeeRate, pool.proportion*pool.maxBlockSize)
+                for pool in self.poolsCache.values()]
+            pools.sort(key=lambda x: x[0])
+
+            totalProcessing = sum([p[1] for p in pools])
+            procLevel = 0.
+            poolProc = 0.
+            p = iter(pools)
+
+            feeValues = set()
+            procLevel = getMFRSpacing*totalProcessing
+            while procLevel < totalProcessing:
+                while poolProc < procLevel:
+                    pool = p.next()
+                    poolProc += pool[1]
+                feeValues.add(pool[0])
+                procLevel += getMFRSpacing*totalProcessing
+
+            return sorted(feeValues)
+
 
     def getBestHeight(self):
         with poolsCacheLock:
