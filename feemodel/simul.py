@@ -1,9 +1,9 @@
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
-from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle
+from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle, Saveable
 from feemodel.queue import QEstimator
-from feemodel.config import config, saveSSFile
+from feemodel.config import config, saveSSFile, savePredictFile
 from bitcoin.core import COIN
 from collections import defaultdict
 from random import expovariate
@@ -18,8 +18,9 @@ defaultBlockRate = 1./600
 rateRatioThresh = 0.9
 convergeThresh = 0.0001
 predictionLevel = 0.9
+predictionRetention = 2016
 waitTimesWindow = 2016
-maxTxSamples = 1000
+maxTxSamples = 10000
 transBlockIntervalWindow = 432
 transRateIntervalLen = 18 # The number of recent blocks used to estimate tx rate for transient analysis
 transMinRateTime = 3600
@@ -33,6 +34,8 @@ defaultFeeValues = tuple(range(0, 10000, 1000) + range(10000, 100000, 10000))
 poolEstimatePeriod = 144 # Re-estimate pools every x blocks
 ssPeriod = 144 # Re-simulate steady state every x blocks
 txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
+
+predictLock = threading.RLock()
 
 class Simul(object):
     def __init__(self, pe, tr, blockRate=defaultBlockRate):
@@ -89,7 +92,7 @@ class Simul(object):
         for wt in waitTimes.values():
             wt.calcStats()
 
-        return sorted(waitTimes.items()), elapsedtime
+        return sorted(waitTimes.items(), key=lambda x: x[0]), elapsedtime
 
     def steadyState(self, miniters=10000, maxiters=1000000, maxtime=3600, mempool=None, stopFlag=None):
         self.initCalcs()
@@ -183,6 +186,8 @@ class SimulOnline(TxMempool):
         self.waitTimes = ()
         self.pools = []
         self.steadyStats = []
+        self.transientStats = []
+        self.predictScores = {}
         self.processLock = threading.Lock()
         self.dataLock = threading.Lock()
         try:
@@ -217,17 +222,23 @@ class SimulOnline(TxMempool):
         self.steadySim = SteadyStateSim(self.pe)
         self.transientSim = TransientSim(self.pe, self)
 
+        self.predictions = Predictions(self.transientSim.tStats, defaultFeeValues, predictionRetention)
+        self.predictions.loadData()
+
         super(SimulOnline, self).__init__()
 
     def update(self):
         self.updateData()
         super(SimulOnline, self).update()
+        self.predictions.updatePredictions(self.getMempool())
 
     def processBlocks(self, *args, **kwargs):
         with self.processLock:
             blocks = super(SimulOnline, self).processBlocks(*args, **kwargs)
             self.wt.pushBlocks(blocks)
             self.wt.saveObject()
+            self.predictions.pushBlocks(blocks)
+            self.predictions.saveData()
 
     def run(self):
         with self.peo.threadStart(), self.steadySim.threadStart(), self.transientSim.threadStart():
@@ -240,6 +251,7 @@ class SimulOnline(TxMempool):
         self.updateSingle('pools', self.pe.getPools)
         self.updateSingle('steadyStats', self.steadySim.getStats)
         self.updateSingle('transientStats', self.transientSim.getStats)
+        self.updateSingle('predictScores', self.predictions.getScore)
 
     def updateSingle(self, attr, targetFn):
         try:
@@ -264,6 +276,10 @@ class SimulOnline(TxMempool):
     def getPools(self):
         with self.dataLock:
             return self.pools
+
+    def getPredictions(self):
+        with self.dataLock:
+            return self.predictScores
 
 
 class SteadyStateSim(StoppableThread):
@@ -353,6 +369,7 @@ class SteadyStateSim(StoppableThread):
         with open(saveSSFile, 'rb') as f:
             self.statsCache = pickle.load(f)
 
+
 class TransientSim(StoppableThread):
     '''Constantly simulate transient behavior'''
     def __init__(self, pe, mempool):
@@ -362,6 +379,7 @@ class TransientSim(StoppableThread):
         self.simLock = threading.Lock()
         self.statLock = threading.Lock()
         self.qstats = {}
+        self.tStats = TransientStats()
         super(TransientSim, self).__init__()
 
     def run(self):
@@ -407,10 +425,38 @@ class TransientSim(StoppableThread):
                         'timespent': timespent,
                         'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
                     }
+                self.tStats.update(waitTimes, timespent, sim)
 
     def getStats(self):
         with self.statLock:
             return self.qstats
+
+
+class TransientStats(object):
+    # To-do - assign transientStats object in TransientSim
+    def __init__(self):
+        self.waitTimes = None
+        self.timespent = None
+        self.sim = None
+        self.lock = threading.Lock()
+
+    def update(self, waitTimes, timespent, sim):
+        with self.lock:
+            self.waitTimes = waitTimes
+            self.timespent = timespent
+            self.sim = sim
+
+    def predictConf(self, entry):
+        entryFeeRate = int(entry['fee']*COIN) * 1000 // entry['size']
+        with self.lock:
+            if not self.waitTimes:
+                return None
+            #self.waitTimes is assumed sorted by feeRate
+            for feeRate, twait in reversed(self.waitTimes):
+                if feeRate <= entryFeeRate:
+                    return twait.predictionInterval + entry['time']
+
+            return None
 
 
 class TransientWait(object):
@@ -461,32 +507,121 @@ def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
             feeClassValues.append(feeRate)
             prevFeeRate = feeRate
 
+    feeClassValues.sort()
     return feeClassValues
 
 
-#class CircularBuffer(Saveable):
-#    def __init__(self, retention, saveFile):
-#        self.retention = retention
-#        self.data = {}
-#        super(CircularBuffer, self).__init__(saveFile)
-#
-#    def pushData(self, key, val):
-#        self.data[key] = val
-#        thresh = key - self.retention
-#        for k in self.data.keys():
-#            if k <= thresh:
-#                del self.data[k]
-#
-#    def getData(self):
-#        return self.data
-#
-#    def getBestHeight(self):
-#        if self.data:
-#            return max(self.data)
-#        else:
-#            return None
-#
-#
+class CircularBuffer(object):
+    def __init__(self, retention, saveFile):
+        self.retention = retention
+        self.data = {}
+        self.saveFile=saveFile
+
+    def pushData(self, key, val):
+        self.data[key] = val
+        thresh = key - self.retention
+        for k in self.data.keys():
+            if k <= thresh:
+                del self.data[k]
+
+    def getDataIter(self):
+        return self.data.iteritems()
+
+    def getBestHeight(self):
+        if self.data:
+            return max(self.data)
+        else:
+            return None
+
+    def saveData(self):
+        with open(self.saveFile, 'wb') as f:
+            pickle.dump(self.data, f)
+
+    def loadData(self):
+        try:
+            with open(self.saveFile, 'rb') as f:
+                self.data = pickle.load(f)
+        except:
+            logWrite("Unable to load saved predictions.")
+
+
+class BlockPrediction(object):
+    def __init__(self, feeClassValues):
+        #feeClassValues assumed sorted
+        self.scores = [[feeRate, [0, 0]] for feeRate in feeClassValues]
+
+    def addScore(self, feeRate, isIn):
+        validFeeRate = False
+        for feeClass, score in reversed(self.scores):
+            if feeClass < feeRate:
+                validFeeRate = True
+                break
+        if validFeeRate:
+            score[1] += 1
+            if isIn:
+                score[0] += 1
+
+
+class Predictions(CircularBuffer):
+    def __init__(self, transientStats, feeClassValues, retention, saveFile=savePredictFile):
+        self.predictions = {}
+        self.feeClassValues = feeClassValues
+        self.transientStats = transientStats
+        self.totalScores = {feeRate: [0, 0] for feeRate in self.feeClassValues}
+
+        super(Predictions, self).__init__(retention, saveFile)
+
+    def updatePredictions(self, mapTx):
+        with predictLock:
+            newTxids = set(mapTx) - set(self.predictions)
+            for txid in newTxids:
+                entry = mapTx[txid]
+                if not entry['depends']:
+                    self.predictions[txid] = self.transientStats.predictConf(entry)
+                else:
+                    self.predictions[txid] = None
+
+    def pushBlocks(self, blocks):
+        with predictLock:
+            for block in blocks:
+                if not block:
+                    return
+                numPredicts = 0 # Debug
+                blockPredict = BlockPrediction(self.feeClassValues)
+                for txid, entry in block.entries.iteritems():
+                    if entry['inBlock']:
+                        predictedConfTime = self.predictions.get(txid)
+                        if predictedConfTime:
+                            isIn = predictedConfTime > block.time
+                            blockPredict.addScore(entry['feeRate'], isIn)
+                            del self.predictions[txid]
+                            numPredicts += 1 # Debug
+                self.pushData(block.height, blockPredict)
+                print("In block %d, %d predicts tallied." % (block.height, numPredicts)) # Debug
+
+                delPredictions = set(self.predictions) - set(block.entries)
+                for txid in delPredictions:
+                    del self.predictions[txid]
+
+            self.calcScore()
+
+    def calcScore(self):
+        with predictLock:
+            self.totalScores = {feeRate: [0, 0] for feeRate in self.feeClassValues}
+            for dummy, blockPredict in self.getDataIter():
+                for feeClass, score in blockPredict.scores:
+                    self.totalScores[feeClass][0] += score[0]
+                    self.totalScores[feeClass][1] += score[1]
+
+    def getScore(self):
+        with predictLock:
+            return self.totalScores
+
+
+
+
+
+
 #class MempoolSize(CircularBuffer):
 #    def pushBlocks(blocks):
 #        for block in blocks:

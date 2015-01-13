@@ -31,6 +31,10 @@ def main(port=5001):
     def getTransientStats():
         return json.dumps(s.getTransientStats())
 
+    @app.route('/predictscores')
+    def getPredictScores():
+        return json.dumps(s.getPredictions())
+
     with s.threadStart():
         app.run(port=port, debug=True, use_reloader=False)
 

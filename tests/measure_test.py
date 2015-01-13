@@ -68,6 +68,7 @@ class TxRatesTest(unittest.TestCase):
         print("txRate is %.2f" % txRate)
         print("num samples is %d" % len(tr.txSamples))
         print("total time is %.2f" % tr.totalTime)
+        print("total txs is %d" % tr.totalTxs)
         print("num unique samples: %d" % len(set([s.txid for s in tr.txSamples])))
 
 

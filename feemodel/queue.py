@@ -10,7 +10,7 @@ adaptiveWindow = config['queue']['adaptiveWindow']
 
 class QEstimator(object):
     def __init__(self, feeClassValues):
-        self.feeClassValues = feeClassValues 
+        self.feeClassValues = feeClassValues
         self.qMetrics = [QFeeClass(feeRate) for feeRate in self.feeClassValues]
 
     def nextBlock(self, blockHeight, blockInterval, minFeeRate):
@@ -76,7 +76,7 @@ class QFeeClass(object):
         self.totalTime += thisInterval
         return cumWait + thisInterval
 
-    def updateStrandedProportion(self, stranded):        
+    def updateStrandedProportion(self, stranded):
         self.strandedProportion = (self.strandedProportion*self.totalBlocks
             + int(stranded)) / float(self.totalBlocks+1)
         self.totalBlocks += 1
@@ -103,7 +103,7 @@ class QFeeClass(object):
 #             except IOError:
 #                 logWrite("QE: Couldn't load saved blocks.")
 #             else:
-#                 logWrite("QE: Loading blocks; found best height at " + 
+#                 logWrite("QE: Loading blocks; found best height at " +
 #                     str(self.bestHeight if self.bestHeight else -1))
 
 #     def pushBlocks(self, blocks, isInit=False):
@@ -113,7 +113,7 @@ class QFeeClass(object):
 #                     blockInterval = block.time - self.prevBlock.time
 #                     blockInterval = max(blockInterval, 1)
 #                     try:
-#                         minLeadTime = min([entry['leadTime'] for entry in 
+#                         minLeadTime = min([entry['leadTime'] for entry in
 #                             block.entries.itervalues() if entry['inBlock']])
 #                     except ValueError:
 #                         minLeadTime = 0
@@ -175,7 +175,6 @@ class QFeeClass(object):
     #         bestHeight = max(self.blocks.keys())
     #     except ValueError:
     #         bestHeight = None
-        
     #     prevBlock = None
     #     idx = 0
     #     heights = range(max(bestHeight,blockHeightRange[0]), blockHeightRange[1]+1)
@@ -196,7 +195,7 @@ class QFeeClass(object):
     #                 blockInterval = block.time - prevBlock.time
     #                 blockInterval = max(blockInterval, 1)
     #                 try:
-    #                     minLeadTime = min([entry['leadTime'] for entry in 
+    #                     minLeadTime = min([entry['leadTime'] for entry in
     #                         block.entries.itervalues() if entry['inBlock']])
     #                 except ValueError:
     #                     minLeadTime = 0
@@ -218,7 +217,7 @@ class QFeeClass(object):
 #             except ValueError:
 #                 logWrite("No saved blocks; loading from disk")
 #             else:
-#                 logWrite("Loading blocks, found best height at " + str(bestHeight))             
+#                 logWrite("Loading blocks, found best height at " + str(bestHeight))
 #         except IOError:
 #             logWrite("Couldn't load saved blocks; loading from disk")
 #         self.updateBlocks(currHeight=currHeight)
@@ -295,7 +294,7 @@ class QFeeClass(object):
 #                 blockInterval = block.time - prevBlock.time
 #                 blockInterval = max(blockInterval, 1)
 #                 try:
-#                     minLeadTime = min([entry['leadTime'] for entry in 
+#                     minLeadTime = min([entry['leadTime'] for entry in
 #                         block.entries.itervalues() if entry['inBlock']])
 #                 except ValueError:
 #                     minLeadTime = 0

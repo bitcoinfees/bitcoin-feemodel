@@ -32,7 +32,8 @@ config = {
     "simul": {
         "blockRate": 1./600,
         "savePools": "savepools.pickle",
-        "saveSS": "savess.pickle"
+        "saveSS": "savess.pickle",
+        "savePredict": "savepredict.pickle"
     },
     "logging": {
         "logFile": 'debug.log',
@@ -46,6 +47,7 @@ saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
 saveRatesFile = os.path.join(datadir, config['measurement']['saveRates'])
 savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
 saveSSFile = os.path.join(datadir, config['simul']['saveSS'])
+savePredictFile = os.path.join(datadir, config['simul']['savePredict'])
 historyFile = os.path.join(datadir, config['historyDb'])
 logFile = os.path.join(datadir, 'debug.log')
 
