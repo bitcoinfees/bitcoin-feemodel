@@ -186,7 +186,7 @@ class PoolEstimator(Saveable):
             if height in loadedHeights:
                 continue
             try:
-                addr, tag = getCoinbaseInfo(height)
+                addr, tag = getCoinbaseInfo(blockHeight=height)
             except IndexError:
                 logWrite("Exceeds best block height.")
                 continue

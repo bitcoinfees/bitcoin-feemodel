@@ -13,8 +13,9 @@ try:
 except ImportError:
     import pickle
 
-def getCoinbaseInfo(blockHeight):
-    block = proxy.getblock(proxy.getblockhash(blockHeight))
+def getCoinbaseInfo(blockHeight=None, block=None):
+    if not block:
+        block = proxy.getblock(proxy.getblockhash(blockHeight))
     coinbaseTx = block.vtx[0]
     assert coinbaseTx.is_coinbase()
     addr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))

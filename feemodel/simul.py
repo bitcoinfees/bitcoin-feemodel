@@ -542,13 +542,13 @@ class CircularBuffer(object):
             with open(self.saveFile, 'rb') as f:
                 self.data = pickle.load(f)
         except:
-            logWrite("Unable to load saved predictions.")
+            logWrite("%s: Unable to load data." % self.__class__.__name__)
 
 
 class BlockPrediction(object):
     def __init__(self, feeClassValues):
         #feeClassValues assumed sorted
-        self.scores = [[feeRate, [0, 0]] for feeRate in feeClassValues]
+        self.scores = [(feeRate, [0, 0]) for feeRate in feeClassValues]
 
     def addScore(self, feeRate, isIn):
         validFeeRate = False
@@ -616,6 +616,16 @@ class Predictions(CircularBuffer):
     def getScore(self):
         with predictLock:
             return self.totalScores
+
+    def loadData(self):
+        super(self.__class__, self).loadData()
+        for dummy, blockPredict in self.getDataIter():
+            feeRates = tuple([feeRate for feeRate, score in blockPredict.scores])
+            if feeRates != self.feeClassValues:
+                logWrite("Mismatch in saved predictions feeclassvalues.")
+                self.data = {}
+                break
+
 
 
 
