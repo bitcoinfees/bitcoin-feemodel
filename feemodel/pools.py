@@ -278,7 +278,6 @@ class PoolEstimator(Saveable):
             pools.sort(key=lambda x: x[0])
 
             totalProcessing = sum([p[1] for p in pools])
-            procLevel = 0.
             poolProc = 0.
             p = iter(pools)
 
@@ -291,6 +290,7 @@ class PoolEstimator(Saveable):
                 feeValues.add(pool[0])
                 procLevel += getMFRSpacing*totalProcessing
 
+            feeValues = filter(lambda x: x < float("inf"), feeValues)
             return sorted(feeValues)
 
 

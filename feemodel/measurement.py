@@ -13,7 +13,6 @@ defaultMinRateTime = 3600 # 1 hour
 minWaitBlocks = 12
 defaultWaitTimesWindow = 2016
 
-ratesLock = threading.RLock()
 waitLock = threading.Lock()
 
 

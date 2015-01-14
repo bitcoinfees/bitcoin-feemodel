@@ -28,7 +28,7 @@ ssBlockIntervalWindow = 2016 # The number of blocks used to estimate block inter
 ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
 ssMinRateTime = 3600*24 # Min amount of time needed to estimate tx rates for ss
 poolBlocksWindow = 2016
-minFeeSpacing = 500
+minFeeSpacing = 1000
 #defaultFeeValues = tuple(range(0, 100000, 1000))
 defaultFeeValues = tuple(range(0, 10000, 1000) + range(10000, 100000, 10000))
 poolEstimatePeriod = 144 # Re-estimate pools every x blocks
@@ -56,7 +56,7 @@ class Simul(object):
         if not self.stableFeeRate:
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
         # Remove the unstable fee classes here, instead of in queue.py
-        self.feeClassValues = getFeeClassValues(self.poolmfrs, self.stableFeeRate)
+        self.feeClassValues = getFeeClassValues(self.poolmfrs, self.tr.txSamples, self.stableFeeRate)
         #self.feeClassValues = filter(lambda x: x >= self.stableFeeRate, self.poolmfrs)
 
     def transient(self, mempool, numiters=1000, stopFlag=None):
@@ -195,29 +195,11 @@ class SimulOnline(TxMempool):
         except IOError:
             logWrite("Unable to load poolEstimator")
             self.pe = PoolEstimator(poolBlocksWindow)
-        try:
-            self.wt = TxWaitTimes.loadObject()
-        except IOError:
-            logWrite("Unable to load txWaitTimes.")
-            self.wt = TxWaitTimes(defaultFeeValues, waitTimesWindow)
 
         self.peo = PoolEstimatorOnline(self.pe, poolEstimatePeriod)
         logWrite("Updating pool estimates..")
         self.peo.updateEstimates()
         logWrite("Done.")
-
-        wtBestHeight = self.wt.getBestHeight()
-        currHeight = proxy.getblockcount()
-        wtBlockHeightRange = (max(wtBestHeight, currHeight-waitTimesWindow)+1, currHeight+20)
-
-        logWrite("Loading TxWaitTimes estimator...")
-        lh = LoadHistory()
-        lh.registerFn(lambda blocks: self.wt.pushBlocks(blocks, init=True), wtBlockHeightRange)
-        lh.loadBlocks()
-        logWrite("Done.")
-
-        self.wt.calcWaitTimes()
-        self.wt.saveObject()
 
         self.steadySim = SteadyStateSim(self.pe)
         self.transientSim = TransientSim(self.pe, self)
@@ -235,8 +217,6 @@ class SimulOnline(TxMempool):
     def processBlocks(self, *args, **kwargs):
         with self.processLock:
             blocks = super(SimulOnline, self).processBlocks(*args, **kwargs)
-            self.wt.pushBlocks(blocks)
-            self.wt.saveObject()
             self.predictions.pushBlocks(blocks)
             self.predictions.saveData()
 
@@ -247,7 +227,7 @@ class SimulOnline(TxMempool):
         logWrite("Done. SimulOnline finished.")
 
     def updateData(self):
-        self.updateSingle('waitTimes', self.wt.getWaitTimes)
+        self.updateSingle('waitTimes', self.steadySim.getWaitTimes)
         self.updateSingle('pools', self.pe.getPools)
         self.updateSingle('steadyStats', self.steadySim.getStats)
         self.updateSingle('transientStats', self.transientSim.getStats)
@@ -291,9 +271,10 @@ class SteadyStateSim(StoppableThread):
         self.status = 'idle'
         try:
             self.loadStats()
-        except IOError:
+        except:
             logWrite("SS: Unable to load saved stats - starting from scratch.")
             self.statsCache = (0, {})
+            self.waitTimesCache = []
 
         super(SteadyStateSim, self).__init__()
 
@@ -314,7 +295,7 @@ class SteadyStateSim(StoppableThread):
         blockRateStat = estimateBlockInterval((currHeight-ssBlockIntervalWindow+1, currHeight+1))
         try:
             tr = TxRates.loadObject()
-        except IOError:
+        except:
             logWrite("Unable to load txRates, calculating from scratch.")
             tr = TxRates(maxSamples=maxTxSamples, minRateTime=ssMinRateTime)
 
@@ -328,6 +309,12 @@ class SteadyStateSim(StoppableThread):
                 logWrite("Finished tr.calcRates")
                 tr.saveObject()
             stats, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
+            wt = TxWaitTimes(sim.feeClassValues, waitTimesWindow=waitTimesWindow)
+            heightRange = (currHeight-waitTimesWindow+1, currHeight+1)
+            lh = LoadHistory()
+            lh.registerFn(lambda blocks: wt.pushBlocks(blocks, init=True), heightRange)
+            lh.loadBlocks()
+            wt.calcWaitTimes()
         except ValueError as e:
             logWrite("SteadyStateSim error:")
             logWrite(str(e))
@@ -349,6 +336,7 @@ class SteadyStateSim(StoppableThread):
                     'numiters': numiters
             }
             with self.statLock:
+                self.waitTimesCache = wt.getWaitTimes()
                 self.statsCache = (currHeight, qstats)
                 try:
                     self.saveStats()
@@ -361,13 +349,17 @@ class SteadyStateSim(StoppableThread):
         with self.statLock:
             return self.statsCache
 
+    def getWaitTimes(self):
+        with self.statLock:
+            return self.waitTimesCache
+
     def saveStats(self):
         with open(saveSSFile, 'wb') as f:
-            pickle.dump(self.statsCache, f)
+            pickle.dump((self.statsCache, self.waitTimesCache), f)
 
     def loadStats(self):
         with open(saveSSFile, 'rb') as f:
-            self.statsCache = pickle.load(f)
+            self.statsCache, self.waitTimesCache = pickle.load(f)
 
 
 class TransientSim(StoppableThread):
@@ -398,7 +390,7 @@ class TransientSim(StoppableThread):
         with self.simLock:
             currHeight = proxy.getblockcount()
             blockRateStat = estimateBlockInterval((currHeight-transBlockIntervalWindow+1, currHeight+1))
-            sim = Simul(self.pe, self.tr, blockRate=1./blockRateStat[0])
+            sim = Simul(deepcopy(self.pe), self.tr, blockRate=1./blockRateStat[0])
             try:
                 if currHeight > self.tr.bestHeight:
                     logWrite("Starting tr.calcRates")
@@ -493,7 +485,24 @@ def getMempoolSize(mapTx, feeValues):
     ]
     return mempoolSize
 
-def getFeeClassValues(poolmfrs, stableFeeRate, feeValues=defaultFeeValues):
+def getFeeClassValues(poolmfrs, txSamples, stableFeeRate):
+    txs = [(tx.size, tx.feeRate) for tx in txSamples]
+    txs.sort(key=lambda x: x[1])
+    totalBytes = sum([tx[0] for tx in txs])
+    q = 0.05
+    byteLevel = q*totalBytes
+    currTotal = 0
+    feeValues = set()
+    txi = iter(txs)
+    while byteLevel < totalBytes:
+        while currTotal < byteLevel:
+            tx = txi.next()
+            currTotal += tx[0]
+        feeValues.add(tx[1])
+        byteLevel += q*totalBytes
+
+#    print("Debug - feeValues from samples:")
+#    print(sorted(feeValues))
     feeValues = list(feeValues)
     feeValues.extend(poolmfrs)
     feeValues.sort(reverse=True)
