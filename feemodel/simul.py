@@ -494,7 +494,7 @@ def getFeeClassValues(poolmfrs, txSamples, stableFeeRate):
     currTotal = 0
     feeValues = set()
     txi = iter(txs)
-    while byteLevel < totalBytes:
+    while byteLevel <= (1-q)*totalBytes:
         while currTotal < byteLevel:
             tx = txi.next()
             currTotal += tx[0]
