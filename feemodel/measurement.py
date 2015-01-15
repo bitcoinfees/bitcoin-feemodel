@@ -74,25 +74,23 @@ class TxRates(Saveable):
         newTxSample = [TxSample(txid, block.entries[txid]['size'], block.entries[txid]['feeRate'])
             for txid in newtxs]
         newTotalTxs = self.totalTxs + len(newtxs)
-        if len(self.txSamples) + len(newtxs) <= self.maxSamples:
-            combinedSample = self.txSamples + newTxSample
+        oldProp = float(self.totalTxs) / newTotalTxs
+        combinedSize = min(self.maxSamples, len(self.txSamples)+len(newtxs))
+        numKeepOld = int(round(oldProp*combinedSize))
+        if numKeepOld > len(self.txSamples):
+            numKeepOld = len(self.txSamples)
+            numAddNew = int(round(numKeepOld/oldProp*(1-oldProp)))
+        elif combinedSize - numKeepOld > len(newtxs):
+            numAddNew = len(newtxs)
+            numKeepOld = int(round(numAddNew/(1-oldProp)*oldProp))
         else:
-            oldProp = float(self.totalTxs) / newTotalTxs
-            numKeepOld = int(oldProp*self.maxSamples)
-            numAddNew = self.maxSamples - numKeepOld
-            combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
-        self.totalTxs += len(newtxs)
-        conflicts = [txid for txid, entry in block.entries.iteritems() if entry.get('isConflict')]
+            numAddNew = combinedSize - numKeepOld
 
+        combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
+        self.totalTxs = newTotalTxs
+
+        conflicts = [txid for txid, entry in block.entries.iteritems() if entry.get('isConflict')]
         self.txSamples = filter(lambda x: x.txid not in conflicts, combinedSample)
-        n = len(self.txSamples)
-        if n:
-            lendiff = len(combinedSample) - n
-            try:
-                replacementSamples = [self.txSamples[int(random()*n)] for i in xrange(lendiff)]
-            except IndexError:
-                replacementSamples = [choice(self.txSamples) for i in xrange(lendiff)]
-            self.txSamples.extend(replacementSamples)
         # You should only subtract the conflicts if time interval is not zero.
         # Done.
         interBlockTime = block.time - prevBlock.time

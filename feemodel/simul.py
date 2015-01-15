@@ -303,6 +303,8 @@ class SteadyStateSim(StoppableThread):
 
         try:
             self.status = 'running'
+            # We originally did a separate interval check here to avoid doing tr calc rates when
+            # we wanted to redo steady sim.
             if currHeight - tr.bestHeight > self.ssPeriod:
                 logWrite("Starting tr.calcRates")
                 tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1), stopFlag=self.getStopObject())
@@ -394,6 +396,7 @@ class TransientSim(StoppableThread):
             try:
                 if currHeight > self.tr.bestHeight:
                     logWrite("Starting tr.calcRates")
+                    # Problem with range (339006-18+1,339006+1)
                     self.tr.calcRates((currHeight-transRateIntervalLen+1, currHeight+1),
                         stopFlag=self.getStopObject())
                     logWrite("Finished tr.calcRates")
