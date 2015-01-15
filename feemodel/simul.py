@@ -224,6 +224,7 @@ class SimulOnline(TxMempool):
         with self.peo.threadStart(), self.steadySim.threadStart(), self.transientSim.threadStart():
             super(SimulOnline, self).run()
             logWrite("Stopping SimulOnline...")
+        self.predictions.saveData()
         logWrite("Done. SimulOnline finished.")
 
     def updateData(self):
@@ -524,10 +525,9 @@ def getFeeClassValues(poolmfrs, txSamples, stableFeeRate):
 
 
 class CircularBuffer(object):
-    def __init__(self, retention, saveFile):
+    def __init__(self, retention):
         self.retention = retention
         self.data = {}
-        self.saveFile=saveFile
 
     def pushData(self, key, val):
         self.data[key] = val
@@ -544,17 +544,6 @@ class CircularBuffer(object):
             return max(self.data)
         else:
             return None
-
-    def saveData(self):
-        with open(self.saveFile, 'wb') as f:
-            pickle.dump(self.data, f)
-
-    def loadData(self):
-        try:
-            with open(self.saveFile, 'rb') as f:
-                self.data = pickle.load(f)
-        except:
-            logWrite("%s: Unable to load data." % self.__class__.__name__)
 
 
 class BlockPrediction(object):
@@ -580,8 +569,9 @@ class Predictions(CircularBuffer):
         self.feeClassValues = feeClassValues
         self.transientStats = transientStats
         self.totalScores = {feeRate: [0, 0] for feeRate in self.feeClassValues}
+        self.saveFile = saveFile
 
-        super(Predictions, self).__init__(retention, saveFile)
+        super(Predictions, self).__init__(retention)
 
     def updatePredictions(self, mapTx):
         with predictLock:
@@ -629,8 +619,20 @@ class Predictions(CircularBuffer):
         with predictLock:
             return self.totalScores
 
+    def saveData(self):
+        with predictLock, open(self.saveFile, 'wb') as f:
+            pickle.dump((self.predictions, self.data), f)
+
     def loadData(self):
-        super(self.__class__, self).loadData()
+        try:
+            with open(self.saveFile, 'rb') as f:
+                self.predictions, self.data = pickle.load(f)
+        except:
+            logWrite("Unable to load predict data.")
+        else:
+            logWrite("%d predictions and %d blocks of predictscores." %
+                (len(self.predictions),len(self.data)))
+
         for dummy, blockPredict in self.getDataIter():
             feeRates = tuple([feeRate for feeRate, score in blockPredict.scores])
             if feeRates != self.feeClassValues:
