@@ -7,6 +7,7 @@ import sqlite3
 import threading
 from pprint import pprint
 from contextlib import contextmanager
+from random import random
 
 try:
     import cPickle as pickle
@@ -137,6 +138,13 @@ def getHistory(dbFile=historyFile):
 def estimateVariance(x, xbar):
     return float(sum([(x_i - xbar)**2 for x_i in x])) / (len(x) - 1)
 
+def roundRandom(f):
+    '''Returns a random integer with expected value equal to f'''
+    q, r = divmod(f, 1)
+    if random() <= r:
+        return int(q+1)
+    else:
+        return int(q)
 
 proxy = BatchProxy()
 toStdOut = config['logging']['toStdOut']

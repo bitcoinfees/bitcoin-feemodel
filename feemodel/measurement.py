@@ -1,4 +1,4 @@
-from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp, pickle
+from feemodel.util import proxy, logWrite, Saveable, getBlockTimeStamp, pickle, roundRandom
 from feemodel.config import config, saveWaitFile, saveRatesFile, historyFile
 from feemodel.txmempool import Block
 from math import exp, cos, sin, sqrt, log, pi
@@ -80,13 +80,13 @@ class TxRates(Saveable):
             combinedSample = self.txSamples
         else:
             combinedSize = min(self.maxSamples, len(self.txSamples)+len(newtxs))
-            numKeepOld = int(round(oldProp*combinedSize))
+            numKeepOld = roundRandom(oldProp*combinedSize)
             if numKeepOld > len(self.txSamples):
                 numKeepOld = len(self.txSamples)
-                numAddNew = int(round(numKeepOld/oldProp*(1-oldProp)))
+                numAddNew = roundRandom(numKeepOld/oldProp*(1-oldProp))
             elif combinedSize - numKeepOld > len(newtxs):
                 numAddNew = len(newtxs)
-                numKeepOld = int(round(numAddNew/(1-oldProp)*oldProp))
+                numKeepOld = roundRandom(numAddNew/(1-oldProp)*oldProp)
             else:
                 numAddNew = combinedSize - numKeepOld
             combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
