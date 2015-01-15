@@ -14,8 +14,7 @@ from math import log
 from pprint import pprint
 
 defaultFeeValues = range(0, 100000, 10000)
-testRatesFile = 'data/testRates.pickle'
-tmpSaveFile = 'data/tmpsave.pickle'
+tmpSaveFile = 'data/tmpsave'
 blockRate = 1./600
 
 class TxSampleTest(unittest.TestCase):
@@ -52,7 +51,6 @@ class TxRatesTest(unittest.TestCase):
         tr.saveObject()
         tr2 = TxRates.loadObject(tmpSaveFile)
         self.assertEqual(tr, tr2)
-        os.remove(tmpSaveFile)
 
     def test_minRateTime(self):
         tr = TxRates(minRateTime=10000)
@@ -70,6 +68,40 @@ class TxRatesTest(unittest.TestCase):
         print("total time is %.2f" % tr.totalTime)
         print("total txs is %d" % tr.totalTxs)
         print("num unique samples: %d" % len(set([s.txid for s in tr.txSamples])))
+
+    def test_calcRates(self):
+        tr = TxRates(minRateTime=1)
+        tr.calcRates((333931, 333953), dbFile=dbFile)
+        numiters = 100
+        btime = 0.
+        tr2 = TxRates(minRateTime=1, maxSamples=100000)
+        prevBlock = None
+        for i in range(numiters):
+            t = expovariate(blockRate)
+            btime += t
+            txs = tr.generateTxSample(t*tr.txRate)
+            b = txmempool.Block(
+                {'%d_%d' % (idx, i): {'size': tx.size, 'feeRate': tx.feeRate}
+                    for idx, tx in enumerate(txs)},
+                i,
+                999999,
+                btime
+            )
+            tr2.addBlock(b, prevBlock)
+            prevBlock = b
+        tr2.txRate = tr2.totalTxs / tr2.totalTime
+        byteRates, txRate = tr.getByteRate(defaultFeeValues)
+        byteRates2, txRate2 = tr2.getByteRate(defaultFeeValues)
+        print("Testing calcrates...")
+        pprint([(byteRates[idx], byteRates2[idx]) for idx in range(len(byteRates))])
+        ratesDiff = [abs(log(byteRates[idx]) - log(byteRates2[idx])) for idx in range(len(byteRates))]
+        print("max ratesDiff: %.4f" % max(ratesDiff))
+        self.assertTrue(max(ratesDiff) < 0.5)
+
+    def tearDown(self):
+        if os.path.exists(tmpSaveFile):
+            os.remove(tmpSaveFile)
+
 
 
 class WaitTest(unittest.TestCase):
