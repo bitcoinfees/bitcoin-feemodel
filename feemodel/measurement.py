@@ -74,19 +74,23 @@ class TxRates(Saveable):
         newTxSample = [TxSample(txid, block.entries[txid]['size'], block.entries[txid]['feeRate'])
             for txid in newtxs]
         newTotalTxs = self.totalTxs + len(newtxs)
-        oldProp = float(self.totalTxs) / newTotalTxs
-        combinedSize = min(self.maxSamples, len(self.txSamples)+len(newtxs))
-        numKeepOld = int(round(oldProp*combinedSize))
-        if numKeepOld > len(self.txSamples):
-            numKeepOld = len(self.txSamples)
-            numAddNew = int(round(numKeepOld/oldProp*(1-oldProp)))
-        elif combinedSize - numKeepOld > len(newtxs):
-            numAddNew = len(newtxs)
-            numKeepOld = int(round(numAddNew/(1-oldProp)*oldProp))
+        try:
+            oldProp = float(self.totalTxs) / newTotalTxs
+        except ZeroDivisionError:
+            combinedSample = self.txSamples
         else:
-            numAddNew = combinedSize - numKeepOld
+            combinedSize = min(self.maxSamples, len(self.txSamples)+len(newtxs))
+            numKeepOld = int(round(oldProp*combinedSize))
+            if numKeepOld > len(self.txSamples):
+                numKeepOld = len(self.txSamples)
+                numAddNew = int(round(numKeepOld/oldProp*(1-oldProp)))
+            elif combinedSize - numKeepOld > len(newtxs):
+                numAddNew = len(newtxs)
+                numKeepOld = int(round(numAddNew/(1-oldProp)*oldProp))
+            else:
+                numAddNew = combinedSize - numKeepOld
+            combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
 
-        combinedSample = sample(self.txSamples, numKeepOld) + sample(newTxSample, numAddNew)
         self.totalTxs = newTotalTxs
 
         conflicts = [txid for txid, entry in block.entries.iteritems() if entry.get('isConflict')]
@@ -97,6 +101,7 @@ class TxRates(Saveable):
         self.totalTime += interBlockTime
         if interBlockTime:
             self.totalTxs -= len(conflicts)
+        self.totalTxs = max(self.totalTxs, 0)
 
     def getByteRate(self, feeRates):
         if not self.txRate:
