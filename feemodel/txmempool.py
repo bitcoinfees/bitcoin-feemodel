@@ -175,6 +175,16 @@ class Block(object):
             self.time == other.time,
         ])
 
+def checkBlockCoverage(blockHeightRange):
+    missedBlocks = []
+    for height in range(*blockHeightRange):
+        b = Block.blockFromHistory(height)
+        if not b:
+            missedBlocks.append(height)
+
+    print("%d missed blocks out of %d." % (len(missedBlocks), blockHeightRange[1]-blockHeightRange[0]))
+    return missedBlocks
+
 
 class LoadHistory(object):
     def __init__(self, dbFile=historyFile):

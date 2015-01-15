@@ -74,7 +74,7 @@ class TxRatesTest(unittest.TestCase):
         tr.calcRates((333931, 333953), dbFile=dbFile)
         numiters = 100
         btime = 0.
-        tr2 = TxRates(minRateTime=1, maxSamples=100000)
+        tr2 = TxRates(minRateTime=1, maxSamples=10000)
         prevBlock = None
         for i in range(numiters):
             t = expovariate(blockRate)

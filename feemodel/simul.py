@@ -313,6 +313,7 @@ class SteadyStateSim(StoppableThread):
                 tr.saveObject()
             stats, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
             wt = TxWaitTimes(sim.feeClassValues, waitTimesWindow=waitTimesWindow)
+            currHeight = proxy.getblockcount()
             heightRange = (currHeight-waitTimesWindow+1, currHeight+1)
             lh = LoadHistory()
             lh.registerFn(lambda blocks: wt.pushBlocks(blocks, init=True), heightRange)

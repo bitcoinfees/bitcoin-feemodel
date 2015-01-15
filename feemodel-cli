@@ -14,4 +14,4 @@ route = sys.argv[1]
 url = 'http://127.0.0.1:' + port + '/' + route
 s = json.load(urllib2.urlopen(url))
 
-pprint(s, width=500)
+pprint(s, width=300)
