@@ -5,7 +5,7 @@ from feemodel.util import tryWrap
 
 plotly_user = 'bitcoinfees'
 waitTimesFile = (274, 'combinedwaits')
-ratesFile = (301, 'transrates')
+ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
 
@@ -37,10 +37,11 @@ class Graph(object):
 
 class WaitTimesGraph(Graph):
     @tryWrap
-    def updateSteadyState(self, x, y):
+    def updateSteadyState(self, x, steady_y, measured_y):
         with graphLock:
             self.getFig()
-            self.fig['data'][0].update({'x': x, 'y': y})
+            self.fig['data'][0].update({'x': x, 'y': steady_y})
+            self.fig['data'][2].update({'x': x, 'y': measured_y})
             self.modifyDatetime()
             self.postFig()
 
@@ -59,7 +60,7 @@ class WaitTimesGraph(Graph):
 
 class RatesGraph(Graph):
     @tryWrap
-    def updateAll(self, feeClasses, procrate, procrateUpper, txByteRate, mempoolSize, stableStat):
+    def updateAll(self, feeClasses, procrate, procrateUpper, txByteRate, stableStat):
         with graphLock:
             self.getFig()
             self.fig['data'][0].update({
@@ -73,10 +74,6 @@ class RatesGraph(Graph):
             self.fig['data'][2].update({
                 'x': feeClasses,
                 'y': txByteRate
-            })
-            self.fig['data'][3].update({
-                'x': feeClasses,
-                'y': mempoolSize
             })
             self.fig['layout']['annotations'][0].update({
                 'x': stableStat[0],

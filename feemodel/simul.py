@@ -347,6 +347,7 @@ class SteadyStateSim(StoppableThread):
                     self.saveStats()
                 except IOError:
                     logWrite("Unable to save ss stats.")
+            self.updatePlotly()
         finally:
             self.status = 'idle'
 
@@ -365,6 +366,32 @@ class SteadyStateSim(StoppableThread):
     def loadStats(self):
         with open(saveSSFile, 'rb') as f:
             self.statsCache, self.waitTimesCache = pickle.load(f)
+
+    def updatePlotly(self, async=True):
+        feeClasses = self.statsCache[1]['poolmfrs']
+        procrate = [r*600 for r in self.statsCache[1]['processingRate']]
+        procrateUpper = [r*600 for r in self.statsCache[1]['processingRateUpper']]
+        txByteRate = [r*600 for r in self.statsCache[1]['txByteRate']]
+        stableFeeRate = self.statsCache[1]['stableFeeRate']
+        stableStat = (stableFeeRate, txByteRate[feeClasses.index(stableFeeRate)])
+        t = threading.Thread(
+                             target=ratesGraph.updateAll,
+                             args=(feeClasses,procrate,procrateUpper,txByteRate,stableStat)
+                            )
+        t.start()
+        if not async:
+            t.join()
+        x = [stat[0] for stat in self.statsCache[1]['stats']]
+        steady_y = [stat[1] for stat in self.statsCache[1]['stats']]
+        measured_y = [w[1][0] for w in self.waitTimesCache[0]]
+        t = threading.Thread(
+                             target=waitTimesGraph.updateSteadyState,
+                             args=(x, steady_y, measured_y)
+                            )
+        t.start()
+        if not async:
+            t.join()
+
 
 
 class TransientSim(StoppableThread):
@@ -431,17 +458,14 @@ class TransientSim(StoppableThread):
             return self.qstats
 
     def updatePlotly(self):
-        feeClasses = self.qstats['poolmfrs']
-        procrate = [r*600 for r in self.qstats['processingRate']]
-        procrateUpper = [r*600 for r in self.qstats['processingRateUpper']]
-        txByteRate = [r*600 for r in self.qstats['txByteRate']]
-        mempoolSize = self.qstats['mempoolSize']
-        stableStat = (self.qstats['stableFeeRate'],
-                      txByteRate[feeClasses.index(self.qstats['stableFeeRate'])])
-        threading.Thread(
-                         target=ratesGraph.updateAll,
-                         args=(feeClasses,procrate,procrateUpper,txByteRate,mempoolSize,stableStat)
-                        ).start()
+        x = [stat[0] for stat in self.qstats['stats']]
+        y = [stat[1][0] for stat in self.qstats['stats']]
+        err = [stat[1][0]-stat[1][2][0] for stat in self.qstats['stats']]
+        t = threading.Thread(
+                             target=waitTimesGraph.updateTransient,
+                             args=(x,y,err)
+                            )
+        t.start()
 
 
 class TransientStats(object):
