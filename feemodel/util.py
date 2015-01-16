@@ -8,6 +8,7 @@ import threading
 from pprint import pprint
 from contextlib import contextmanager
 from random import random
+from functools import wraps
 
 try:
     import cPickle as pickle
@@ -145,6 +146,16 @@ def roundRandom(f):
         return int(q+1)
     else:
         return int(q)
+
+def tryWrap(fn):
+    '''Decorator to try function and fail gracefully.'''
+    @wraps(fn)
+    def nicetry(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            logWrite(str(e))
+    return nicetry
 
 proxy = BatchProxy()
 toStdOut = config['logging']['toStdOut']

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 from appdirs import user_data_dir
 
 appname = 'bitcoin-feemodel'
-appversion = '0.1.0' 
+appversion = '0.1.0'
 datadir = user_data_dir(appname)
 with open('feemodel/installinfo.py','w') as f:
     f.write('appname=\''+appname+'\'\nappversion=\''+appversion+'\'\ndatadir=\''+datadir+'\'\n')
@@ -20,6 +20,7 @@ else:
 # We must run git submodule init and update
 shutil.copyfile('knownpools/pools.json', os.path.join(datadir, 'pools.json'))
 
+# We must require plotly and also specify plotly account
 setup(
     name=appname,
     version=appversion,
@@ -38,6 +39,8 @@ setup(
 
 if dirwarn:
     print("Warning: the data directory " + datadir + " already exists.")
+
+
 
 
 

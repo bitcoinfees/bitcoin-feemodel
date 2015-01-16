@@ -1,3 +1,4 @@
+from feemodel.plotting import waitTimesGraph, ratesGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
@@ -423,10 +424,24 @@ class TransientSim(StoppableThread):
                         'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
                     }
                 self.tStats.update(waitTimes, timespent, sim)
+                self.updatePlotly()
 
     def getStats(self):
         with self.statLock:
             return self.qstats
+
+    def updatePlotly(self):
+        feeClasses = self.qstats['poolmfrs']
+        procrate = [r*600 for r in self.qstats['processingRate']]
+        procrateUpper = [r*600 for r in self.qstats['processingRateUpper']]
+        txByteRate = [r*600 for r in self.qstats['txByteRate']]
+        mempoolSize = self.qstats['mempoolSize']
+        stableStat = (self.qstats['stableFeeRate'],
+                      txByteRate[feeClasses.index(self.qstats['stableFeeRate'])])
+        threading.Thread(
+                         target=ratesGraph.updateAll,
+                         args=(feeClasses,procrate,procrateUpper,txByteRate,mempoolSize,stableStat)
+                        ).start()
 
 
 class TransientStats(object):
