@@ -40,8 +40,10 @@ class SimulTest(unittest.TestCase):
             print(feeRate, wait)
 
     def test_ss(self):
-        qstats, t, dum = self.sim.steadyState(miniters=1, maxiters=1000)
+        qstats, shorterrs, t, dum = self.sim.steadyState(miniters=1, maxiters=10000)
         pprint(qstats)
+        print("short errs:")
+        pprint(shorterrs)
 
     def tearDown(self):
         if os.path.exists(tmpSaveFile):

@@ -175,7 +175,7 @@ class TxWaitTimes(Saveable):
                         entry['feeRate'], block.time - entry['time'])
                 if self._toBlacklist(entry):
                     self.blacklist.add(txid)
-            logWrite("WT: Added block %d" % block.height)
+            #logWrite("WT: Added block %d" % block.height)
 
             heightThresh = block.height - self.waitTimesWindow
             for height in self.blockWaitTimes.keys():

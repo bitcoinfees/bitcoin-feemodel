@@ -9,6 +9,7 @@ from pprint import pprint
 from contextlib import contextmanager
 from random import random
 from functools import wraps
+from bisect import insort
 
 try:
     import cPickle as pickle
@@ -156,6 +157,43 @@ def tryWrap(fn):
         except Exception as e:
             logWrite(str(e))
     return nicetry
+
+
+class DataSample(object):
+    '''Container for numerical data'''
+    def __init__(self):
+        self.samples = []
+        self.n = None
+        self.mean = None
+        self.std = None
+        self.var = None
+        self.meanInterval = None
+
+    def addSample(self, sample):
+        try:
+            for s in sample:
+                insort(self.samples, s)
+        except TypeError:
+            insort(self.samples, sample)
+
+    def calcStats(self):
+        self.n = len(self.samples)
+        if not self.n:
+            raise ValueError("No samples.")
+        self.mean = float(sum(self.samples)) / self.n
+        self.variance = estimateVariance(self.samples, self.mean)
+        self.std = self.variance**0.5
+        halfInterval = 1.96*(self.variance/self.n)**0.5
+        self.meanInterval = (self.mean - halfInterval, self.mean + halfInterval) # 95% confidence interval
+
+    def getPercentile(self, per):
+        if per > 1 or per < 0:
+            raise ValueError("Percentile argument must be in [0, 1] interval")
+        return self.samples[max(int(per*self.n) - 1, 0)]
+
+    def __repr__(self):
+        return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (self.n, self.mean, self.std, self.meanInterval)
+
 
 proxy = BatchProxy()
 toStdOut = config['logging']['toStdOut']

@@ -1,5 +1,6 @@
-from feemodel.util import roundRandom
+from feemodel.util import roundRandom, DataSample
 import unittest
+from numpy.random import normal
 
 class UtilTests(unittest.TestCase):
     def test_roundRandom(self):
@@ -15,6 +16,18 @@ class UtilTests(unittest.TestCase):
         diff = abs(f-frandm)
         print("Diff is %.5f" % diff)
         self.assertLess(diff, 1.96*std)
+
+    def test_dataSample(self):
+        sample = normal(size=10000)
+        d = DataSample()
+        d.addSample(sample)
+#        for s in sample:
+#            d.addSample(s)
+        d.calcStats()
+        print(d)
+        print("97.5th percentile is %f" % d.getPercentile(0.975)) # should be 1.96
+
+
 
 
 if __name__ == '__main__':

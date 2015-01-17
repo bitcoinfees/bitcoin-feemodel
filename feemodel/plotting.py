@@ -36,15 +36,21 @@ class Graph(object):
 
 
 class WaitTimesGraph(Graph):
+    # Wrap with a retry.
     @tryWrap
-    def updateSteadyState(self, x, steady_y, measured_y):
+    def updateSteadyState(self, x, steady_y, measured_y, m_error):
         with graphLock:
             self.getFig()
             self.fig['data'][0].update({'x': x, 'y': steady_y})
-            self.fig['data'][2].update({'x': x, 'y': measured_y})
+
+            xbin = [(x[idx]+x[idx-1])/2. for idx in range(1, len(x))]
+            measured_y = measured_y[:-1]
+            m_error = m_error[:-1]
+            self.fig['data'][1].update({'x': xbin, 'y': measured_y, 'error_y': {'array': m_error}})
             self.modifyDatetime()
             self.postFig()
 
+    # We probably don't want transient data in the same graph as the steady state
     @tryWrap
     def updateTransient(self, x, y, onesidedErr):
         with graphLock:

@@ -2,7 +2,7 @@ from feemodel.plotting import waitTimesGraph, ratesGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
-from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle, Saveable
+from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle, Saveable, DataSample
 from feemodel.queue import QEstimator
 from feemodel.config import config, saveSSFile, savePredictFile
 from bitcoin.core import COIN
@@ -63,7 +63,7 @@ class Simul(object):
     def transient(self, mempool, numiters=1000, stopFlag=None):
         self.initCalcs()
         self.initMempool(mempool)
-        waitTimes = {feeRate: WaitStats() for feeRate in self.feeClassValues}
+        waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
         txNoDeps = self.txNoDeps
         txDeps = self.txDeps
 
@@ -83,7 +83,7 @@ class Simul(object):
                 strandedDel = []
                 for feeRate in stranded:
                     if feeRate >= sfr:
-                        waitTimes[feeRate].addWait(totaltime)
+                        waitTimes[feeRate].addSample(totaltime)
                         strandedDel.append(feeRate)
                 for feeRate in strandedDel:
                     stranded.remove(feeRate)
@@ -102,6 +102,10 @@ class Simul(object):
         self.initMempool(mempool)
 
         q = QEstimator(self.feeClassValues)
+        # queue statistics from an aggregate of shorter run lengths
+        # for comparing against measured wait times
+        shortstats = {feeRate: DataSample() for feeRate in self.feeClassValues}
+        qw = QEstimator(self.feeClassValues)
         starttime = time()
         for i in range(maxiters):
             if stopFlag and stopFlag.is_set():
@@ -112,11 +116,21 @@ class Simul(object):
             t = self.addToMempool()
             sfr = self.processBlock()
             d = q.nextBlock(i, t, sfr)
+            qw.nextBlock(i, t, sfr)
+            if not (i+1) % waitTimesWindow:
+                for fc in qw.qMetrics:
+                    shortstats[fc.feeRate].addSample(fc.avgWait)
+                qw = QEstimator(self.feeClassValues)
+
         i += 1
         if i < miniters:
             raise ValueError("Too few iterations in the allotted time.")
         #print("Num iters: %d" % i)
-        return q.getStats(), elapsedtime, i
+        for stat in shortstats.values():
+            stat.calcStats()
+        shorterrs = [(feeRate, stat.std*1.96) for feeRate, stat in shortstats.items()]
+        shorterrs.sort(key=lambda x: x[0])
+        return q.getStats(), shorterrs, elapsedtime, i
 
     def addToMempool(self):
         t = expovariate(self.blockRate)
@@ -312,7 +326,8 @@ class SteadyStateSim(StoppableThread):
                 tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1), stopFlag=self.getStopObject())
                 logWrite("Finished tr.calcRates")
                 tr.saveObject()
-            stats, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
+            stats, shorterrs, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
+
             wt = TxWaitTimes(sim.feeClassValues, waitTimesWindow=waitTimesWindow)
             currHeight = proxy.getblockcount()
             heightRange = (currHeight-waitTimesWindow+1, currHeight+1)
@@ -338,7 +353,8 @@ class SteadyStateSim(StoppableThread):
                     'processingRateUpper': sim.processingRateUpper,
                     'stableFeeRate': sim.stableFeeRate,
                     'timespent': timespent,
-                    'numiters': numiters
+                    'numiters': numiters,
+                    'shorterrs': shorterrs
             }
             with self.statLock:
                 self.waitTimesCache = wt.getWaitTimes()
@@ -384,9 +400,10 @@ class SteadyStateSim(StoppableThread):
         x = [stat[0] for stat in self.statsCache[1]['stats']]
         steady_y = [stat[1] for stat in self.statsCache[1]['stats']]
         measured_y = [w[1][0] for w in self.waitTimesCache[0]]
+        m_error = [stat[1] for stat in self.statsCache[1]['shorterrs']]
         t = threading.Thread(
                              target=waitTimesGraph.updateSteadyState,
-                             args=(x, steady_y, measured_y)
+                             args=(x, steady_y, measured_y, m_error)
                             )
         t.start()
         if not async:
@@ -451,7 +468,7 @@ class TransientSim(StoppableThread):
                         'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
                     }
                 self.tStats.update(waitTimes, timespent, sim)
-                self.updatePlotly()
+                #self.updatePlotly()
 
     def getStats(self):
         with self.statLock:
@@ -495,29 +512,17 @@ class TransientStats(object):
             return None
 
 
-class WaitStats(object):
-    def __init__(self):
-        self.waitTimes = []
-
-    def addWait(self, waitTime):
-        self.waitTimes.append(waitTime)
-
+# Change this to subclass DataSample
+class TransientWait(DataSample):
     def calcStats(self):
-        self.waitTimes.sort()
-        n = len(self.waitTimes)
-        self.mean = float(sum(self.waitTimes)) / n
-        self.variance = estimateVariance(self.waitTimes, self.mean)
-        self.std = self.variance**0.5
-
-        halfInterval = 1.96*(self.variance/n)**0.5
-        self.meanInterval = (self.mean - halfInterval, self.mean + halfInterval) # 95% confidence interval
-        self.predictionInterval = self.waitTimes[max(int(predictionLevel*n) - 1, 0)]
+        super(self.__class__, self).calcStats()
+        self.predictionInterval = self.getPercentile(0.9)
 
     def getStats(self):
         return (self.mean, self.std, self.meanInterval, self.predictionInterval)
 
     def __repr__(self):
-        return "WS{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
+        return "TW{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
             self.mean, self.std, self.meanInterval[0],
             self.meanInterval[1], int(predictionLevel*100), self.predictionInterval)
 
