@@ -72,7 +72,7 @@ class TxRatesTest(unittest.TestCase):
     def test_calcRates(self):
         tr = TxRates(minRateTime=1)
         tr.calcRates((333931, 333953), dbFile=dbFile)
-        numiters = 100
+        numiters = 10000
         btime = 0.
         tr2 = TxRates(minRateTime=1, maxSamples=10000)
         prevBlock = None
@@ -97,6 +97,8 @@ class TxRatesTest(unittest.TestCase):
         ratesDiff = [abs(log(byteRates[idx]) - log(byteRates2[idx])) for idx in range(len(byteRates))]
         print("max ratesDiff: %.4f" % max(ratesDiff))
         self.assertTrue(max(ratesDiff) < 0.5)
+
+        print("txRates: %.2f, %.2f" % (tr.txRate, tr2.txRate))
 
     def tearDown(self):
         if os.path.exists(tmpSaveFile):

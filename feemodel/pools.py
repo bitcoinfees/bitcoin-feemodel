@@ -61,8 +61,9 @@ class Pool(object):
             self.addBlock(block, txs)
 
         if not txs and deferredBlocks:
-            # All the blocks are close to the max block size. So we just take one block.
-            txs.extend(txPreprocess(deferredBlocks[0], removeHighPriority=True, removeDeps=True))
+            # All the blocks are close to the max block size. We take the smallest block.
+            block = min(deferredBlocks, key=lambda block: block.size)
+            txs.extend(txPreprocess(block, removeHighPriority=True, removeDeps=True))
 
         txs.sort(key=lambda x: x[0], reverse=True)
 

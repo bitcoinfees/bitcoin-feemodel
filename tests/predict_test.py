@@ -6,7 +6,7 @@ from feemodel.model import ModelError
 from feemodel.util import logWrite
 from feemodel.pools import PoolEstimator
 from feemodel.measurement import TxRates, TxWaitTimes
-from feemodel.simul import Simul, Predictions, TransientWait, TransientStats
+from feemodel.simul import Simul, Predictions, WaitStats, TransientStats
 import feemodel.pools
 from testconfig import dbFile
 from operator import add
@@ -20,7 +20,7 @@ tmpSaveFile = 'data/tmpsave.pickle'
 
 class PredictTest(unittest.TestCase):
     def setUp(self):
-        self.waitTimes = [(feeRate, TransientWait()) for feeRate in defaultFeeValues]
+        self.waitTimes = [(feeRate, WaitStats()) for feeRate in defaultFeeValues]
         self.tStats = TransientStats()
         self.tStats.update(self.waitTimes, 0, None)
         self.predictions = Predictions(self.tStats, defaultFeeValues, 2016)

@@ -63,7 +63,7 @@ class Simul(object):
     def transient(self, mempool, numiters=1000, stopFlag=None):
         self.initCalcs()
         self.initMempool(mempool)
-        waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
+        waitTimes = {feeRate: WaitStats() for feeRate in self.feeClassValues}
         txNoDeps = self.txNoDeps
         txDeps = self.txDeps
 
@@ -495,7 +495,7 @@ class TransientStats(object):
             return None
 
 
-class TransientWait(object):
+class WaitStats(object):
     def __init__(self):
         self.waitTimes = []
 
@@ -517,7 +517,7 @@ class TransientWait(object):
         return (self.mean, self.std, self.meanInterval, self.predictionInterval)
 
     def __repr__(self):
-        return "TW{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
+        return "WS{mean: %.2f, std: %.2f, mean95conf: (%.2f, %.2f), pred%d: %.2f}" % (
             self.mean, self.std, self.meanInterval[0],
             self.meanInterval[1], int(predictionLevel*100), self.predictionInterval)
 
