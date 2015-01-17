@@ -5,6 +5,7 @@ from feemodel.util import tryWrap
 
 plotly_user = 'bitcoinfees'
 waitTimesFile = (274, 'combinedwaits')
+transWaitFile = (378, 'transwait')
 ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
@@ -64,6 +65,25 @@ class WaitTimesGraph(Graph):
             self.postFig()
 
 
+class TransWaitGraph(Graph):
+    @tryWrap
+    def updateAll(self, x, y, onesidedErr):
+        with graphLock:
+            self.getFig()
+            old_x = self.fig['data'][0]['x']
+            old_y = self.fig['data'][0]['y']
+            self.fig['data'][1].update(dict(
+                x=old_x,
+                y=old_y
+            ))
+            self.fig['data'][0].update(dict(
+                x=x,
+                y=y,
+                error_y= {'array':onesidedErr}
+            ))
+            self.modifyDatetime()
+            self.postFig()
+
 class RatesGraph(Graph):
     @tryWrap
     def updateAll(self, feeClasses, procrate, procrateUpper, txByteRate, stableStat):
@@ -92,3 +112,4 @@ class RatesGraph(Graph):
 
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 ratesGraph = RatesGraph(*ratesFile)
+transWaitGraph = TransWaitGraph(*transWaitFile)

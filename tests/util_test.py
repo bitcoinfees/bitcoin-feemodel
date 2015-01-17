@@ -18,14 +18,19 @@ class UtilTests(unittest.TestCase):
         self.assertLess(diff, 1.96*std)
 
     def test_dataSample(self):
-        sample = normal(size=10000)
+        sample = normal(size=100000)
         d = DataSample()
-        d.addSample(sample)
-#        for s in sample:
-#            d.addSample(s)
+#        d.addSample(sample)
+        for s in sample:
+            d.addSample(s*3 + 1)
         d.calcStats()
         print(d)
-        print("97.5th percentile is %f" % d.getPercentile(0.975)) # should be 1.96
+        p975 = d.getPercentile(0.975)
+        print("97.5th percentile is %f" % p975) # should be 1.96
+        p975w = d.getPercentile(0.975, weights = [1]*len(sample))
+        self.assertEqual(p975, p975w)
+        first = d.getPercentile(1, weights=[1]+ [0]*(len(sample)-1))
+        self.assertEqual(first, d.samples[0])
 
 
 

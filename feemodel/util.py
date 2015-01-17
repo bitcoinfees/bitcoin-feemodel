@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from random import random
 from functools import wraps
 from bisect import insort
+from math import ceil
 
 try:
     import cPickle as pickle
@@ -161,9 +162,13 @@ def tryWrap(fn):
 
 class DataSample(object):
     '''Container for numerical data'''
-    def __init__(self):
-        self.samples = []
-        self.n = None
+    def __init__(self, samples=None):
+        if samples:
+            self.samples = sorted(samples)
+            self.n = len(self.samples)
+        else:
+            self.samples = []
+            self.n = None
         self.mean = None
         self.std = None
         self.var = None
@@ -186,10 +191,24 @@ class DataSample(object):
         halfInterval = 1.96*(self.variance/self.n)**0.5
         self.meanInterval = (self.mean - halfInterval, self.mean + halfInterval) # 95% confidence interval
 
-    def getPercentile(self, per):
+    def getPercentile(self, per, weights=None):
         if per > 1 or per < 0:
             raise ValueError("Percentile argument must be in [0, 1] interval")
-        return self.samples[max(int(per*self.n) - 1, 0)]
+        if not weights:
+            return self.samples[max(int(ceil(per*self.n)) - 1, 0)]
+        elif len(weights) == self.n:
+            total = sum(weights)
+            target = total*per
+            currTotal = 0.
+            for idx, s in enumerate(self.samples):
+                currTotal += weights[idx]
+                if currTotal >= target:
+                    return s
+            raise ValueError("This shouldn't happen.")
+        else:
+            raise ValueError("Weights length must be equal to num samples.")
+
+
 
     def __repr__(self):
         return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (self.n, self.mean, self.std, self.meanInterval)

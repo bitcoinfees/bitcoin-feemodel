@@ -1,4 +1,4 @@
-from feemodel.plotting import waitTimesGraph, ratesGraph
+from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
@@ -468,7 +468,7 @@ class TransientSim(StoppableThread):
                         'mempoolSize': getMempoolSize(mapTx, sim.poolmfrs)
                     }
                 self.tStats.update(waitTimes, timespent, sim)
-                #self.updatePlotly()
+                self.updatePlotly()
 
     def getStats(self):
         with self.statLock:
@@ -479,7 +479,7 @@ class TransientSim(StoppableThread):
         y = [stat[1][0] for stat in self.qstats['stats']]
         err = [stat[1][0]-stat[1][2][0] for stat in self.qstats['stats']]
         t = threading.Thread(
-                             target=waitTimesGraph.updateTransient,
+                             target=transWaitGraph.updateAll,
                              args=(x,y,err)
                             )
         t.start()
