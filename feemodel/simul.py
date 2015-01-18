@@ -3,6 +3,7 @@ from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
 from feemodel.util import proxy, estimateVariance, logWrite, StoppableThread, pickle, Saveable, DataSample
+from feemodel.util import interpolate
 from feemodel.queue import QEstimator
 from feemodel.config import config, saveSSFile, savePredictFile
 from bitcoin.core import COIN
@@ -498,21 +499,35 @@ class TransientStats(object):
             self.waitTimes = waitTimes
             self.timespent = timespent
             self.sim = sim
+            self.px = [w[0] for w in self.waitTimes]
+            self.py = [w[1].predictionInterval for w in self.waitTimes]
 
+    # Use interpolation here.
     def predictConf(self, entry):
         entryFeeRate = int(entry['fee']*COIN) * 1000 // entry['size']
         with self.lock:
             if not self.waitTimes:
                 return None
-            #self.waitTimes is assumed sorted by feeRate
-            for feeRate, twait in reversed(self.waitTimes):
-                if feeRate <= entryFeeRate:
-                    return twait.predictionInterval + entry['time']
+            predictionInterval, idx = interpolate(entryFeeRate, self.px, self.py)
+            if idx == 0:
+                return None
+            else:
+                return predictionInterval + entry['time']
 
-            return None
+    def inversePredictConf(self, confTime):
+        ''' inversePredictConf(self, confTime) - Return, by linear interpolation,
+            the feerate for a given confirmation time.'''
+        with self.lock:
+            if not self.waitTimes:
+                return None
+            feeRate, idx = interpolate(confTime, self.py, self.px)
+            if idx == 0:
+                return None
+            else:
+                return feeRate
 
 
-# Change this to subclass DataSample
+# Change this to subclass DataSample.. Done
 class TransientWait(DataSample):
     def calcStats(self):
         super(self.__class__, self).calcStats()

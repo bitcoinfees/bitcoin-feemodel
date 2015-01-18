@@ -22,13 +22,13 @@ class PredictTest(unittest.TestCase):
     def setUp(self):
         self.waitTimes = [(feeRate, TransientWait()) for feeRate in defaultFeeValues]
         self.tStats = TransientStats()
-        self.tStats.update(self.waitTimes, 0, None)
         self.predictions = Predictions(self.tStats, defaultFeeValues, 2016)
         self.b = txmempool.Block.blockFromHistory(333931, dbFile=dbFile)
 
     def test_infInterval(self):
         for feeRate, tw in self.waitTimes:
-            tw.predictionInterval = float("inf")
+            tw.predictionInterval = 100000
+        self.tStats.update(self.waitTimes, 0, None)
         mapTx = self.b.entries
         self.predictions.updatePredictions(mapTx)
         self.predictions.pushBlocks([self.b])
@@ -42,6 +42,7 @@ class PredictTest(unittest.TestCase):
     def test_zeroInterval(self):
         for feeRate, tw in self.waitTimes:
             tw.predictionInterval = 0.
+        self.tStats.update(self.waitTimes, 0, None)
         mapTx = self.b.entries
         self.predictions.updatePredictions(mapTx)
         self.predictions.pushBlocks([self.b])

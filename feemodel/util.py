@@ -9,7 +9,7 @@ from pprint import pprint
 from contextlib import contextmanager
 from random import random
 from functools import wraps
-from bisect import insort
+from bisect import insort, bisect
 from math import ceil
 
 try:
@@ -159,6 +159,24 @@ def tryWrap(fn):
             logWrite(str(e))
     return nicetry
 
+def interpolate(x0, x, y):
+    ''' Linear interpolation of y = f(x) at x0.
+        Function f is specified by lists x and y.
+        x is assumed to be sorted.'''
+    idx = bisect(x, x0)
+    if idx == len(x):
+        return y[-1], idx
+    elif idx == 0:
+        return y[0], idx
+    else:
+        x_f = x[idx]
+        y_f = y[idx]
+        x_b = x[idx-1]
+        y_b = y[idx-1]
+        y0 = y_b + float(x0-x_b)/(x_f-x_b)*(y_f-y_b)
+
+        return y0, idx
+
 
 class DataSample(object):
     '''Container for numerical data'''
@@ -207,8 +225,6 @@ class DataSample(object):
             raise ValueError("This shouldn't happen.")
         else:
             raise ValueError("Weights length must be equal to num samples.")
-
-
 
     def __repr__(self):
         return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (self.n, self.mean, self.std, self.meanInterval)

@@ -1,8 +1,8 @@
-from feemodel.util import roundRandom, DataSample
+from feemodel.util import roundRandom, DataSample, interpolate
 import unittest
 from numpy.random import normal
 
-class UtilTests(unittest.TestCase):
+class RoundRandomTest(unittest.TestCase):
     def test_roundRandom(self):
         std = 0.01
         f = 97.833
@@ -17,6 +17,8 @@ class UtilTests(unittest.TestCase):
         print("Diff is %.5f" % diff)
         self.assertLess(diff, 1.96*std)
 
+
+class DataSampleTest(unittest.TestCase):
     def test_dataSample(self):
         sample = normal(size=100000)
         d = DataSample()
@@ -33,6 +35,16 @@ class UtilTests(unittest.TestCase):
         self.assertEqual(first, d.samples[0])
 
 
+class InterpolateTest(unittest.TestCase):
+    def test_interpolate(self):
+        x = [1.5, 3.5]
+        y = [10.0, 5.0]
+
+        X = [1.9, 4, 0, 1.5, 3.5]
+        Y = [9, 5.0, 10.0, 10, 5]
+        for x0, y0ref in zip(X,Y):
+            y0, dum = interpolate(x0, x, y)
+            self.assertEqual(y0, y0ref)
 
 
 if __name__ == '__main__':
