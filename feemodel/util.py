@@ -120,6 +120,7 @@ class BatchProxy(BlockingProxy):
             return responses[0]['result'], responses[1]['result']
 
 
+# Have to put a lock.
 def logWrite(entry):
     s = ctime() + ': ' + entry
     if feemodel.config.apprun:

@@ -29,6 +29,7 @@ transMinRateTime = 3600
 ssBlockIntervalWindow = 2016 # The number of blocks used to estimate block interval
 ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
 ssMinRateTime = 3600*24 # Min amount of time needed to estimate tx rates for ss
+ssMaxTxSamples = 100000
 poolBlocksWindow = 2016
 minFeeSpacing = 1000
 #defaultFeeValues = tuple(range(0, 100000, 1000))
@@ -314,7 +315,7 @@ class SteadyStateSim(StoppableThread):
             tr = TxRates.loadObject()
         except:
             logWrite("Unable to load txRates, calculating from scratch.")
-            tr = TxRates(maxSamples=maxTxSamples, minRateTime=ssMinRateTime)
+            tr = TxRates(maxSamples=ssMaxTxSamples, minRateTime=ssMinRateTime)
 
         sim = Simul(pe, tr, blockRate=1./blockRateStat[0])
 
@@ -322,11 +323,12 @@ class SteadyStateSim(StoppableThread):
             self.status = 'running'
             # We originally did a separate interval check here to avoid doing tr calc rates when
             # we wanted to redo steady sim.
-            if currHeight - tr.bestHeight > self.ssPeriod:
-                logWrite("Starting tr.calcRates")
-                tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1), stopFlag=self.getStopObject())
-                logWrite("Finished tr.calcRates")
-                tr.saveObject()
+            #if currHeight - tr.bestHeight > self.ssPeriod:
+            logWrite("Starting SS tr.calcRates")
+            tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1), stopFlag=self.getStopObject())
+            logWrite("Finished SS tr.calcRates")
+            tr.saveObject()
+
             stats, shorterrs, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
 
             wt = TxWaitTimes(sim.feeClassValues, waitTimesWindow=waitTimesWindow)
