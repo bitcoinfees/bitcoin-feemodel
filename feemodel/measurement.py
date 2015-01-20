@@ -63,6 +63,7 @@ class TxRates(Saveable):
         if self.totalTxs < 0:
             raise ValueError("Negative total txs.")
         self.txRate = self.totalTxs / self.totalTime
+        # Remove or cut short the txid - taking up too much memory.
         for tx in self.txSamples:
             tx.txid = tx.txid + '_'
 

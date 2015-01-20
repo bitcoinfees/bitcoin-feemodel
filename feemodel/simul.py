@@ -50,17 +50,21 @@ class Simul(object):
     def initCalcs(self):
         self.poolmfrs, self.processingRate, self.processingRateUpper = self.pe.getProcessingRate(self.blockRate)
         self.txByteRate, self.txRate = self.tr.getByteRate(self.poolmfrs)
+        self.agCap, self.exRate, self.poolCap = self.pe.calcCapacities(self.tr, self.blockRate)
 
         self.stableFeeRate = None
-        for idx in range(len(self.poolmfrs)):
-            if self.txByteRate[idx]*txRateMultiplier / self.processingRate[idx] < rateRatioThresh:
-                self.stableFeeRate = self.poolmfrs[idx]
-                break
+        for feeRate, cap in self.agCap:
+            rateRatio = cap[0] / cap[1] if cap[1] else float("inf")
+            if rateRatio <= rateRatioThresh:
+                if not self.stableFeeRate:
+                    self.stableFeeRate = feeRate
+            else:
+                self.stableFeeRate = None
+
         if not self.stableFeeRate:
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
         # Remove the unstable fee classes here, instead of in queue.py
         self.feeClassValues = getFeeClassValues(self.poolmfrs, self.tr.txSamples, self.stableFeeRate)
-        #self.feeClassValues = filter(lambda x: x >= self.stableFeeRate, self.poolmfrs)
 
     def transient(self, mempool, numiters=1000, stopFlag=None):
         self.initCalcs()
@@ -160,8 +164,8 @@ class Simul(object):
 
         self.txNoDeps.sort(key=lambda x: x.feeRate)
 
-    def processBlock(self):
-        maxBlockSize, minFeeRate = self.pe.selectRandomPool()
+    def processBlock(self, info=None):
+        poolName, maxBlockSize, minFeeRate = self.pe.selectRandomPool()
 
         blockSize = 0
         strandingFeeRate = float("inf")
@@ -195,6 +199,8 @@ class Simul(object):
                 break
 
         self.txNoDeps.extend(rejectedTx)
+        if info:
+            info['poolName'] = poolName
         return strandingFeeRate if blockSizeLimited else minFeeRate
 
 

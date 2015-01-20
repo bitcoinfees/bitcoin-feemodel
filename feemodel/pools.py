@@ -76,6 +76,7 @@ class Pool(object):
 
 
         # If a pool has fewer than X blocks, use the average max block size of all the pools
+        # Nah maybe not.
 
     def addBlock(self, block, txs):
         if self.maxBlockSize - block.size > block.avgTxSize:
@@ -136,7 +137,7 @@ class PoolEstimator(Saveable):
             self.estimatePools(stopFlag=stopFlag, dbFile=dbFile)
         except ValueError as e:
             self.pools = deepcopy(self.poolsCache)
-            logWrite("Pool estimation terminated.")
+            logWrite(str(e))
         else:
             logWrite("Pool estimate updated %s" % self)
 
@@ -144,15 +145,8 @@ class PoolEstimator(Saveable):
         for name, pool in self.pools.items():
             pool.estimateParams(stopFlag=stopFlag, dbFile=dbFile)
             logWrite("Done estimating %s " % name)
-        try:
-            self.calcPoolProportions()
-        except ValueError:
-            logWrite("No blocks found.")
-#        else:
-#            # Debug print
-#            for name, pool in self.pools.items():
-#                if pool.proportion > 0:
-#                    print(name, pool)
+
+        self.calcPoolProportions()
 
         with poolsCacheLock:
             self.poolsCache = deepcopy(self.pools)
@@ -240,7 +234,7 @@ class PoolEstimator(Saveable):
             r = random()
             for pidx in self.poolsIdx:
                 if r < pidx[0]:
-                    return pidx[2].maxBlockSize, pidx[2].minFeeRate
+                    return pidx[1], pidx[2].maxBlockSize, pidx[2].minFeeRate
 
             raise IndexError("This shouldn't happen")
 
@@ -294,6 +288,44 @@ class PoolEstimator(Saveable):
             feeValues = filter(lambda x: x < float("inf"), feeValues)
             return sorted(feeValues)
 
+    def calcCapacities(self, tr, blockRate):
+        with poolsCacheLock:
+            mfrs = sorted(set([pool.minFeeRate for pool in self.poolsCache.values()]))
+            txByteRates, dum = tr.getByteRate(mfrs)
+            binnedRates = [txByteRates[idx] - txByteRates[idx+1]
+                           for idx in range(len(txByteRates)-1)] + [txByteRates[-1]]
+            poolCapacities = {name: PoolCapacity(mfrs, pool, blockRate) for name, pool in self.poolsCache.items()}
+            excessRates = {feeRate: 0. for feeRate in mfrs}
+
+            for feeRate, binnedRate in reversed(zip(mfrs, binnedRates)):
+                #print("FeeRate: %d, BinnedRate: %.2f" % (feeRate, binnedRate))
+                excessRate = binnedRate
+                while excessRate > 0:
+                    nonMaxedPools = [name for name,pool in poolCapacities.items()
+                                     if pool.capacities[feeRate][0] < pool.capacities[feeRate][1]]
+                    if not nonMaxedPools:
+                        excessRates[feeRate] = excessRate
+                        break
+                    totalProportion = sum([poolCapacities[name].proportion for name in nonMaxedPools])
+                    for name in nonMaxedPools:
+                        pool = poolCapacities[name]
+                        rateAlloc = pool.proportion * excessRate / totalProportion
+                        pool.capacities[feeRate][0] += rateAlloc
+                        pool.capacities[feeRate][0] = min(pool.capacities[feeRate][0],
+                                                          pool.capacities[feeRate][1])
+                    excessRate = binnedRate - sum([pool.capacities[feeRate][0]
+                                                   for pool in poolCapacities.values()])
+                for pool in poolCapacities.values():
+                    pool.updateCapacities()
+
+            aggregateCap = [
+                (feeRate, [sum([pool.capacities[feeRate][0] for pool in poolCapacities.values()]),
+                           sum([pool.capacities[feeRate][1] for pool in poolCapacities.values()])])
+                for feeRate in mfrs
+            ]
+            excessRates = sorted(excessRates.items(), key=lambda x: x[0])
+
+            return aggregateCap, excessRates, poolCapacities
 
     def getBestHeight(self):
         with poolsCacheLock:
@@ -355,6 +387,24 @@ class PoolEstimatorOnline(StoppableThread):
             except IOError as e:
                 logWrite("Error saving PoolEstimator.")
                 logWrite(str(e))
+
+
+class PoolCapacity(object):
+    def __init__(self, feeRates, pool, blockRate):
+        self.capacities = {
+            feeRate: [0., 0.] for feeRate in feeRates
+        }
+        self.proportion = pool.proportion
+        self.maxCap = pool.maxBlockSize*blockRate*pool.proportion
+        self.minFeeRate = pool.minFeeRate
+        self.updateCapacities()
+
+    def updateCapacities(self):
+        feeRates = sorted(self.capacities.keys(), reverse=True)
+        residualCap = self.maxCap
+        for f in feeRates:
+            self.capacities[f][1] = residualCap if f >= self.minFeeRate else 0.
+            residualCap = max(self.capacities[f][1] - self.capacities[f][0], 0)
 
 
 
