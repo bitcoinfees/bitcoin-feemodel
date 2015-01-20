@@ -13,6 +13,7 @@ from operator import add
 from random import expovariate
 from math import log
 from pprint import pprint
+from copy import deepcopy
 
 defaultFeeValues = range(0, 100000, 10000)
 blockRate = 1./600
@@ -48,6 +49,13 @@ class SimulTest(unittest.TestCase):
     def tearDown(self):
         if os.path.exists(tmpSaveFile):
             os.remove(tmpSaveFile)
+
+class UnstableTest(unittest.TestCase):
+    def test_unstable(self):
+        self.tr = deepcopy(tr)
+        self.tr.txRate = 1000000
+        sim = Simul(pe, self.tr)
+        self.assertRaises(ValueError, sim.steadyState)
 
 if __name__ == '__main__':
     unittest.main()

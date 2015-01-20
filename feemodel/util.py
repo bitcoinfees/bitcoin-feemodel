@@ -152,6 +152,7 @@ def roundRandom(f):
 
 def tryWrap(fn):
     '''Decorator to try function and fail gracefully.'''
+    # Need to be more informative about the location
     @wraps(fn)
     def nicetry(*args, **kwargs):
         try:

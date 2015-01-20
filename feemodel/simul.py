@@ -61,7 +61,7 @@ class Simul(object):
             else:
                 self.stableFeeRate = None
 
-        if not self.stableFeeRate:
+        if self.stableFeeRate is None:
             raise ValueError("The queue is not stable - arrivals exceed processing for all feerates.")
         # Remove the unstable fee classes here, instead of in queue.py
         self.feeClassValues = getFeeClassValues(self.poolmfrs, self.tr.txSamples, self.stableFeeRate)

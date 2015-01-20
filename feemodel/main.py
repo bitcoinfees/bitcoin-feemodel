@@ -1,7 +1,9 @@
-from feemodel.simul import SimulOnline
+import feemodel.simul
+import feemodel.plotting
 from flask import Flask
 import json
 from functools import wraps
+import sys
 
 def addPreTag(fn):
     @wraps(fn)
@@ -12,7 +14,7 @@ def addPreTag(fn):
 
 
 def main(port=5001):
-    s = SimulOnline()
+    s = feemodel.simul.SimulOnline()
     app = Flask(__name__)
 
     @app.route('/waittimes')
@@ -41,5 +43,10 @@ def main(port=5001):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+        print("Entering test mode.")
+        feemodel.simul.waitTimesGraph = feemodel.plotting.waitTimesGraphTest
+        feemodel.simul.transWaitGraph = feemodel.plotting.transWaitGraphTest
+
     main()
 

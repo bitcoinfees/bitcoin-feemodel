@@ -8,6 +8,10 @@ waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
 ratesFile = (338, 'rates')
 
+test_waitTimesFile = (479, 'combinedwaits (test)')
+test_transWaitFile = (475, 'transwait (test)')
+#test_ratesFile = (338, 'rates')
+
 graphLock = threading.RLock()
 
 
@@ -113,3 +117,6 @@ class RatesGraph(Graph):
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 ratesGraph = RatesGraph(*ratesFile)
 transWaitGraph = TransWaitGraph(*transWaitFile)
+
+waitTimesGraphTest = WaitTimesGraph(*test_waitTimesFile)
+transWaitGraphTest = TransWaitGraph(*test_transWaitFile)
