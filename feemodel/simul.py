@@ -1,4 +1,4 @@
-from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph
+from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph, capsGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
@@ -317,11 +317,11 @@ class SteadyStateSim(StoppableThread):
 
         pe = self.pe.copyObject()
         blockRateStat = estimateBlockInterval((currHeight-ssBlockIntervalWindow+1, currHeight+1))
-        try:
-            tr = TxRates.loadObject()
-        except:
-            logWrite("Unable to load txRates, calculating from scratch.")
-            tr = TxRates(maxSamples=ssMaxTxSamples, minRateTime=ssMinRateTime)
+#        try:
+#            tr = TxRates.loadObject()
+#        except:
+#            logWrite("Unable to load txRates, calculating from scratch.")
+        tr = TxRates(maxSamples=ssMaxTxSamples, minRateTime=ssMinRateTime)
 
         sim = Simul(pe, tr, blockRate=1./blockRateStat[0])
 
@@ -333,7 +333,10 @@ class SteadyStateSim(StoppableThread):
             logWrite("Starting SS tr.calcRates")
             tr.calcRates((currHeight-ssRateIntervalLen+1, currHeight+1), stopFlag=self.getStopObject())
             logWrite("Finished SS tr.calcRates")
-            tr.saveObject()
+            try:
+                tr.saveObject()
+            except:
+                logWrite("SS: Error saving tr object.")
 
             stats, shorterrs, timespent, numiters = sim.steadyState(maxiters=100000,stopFlag=self.getStopObject())
 
@@ -363,7 +366,8 @@ class SteadyStateSim(StoppableThread):
                     'stableFeeRate': sim.stableFeeRate,
                     'timespent': timespent,
                     'numiters': numiters,
-                    'shorterrs': shorterrs
+                    'shorterrs': shorterrs,
+                    'caps': (sim.agCap, sim.exRate)
             }
             with self.statLock:
                 self.waitTimesCache = wt.getWaitTimes()
@@ -406,6 +410,7 @@ class SteadyStateSim(StoppableThread):
         t.start()
         if not async:
             t.join()
+
         x = [stat[0] for stat in self.statsCache[1]['stats']]
         steady_y = [stat[1] for stat in self.statsCache[1]['stats']]
         measured_y = [w[1][0] for w in self.waitTimesCache[0]]
@@ -418,6 +423,18 @@ class SteadyStateSim(StoppableThread):
         if not async:
             t.join()
 
+
+        agCap, exRate = self.statsCache[1]['caps']
+        agCap = sorted(agCap, reverse=True)
+        exRate = sorted(exRate, reverse=True)
+        x = ['> %d' % f for f, c in agCap]
+        y0 = [600*c[0] for f,c in agCap]
+        y1 = [600*(c[1]-c[0]) for f,c in agCap]
+        y2 = [600*c for f,c in exRate]
+        t = threading.Thread(target=capsGraph.updateAll, args=(x,y0,y1,y2))
+        t.start()
+        if not async:
+            t.join()
 
 
 class TransientSim(StoppableThread):
@@ -711,9 +728,6 @@ class Predictions(CircularBuffer):
                 logWrite("Mismatch in saved predictions feeclassvalues.")
                 self.data = {}
                 break
-
-
-
 
 
 

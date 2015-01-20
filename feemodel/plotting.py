@@ -7,6 +7,7 @@ plotly_user = 'bitcoinfees'
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
 ratesFile = (338, 'rates')
+capFile = (499, 'caps')
 
 test_waitTimesFile = (479, 'combinedwaits (test)')
 test_transWaitFile = (475, 'transwait (test)')
@@ -114,9 +115,22 @@ class RatesGraph(Graph):
             self.postFig()
 
 
+class CapsGraph(Graph):
+    @tryWrap
+    def updateAll(self, x, y0, y1, y2):
+        with graphLock:
+            self.getFig()
+            self.fig['data'][0].update(dict(x=x, y=y0))
+            self.fig['data'][1].update(dict(x=x, y=y1))
+            self.fig['data'][2].update(dict(x=x, y=y2))
+            self.modifyDatetime()
+            self.postFig()
+
+
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 ratesGraph = RatesGraph(*ratesFile)
 transWaitGraph = TransWaitGraph(*transWaitFile)
+capsGraph = CapsGraph(*capFile)
 
 waitTimesGraphTest = WaitTimesGraph(*test_waitTimesFile)
 transWaitGraphTest = TransWaitGraph(*test_transWaitFile)
