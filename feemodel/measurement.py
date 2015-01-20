@@ -65,7 +65,7 @@ class TxRates(Saveable):
         self.txRate = self.totalTxs / self.totalTime
         # Remove or cut short the txid - taking up too much memory.
         for tx in self.txSamples:
-            tx.txid = tx.txid + '_'
+            tx.txid = ''
 
 
     def addBlock(self, block, prevBlock):
