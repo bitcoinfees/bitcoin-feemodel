@@ -509,10 +509,14 @@ class TransientStats(object):
             self.sim = sim
             self.px = [w[0] for w in self.waitTimes]
             self.py = [w[1].predictionInterval for w in self.waitTimes]
+            self.ax = self.px[-1::-1]
+            self.ay = sorted([w[1].mean for w in self.waitTimes])
 
     # Use interpolation here.
     def predictConf(self, entry):
-        entryFeeRate = int(entry['fee']*COIN) * 1000 // entry['size']
+        entryFeeRate = entry.get('feeRate')
+        if entryFeeRate is None:
+            entryFeeRate = int(entry['fee']*COIN) * 1000 // entry['size']
         with self.lock:
             if not self.waitTimes:
                 return None
@@ -522,13 +526,13 @@ class TransientStats(object):
             else:
                 return predictionInterval + entry['time']
 
-    def inversePredictConf(self, confTime):
-        ''' inversePredictConf(self, confTime) - Return, by linear interpolation,
-            the feerate for a given confirmation time.'''
+    def inverseAvgConf(self, confTime):
+        ''' inverseAvgConf(self, confTime) - Return, by linear interpolation,
+            the feerate for a given avg confirmation time.'''
         with self.lock:
             if not self.waitTimes:
                 return None
-            feeRate, idx = interpolate(confTime, self.py, self.px)
+            feeRate, idx = interpolate(confTime, self.ay, self.ax)
             if idx == 0:
                 return None
             else:
