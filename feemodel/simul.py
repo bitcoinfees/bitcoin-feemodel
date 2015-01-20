@@ -30,12 +30,12 @@ ssBlockIntervalWindow = 2016 # The number of blocks used to estimate block inter
 ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
 ssMinRateTime = 3600*24 # Min amount of time needed to estimate tx rates for ss
 ssMaxTxSamples = 100000
+ssPeriod = 72 # Re-simulate steady state every x blocks
 poolBlocksWindow = 2016
 minFeeSpacing = 1000
 #defaultFeeValues = tuple(range(0, 100000, 1000))
 defaultFeeValues = tuple(range(0, 10000, 1000) + range(10000, 100000, 10000))
 poolEstimatePeriod = 144 # Re-estimate pools every x blocks
-ssPeriod = 144 # Re-simulate steady state every x blocks
 txRateMultiplier = 1. # Simulate with tx rate multiplied by this factor
 
 predictLock = threading.RLock()
