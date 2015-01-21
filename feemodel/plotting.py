@@ -1,10 +1,14 @@
 import time
 import plotly.plotly as py
+import plotly.tools as tls
+from plotly.grid_objs import *
 import threading
 from feemodel.util import tryWrap
 from datetime import datetime
 
-plotly_user = 'bitcoinfees'
+plotly_user = tls.get_credentials_file()['username']
+
+poolsGridFile = 'poolsgrid'
 
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
@@ -19,6 +23,37 @@ test_capFile = (516, 'caps (test)')
 #test_ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
+
+class PlotlyGrid(object):
+    def __init__(self, grid_filename):
+        self.grid_filename = grid_filename
+        self.cols = []
+
+    def appendColumn(self, colname, colvals):
+        self.cols.append(Column(colvals, colname))
+
+    def postGrid(self):
+        with graphLock:
+            grid = Grid(self.cols)
+            py.grid_ops.upload(grid, self.grid_filename, auto_open=False)
+
+
+class PoolsGrid(PlotlyGrid):
+    def __init__(self):
+        super(self.__class__, self).__init__(poolsGridFile)
+
+    def plotBubbleChart(self, bubbleFile='poolbubble'):
+        grid = Grid(self.cols)
+        names = Grid.get_column('name')
+        proportions = Grid.get_column('proportion')
+        maxBlockSizes = Grid.get_column('maxBlockSize')
+        minFeeRates = Grid.get_column('minFeeRate')
+        if not names or not proportions or not maxBlockSizes or not minFeeRates:
+            logWrite("Error in pool data.")
+            return
+        pools = zip(names,proportions,maxBlockSizes,minFeeRates)
+
+
 
 
 class Graph(object):
@@ -142,7 +177,7 @@ class CapsGraph(Graph):
 
 
 class ConfTimeGraph(Graph):
-    maxPoints = 500
+    maxPoints = 360
     @tryWrap
     def updateAll(self, t, txByteRate, mempoolSize):
         with graphLock:
@@ -183,6 +218,7 @@ class ConfTimeGraph(Graph):
         return l[start:]
 
 
+#poolsGrid = PlotlyGrid(poolsGridFile)
 
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 #ratesGraph = RatesGraph(*ratesFile)

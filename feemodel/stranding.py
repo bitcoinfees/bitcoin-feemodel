@@ -26,14 +26,14 @@ def _depsCheck(entry, entries, removeDeps=False):
 def calcStrandingFeeRate(txs, bootstrap=True):
     '''
     txs is [(feeRate, inBlock) for some list of txs]
-    It's assumed that the list is sorted in descending order of feeRate 
+    It's assumed that the list is sorted in descending order of feeRate
     '''
     if not len(txs):
         raise ValueError('Empty txs list')
 
     sfr = calcStrandingSingle(txs)
     sidx = 0
-    
+
     try:
         while txs[sidx][0] >= sfr:
             sidx += 1
@@ -56,7 +56,7 @@ def calcStrandingFeeRate(txs, bootstrap=True):
         if all([b < float("inf") for b in bootstrapEstimates]):
             mean = float(sum(bootstrapEstimates)) / len(bootstrapEstimates)
             std = (sum([(b-mean)**2 for b in bootstrapEstimates]) / (len(bootstrapEstimates)-1))**0.5
-            biasRef = max((sfr, abs(mean-sfr)), 
+            biasRef = max((sfr, abs(mean-sfr)),
                 (altBiasRef, abs(mean-altBiasRef)), key=lambda x: x[1])[0]
             bias = mean - biasRef
         else:
@@ -79,7 +79,7 @@ def bootstrapSample(txs):
 def calcStrandingSingle(txs):
     '''
     txs is [(feeRate, inBlock) for some list of txs]
-    It's assumed that the list is sorted in descending order of feeRate 
+    It's assumed that the list is sorted in descending order of feeRate
     '''
     if not len(txs):
         raise ValueError('Empty txs list')
@@ -88,7 +88,7 @@ def calcStrandingSingle(txs):
     maxk = 0
     maxidx = 0
     txs.insert(0, (float("inf"), 1))
-    
+
     for idx,tx in enumerate(txs):
         cumk += 1 if tx[1] else -1
         try:

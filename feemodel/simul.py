@@ -24,7 +24,7 @@ predictionRetention = 2016
 waitTimesWindow = 2016
 maxTxSamples = 10000
 transBlockIntervalWindow = 432
-transRateIntervalLen = 18 # The number of recent blocks used to estimate tx rate for transient analysis
+transRateIntervalLen = 9 # The number of recent blocks used to estimate tx rate for transient analysis
 transMinRateTime = 3600
 ssBlockIntervalWindow = 2016 # The number of blocks used to estimate block interval
 ssRateIntervalLen = 2016 # the number of recent blocks used to estimate tx rate
@@ -455,6 +455,7 @@ class TransientSim(StoppableThread):
     def run(self):
         logWrite("Starting transient sim.")
         while not self.isStopped():
+            # Don't need this anymore because of transient sim time limit.
             with self.simLock:
                 pass
             threading.Thread(target=self.simulate, name='transient-sim').start()
@@ -512,6 +513,7 @@ class TransientSim(StoppableThread):
                              args=(x,y,err))
         t.start()
 
+        # Take care of case where confTime is None
         confTime = self.tStats.inverseAvgConf(1000)
         txByteRate = self.qstats['txByteRate'][0]*600
         mempoolSize = self.qstats['mempoolSize'][0]
