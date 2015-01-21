@@ -31,12 +31,12 @@ class SimulTest(unittest.TestCase):
 
     def test_trans(self):
         # Test empty initial mempool
-        waits, t = self.sim.transient({})
+        waits, t, ni = self.sim.transient({})
         for feeRate, wait in waits:
             print(feeRate, wait)
         # Construct a mempool
         b = txmempool.Block.blockFromHistory(333931, dbFile=dbFile)
-        waits, t = self.sim.transient(b.entries)
+        waits, t, ni = self.sim.transient(b.entries)
         for feeRate, wait in waits:
             print(feeRate, wait)
 

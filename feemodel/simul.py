@@ -1,4 +1,4 @@
-from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph, capsGraph, confTimeGraph
+from feemodel.plotting import waitTimesGraph, transWaitGraph, capsGraph, confTimeGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
@@ -66,7 +66,7 @@ class Simul(object):
         # Remove the unstable fee classes here, instead of in queue.py
         self.feeClassValues = getFeeClassValues(self.poolmfrs, self.tr.txSamples, self.stableFeeRate)
 
-    def transient(self, mempool, numiters=1000, stopFlag=None):
+    def transient(self, mempool, maxiters=10000, maxtime=60, stopFlag=None):
         self.initCalcs()
         self.initMempool(mempool)
         waitTimes = {feeRate: TransientWait() for feeRate in self.feeClassValues}
@@ -74,9 +74,12 @@ class Simul(object):
         txDeps = self.txDeps
 
         starttime = time()
-        for i in range(numiters):
+        for i in range(maxiters):
             if stopFlag and stopFlag.is_set():
                 raise ValueError("transient simulation terminated.")
+            elapsedtime = time()-starttime
+            if elapsedtime > maxtime:
+                break
             stranded = self.feeClassValues[:]
             self.txNoDeps = txNoDeps[:]
             self.txDeps = {txid: {'tx': txDeps[txid]['tx'], 'depends': txDeps[txid]['depends'][:]}
@@ -99,7 +102,7 @@ class Simul(object):
         for wt in waitTimes.values():
             wt.calcStats()
 
-        return sorted(waitTimes.items(), key=lambda x: x[0]), elapsedtime
+        return sorted(waitTimes.items(), key=lambda x: x[0]), elapsedtime, i+1
 
     def steadyState(self, miniters=10000, maxiters=1000000, maxtime=3600, mempool=None, stopFlag=None):
         self.initCalcs()
@@ -397,19 +400,19 @@ class SteadyStateSim(StoppableThread):
             self.statsCache, self.waitTimesCache = pickle.load(f)
 
     def updatePlotly(self, async=True):
-        feeClasses = self.statsCache[1]['poolmfrs']
-        procrate = [r*600 for r in self.statsCache[1]['processingRate']]
-        procrateUpper = [r*600 for r in self.statsCache[1]['processingRateUpper']]
-        txByteRate = [r*600 for r in self.statsCache[1]['txByteRate']]
-        stableFeeRate = self.statsCache[1]['stableFeeRate']
-        stableStat = (stableFeeRate, txByteRate[feeClasses.index(stableFeeRate)])
-        t = threading.Thread(
-                             target=ratesGraph.updateAll,
-                             args=(feeClasses,procrate,procrateUpper,txByteRate,stableStat)
-                            )
-        t.start()
-        if not async:
-            t.join()
+#        feeClasses = self.statsCache[1]['poolmfrs']
+#        procrate = [r*600 for r in self.statsCache[1]['processingRate']]
+#        procrateUpper = [r*600 for r in self.statsCache[1]['processingRateUpper']]
+#        txByteRate = [r*600 for r in self.statsCache[1]['txByteRate']]
+#        stableFeeRate = self.statsCache[1]['stableFeeRate']
+#        stableStat = (stableFeeRate, txByteRate[feeClasses.index(stableFeeRate)])
+#        t = threading.Thread(
+#                             target=ratesGraph.updateAll,
+#                             args=(feeClasses,procrate,procrateUpper,txByteRate,stableStat)
+#                            )
+#        t.start()
+#        if not async:
+#            t.join()
 
         x = [stat[0] for stat in self.statsCache[1]['stats']]
         steady_y = [stat[1] for stat in self.statsCache[1]['stats']]
@@ -474,12 +477,13 @@ class TransientSim(StoppableThread):
                         stopFlag=self.getStopObject())
                     logWrite("Finished tr.calcRates")
                 mapTx = self.mempool.getMempool()
-                waitTimes, timespent = sim.transient(mapTx, stopFlag=self.getStopObject())
+                waitTimes, timespent, numiters = sim.transient(mapTx, stopFlag=self.getStopObject())
             except ValueError as e:
                 logWrite("TransientSim error:")
                 logWrite(e.message)
             else:
-                logWrite("transient simul completed with time %.1f seconds." % timespent)
+                logWrite("transient simul completed with time %.1f seconds and %d iters." %
+                         (timespent, numiters))
                 with self.statLock:
                     self.qstats = {
                         'stats': [(feeRate, tw.getStats()) for feeRate, tw in waitTimes],

@@ -5,15 +5,17 @@ from feemodel.util import tryWrap
 from datetime import datetime
 
 plotly_user = 'bitcoinfees'
+
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
-ratesFile = (338, 'rates')
+#ratesFile = (338, 'rates')
 capFile = (499, 'caps')
 confTimeFile = (517, 'conftimeseries')
 
 test_waitTimesFile = (479, 'combinedwaits (test)')
 test_transWaitFile = (475, 'transwait (test)')
 test_confTimeFile = (527, 'conftimeseries (test)')
+test_capFile = (516, 'caps (test)')
 #test_ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
@@ -183,7 +185,7 @@ class ConfTimeGraph(Graph):
 
 
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
-ratesGraph = RatesGraph(*ratesFile)
+#ratesGraph = RatesGraph(*ratesFile)
 transWaitGraph = TransWaitGraph(*transWaitFile)
 capsGraph = CapsGraph(*capFile)
 confTimeGraph = ConfTimeGraph(*confTimeFile)
@@ -191,3 +193,4 @@ confTimeGraph = ConfTimeGraph(*confTimeFile)
 waitTimesGraphTest = WaitTimesGraph(*test_waitTimesFile)
 transWaitGraphTest = TransWaitGraph(*test_transWaitFile)
 confTimeGraphTest = ConfTimeGraph(*test_confTimeFile)
+capsGraphTest = CapsGraph(*test_capFile)

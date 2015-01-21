@@ -48,6 +48,7 @@ if __name__ == '__main__':
         feemodel.simul.waitTimesGraph = feemodel.plotting.waitTimesGraphTest
         feemodel.simul.transWaitGraph = feemodel.plotting.transWaitGraphTest
         feemodel.simul.confTimeGraph = feemodel.plotting.confTimeGraphTest
+        feemodel.simul.capsGraph = feemodel.plotting.capsGraphTest
 
     main()
 
