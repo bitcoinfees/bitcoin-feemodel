@@ -81,9 +81,6 @@ class TxMempool(StoppableThread):
             # To-do: insert warnings if block inclusion ratio is too low, or conflicts are too high
             conflicts = set(currPool) - set(newPool)
 
-            # Redo this: the set(conflicts) are exactly (?) the txs you need to mark.
-            # Also, you are double counting.
-            # Done.
             for block in blocks:
                 block.labelConflicts(conflicts)
 

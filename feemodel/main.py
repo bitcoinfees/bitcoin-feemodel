@@ -47,6 +47,7 @@ if __name__ == '__main__':
         print("Entering test mode.")
         feemodel.simul.waitTimesGraph = feemodel.plotting.waitTimesGraphTest
         feemodel.simul.transWaitGraph = feemodel.plotting.transWaitGraphTest
+        feemodel.simul.confTimeGraph = feemodel.plotting.confTimeGraphTest
 
     main()
 

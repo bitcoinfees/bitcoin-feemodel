@@ -2,15 +2,18 @@ import time
 import plotly.plotly as py
 import threading
 from feemodel.util import tryWrap
+from datetime import datetime
 
 plotly_user = 'bitcoinfees'
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
 ratesFile = (338, 'rates')
 capFile = (499, 'caps')
+confTimeFile = (517, 'conftimeseries')
 
 test_waitTimesFile = (479, 'combinedwaits (test)')
 test_transWaitFile = (475, 'transwait (test)')
+test_confTimeFile = (527, 'conftimeseries (test)')
 #test_ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
@@ -39,6 +42,13 @@ class Graph(object):
     def postFig(self):
         with graphLock:
             py.plot(self.fig, filename=self.graph_filename, auto_open=False)
+
+    def clearXY(self):
+        with graphLock:
+            self.getFig()
+            for trace in self.fig['data']:
+                trace.update(dict(x=[], y=[]))
+            self.postFig()
 
 
 class WaitTimesGraph(Graph):
@@ -89,6 +99,8 @@ class TransWaitGraph(Graph):
             self.modifyDatetime()
             self.postFig()
 
+
+# Deprecated
 class RatesGraph(Graph):
     @tryWrap
     def updateAll(self, feeClasses, procrate, procrateUpper, txByteRate, stableStat):
@@ -127,10 +139,55 @@ class CapsGraph(Graph):
             self.postFig()
 
 
+class ConfTimeGraph(Graph):
+    maxPoints = 500
+    @tryWrap
+    def updateAll(self, t, txByteRate, mempoolSize):
+        with graphLock:
+            self.getFig()
+
+            x = self.fig['data'][0].get('x')
+            if x is None:
+                x = []
+            x.append(datetime.now())
+            x = self._keepRecent(x, self.maxPoints)
+
+            y0 = self.fig['data'][0].get('y')
+            y1 = self.fig['data'][1].get('y')
+            y2 = self.fig['data'][2].get('y')
+            if y0 is None:
+                y0 = []
+            if y1 is None:
+                y1 = []
+            if y2 is None:
+                y2 = []
+            y0.append(t)
+            y1.append(txByteRate)
+            y2.append(mempoolSize)
+
+            self.fig['data'][0]['x'] = x
+            self.fig['data'][1]['x'] = x
+            self.fig['data'][2]['x'] = x
+
+            self.fig['data'][0]['y'] = self._keepRecent(y0, self.maxPoints)
+            self.fig['data'][1]['y'] = self._keepRecent(y1, self.maxPoints)
+            self.fig['data'][2]['y'] = self._keepRecent(y2, self.maxPoints)
+
+            self.postFig()
+
+    @staticmethod
+    def _keepRecent(l, numpoints):
+        start = max(0, len(l)-numpoints)
+        return l[start:]
+
+
+
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 ratesGraph = RatesGraph(*ratesFile)
 transWaitGraph = TransWaitGraph(*transWaitFile)
 capsGraph = CapsGraph(*capFile)
+confTimeGraph = ConfTimeGraph(*confTimeFile)
 
 waitTimesGraphTest = WaitTimesGraph(*test_waitTimesFile)
 transWaitGraphTest = TransWaitGraph(*test_transWaitFile)
+confTimeGraphTest = ConfTimeGraph(*test_confTimeFile)

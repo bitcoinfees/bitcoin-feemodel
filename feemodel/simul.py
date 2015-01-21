@@ -1,4 +1,4 @@
-from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph, capsGraph
+from feemodel.plotting import waitTimesGraph, ratesGraph, transWaitGraph, capsGraph, confTimeGraph
 from feemodel.txmempool import TxMempool, LoadHistory
 from feemodel.measurement import TxRates, TxSample, estimateBlockInterval, TxWaitTimes
 from feemodel.pools import PoolEstimator, PoolEstimatorOnline
@@ -504,15 +504,19 @@ class TransientSim(StoppableThread):
         x = [stat[0] for stat in self.qstats['stats']]
         y = [stat[1][0] for stat in self.qstats['stats']]
         err = [stat[1][0]-stat[1][2][0] for stat in self.qstats['stats']]
-        t = threading.Thread(
-                             target=transWaitGraph.updateAll,
-                             args=(x,y,err)
-                            )
+        t = threading.Thread(target=transWaitGraph.updateAll,
+                             args=(x,y,err))
+        t.start()
+
+        confTime = self.tStats.inverseAvgConf(1000)
+        txByteRate = self.qstats['txByteRate'][0]*600
+        mempoolSize = self.qstats['mempoolSize'][0]
+        t = threading.Thread(target=confTimeGraph.updateAll,
+                             args=(confTime,txByteRate,mempoolSize))
         t.start()
 
 
 class TransientStats(object):
-    # To-do - assign transientStats object in TransientSim
     def __init__(self):
         self.waitTimes = None
         self.timespent = None
@@ -529,7 +533,6 @@ class TransientStats(object):
             self.ax = self.px[-1::-1]
             self.ay = sorted([w[1].mean for w in self.waitTimes])
 
-    # Use interpolation here.
     def predictConf(self, entry):
         entryFeeRate = entry.get('feeRate')
         if entryFeeRate is None:
@@ -541,6 +544,7 @@ class TransientStats(object):
             if idx == 0:
                 return None
             else:
+                # Consider using present time rather than the entry time
                 return predictionInterval + entry['time']
 
     def inverseAvgConf(self, confTime):
