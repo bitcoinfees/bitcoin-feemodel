@@ -1,8 +1,9 @@
 from feemodel.txmempool import Block
-from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable, StoppableThread, pickle
+from feemodel.util import proxy, logWrite, getCoinbaseInfo, Saveable, StoppableThread, pickle, DataSample
 from feemodel.model import ModelError
 from feemodel.config import savePoolsFile, poolInfoFile, config, historyFile
 from feemodel.stranding import txPreprocess, calcStrandingFeeRate
+from feemodel.plotting import poolsBubbleGraph, poolsRatesGraph
 from bitcoin.wallet import CBitcoinAddress
 from collections import defaultdict
 from math import log, exp, ceil
@@ -18,7 +19,7 @@ hardMaxBlockSize = config['hardMaxBlockSize']
 defaultPoolBlocksWindow = 2016
 poolsCacheLock = threading.RLock()
 defaultMinPoolBlocks = 144 # Minimum number of blocks used to estimate pools
-getMFRSpacing = 0.05 # The percentage spacing when using getpoolmfr
+getMFRSpacing = 5 # The percentage spacing when using getpoolmfr
 
 class Pool(object):
     def __init__(self):
@@ -130,8 +131,6 @@ class PoolEstimator(Saveable):
         super(PoolEstimator, self).__init__(savePoolsFile)
 
     def runEstimate(self, blockHeightRange, stopFlag=None, dbFile=historyFile):
-        # The stopping can be simplified - use raise Exception instead.
-        # And also move the saving to PEO
         try:
             self.identifyPoolBlocks(blockHeightRange, stopFlag=stopFlag)
             self.estimatePools(stopFlag=stopFlag, dbFile=dbFile)
@@ -207,6 +206,7 @@ class PoolEstimator(Saveable):
                     poolprops['seen_heights'].add(height)
                     foundTag = True
 
+            # Must check if block was added to two pools based on tag and addr
             if not foundAddr and not foundTag:
                 self.pools[addr].blockHeights.add(height)
                 self.pools[addr].unknown = True
@@ -271,22 +271,17 @@ class PoolEstimator(Saveable):
             pools = [(pool.minFeeRate, pool.proportion*pool.maxBlockSize)
                 for pool in self.poolsCache.values()]
             pools.sort(key=lambda x: x[0])
+            mfrs = [p[0] for p in pools]
+            rates = [p[1] for p in pools]
 
-            totalProcessing = sum([p[1] for p in pools])
-            poolProc = 0.
-            p = iter(pools)
-
-            feeValues = set()
-            procLevel = getMFRSpacing*totalProcessing
-            while procLevel < totalProcessing:
-                while poolProc < procLevel:
-                    pool = p.next()
-                    poolProc += pool[1]
-                feeValues.add(pool[0])
-                procLevel += getMFRSpacing*totalProcessing
+            poolsD = DataSample(mfrs)
+            feeValues = [poolsD.getPercentile((i+0.5)*getMFRSpacing/100., weights=rates)
+                         for i in range(int(100 // getMFRSpacing))]
 
             feeValues = filter(lambda x: x < float("inf"), feeValues)
-            return sorted(feeValues)
+
+            return feeValues
+
 
     def calcCapacities(self, tr, blockRate):
         with poolsCacheLock:
@@ -384,9 +379,33 @@ class PoolEstimatorOnline(StoppableThread):
             self.pe.runEstimate(blockHeightRange, self.getStopObject())
             try:
                 self.pe.saveObject()
-            except IOError as e:
+            except Exception as e:
                 logWrite("Error saving PoolEstimator.")
                 logWrite(str(e))
+            self.updatePlotly()
+
+    def updatePlotly(self, async=True):
+        poolstats = self.pe.getPools()
+        finalPools = []
+        totalProp = 0.
+        for pool in poolstats:
+            totalProp += pool[1]
+            if pool[3] != float("inf"):
+                finalPools.append(pool)
+            if totalProp >= 0.95:
+                break
+        t = threading.Thread(target=poolsBubbleGraph.updateAll,
+                             args=(finalPools,))
+        t.start()
+        if not async:
+            t.join()
+
+        poolmfrs, procRate, procRateUpper = self.pe.getProcessingRate(1.)
+        t = threading.Thread(target=poolsRatesGraph.updateAll,
+                             args=(poolmfrs, procRate, procRateUpper))
+        t.start()
+        if not async:
+            t.join()
 
 
 class PoolCapacity(object):

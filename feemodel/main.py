@@ -49,6 +49,8 @@ if __name__ == '__main__':
         feemodel.simul.transWaitGraph = feemodel.plotting.transWaitGraphTest
         feemodel.simul.confTimeGraph = feemodel.plotting.confTimeGraphTest
         feemodel.simul.capsGraph = feemodel.plotting.capsGraphTest
+        feemodel.pools.poolsBubbleGraph = feemodel.plotting.poolsBubbleGraphTest
+        feemodel.pools.poolsRatesGraph = feemodel.plotting.poolsRatesGraphTest
 
     main()
 

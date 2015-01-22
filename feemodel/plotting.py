@@ -12,14 +12,17 @@ poolsGridFile = 'poolsgrid'
 
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
-#ratesFile = (338, 'rates')
 capFile = (499, 'caps')
 confTimeFile = (517, 'conftimeseries')
+poolsBubbleFile = (549, 'poolsbubble')
+poolsRatesFile = (338, 'poolsrates')
 
+test_poolsBubbleFile = (557, 'poolsbubble (test)')
 test_waitTimesFile = (479, 'combinedwaits (test)')
 test_transWaitFile = (475, 'transwait (test)')
 test_confTimeFile = (527, 'conftimeseries (test)')
 test_capFile = (516, 'caps (test)')
+test_poolsRatesFile = (573, 'poolsrates (test)')
 #test_ratesFile = (338, 'rates')
 
 graphLock = threading.RLock()
@@ -177,7 +180,7 @@ class CapsGraph(Graph):
 
 
 class ConfTimeGraph(Graph):
-    maxPoints = 360
+    maxPoints = 300
     @tryWrap
     def updateAll(self, t, txByteRate, mempoolSize):
         with graphLock:
@@ -218,6 +221,44 @@ class ConfTimeGraph(Graph):
         return l[start:]
 
 
+class PoolsBubbleGraph(Graph):
+    # Consider using a retry wrap
+    @tryWrap
+    def updateAll(self, poolstats):
+        with graphLock:
+
+            names = ["%s (%.2f%%)" % (pool[0], pool[1]*100) for pool in poolstats]
+            minFeeRates = [pool[3] for pool in poolstats]
+            maxBlockSizes = [pool[2] for pool in poolstats]
+            proportion = [100*pool[1] for pool in poolstats]
+
+            self.getFig()
+            self.fig['data'][0].update({
+                'text': names,
+                'y': minFeeRates,
+                'x': maxBlockSizes,
+                'marker': {'size': proportion}
+            })
+            self.modifyDatetime()
+            self.postFig()
+
+class PoolsRatesGraph(Graph):
+    @tryWrap
+    def updateAll(self, feeRates, procRate, procRateUpper):
+        with graphLock:
+            self.getFig()
+            self.fig['data'][0].update({
+                'x': feeRates,
+                'y': procRate
+            })
+            self.fig['data'][1].update({
+                'x': feeRates,
+                'y': procRateUpper
+            })
+            self.modifyDatetime()
+            self.postFig()
+
+
 #poolsGrid = PlotlyGrid(poolsGridFile)
 
 waitTimesGraph = WaitTimesGraph(*waitTimesFile)
@@ -225,8 +266,12 @@ waitTimesGraph = WaitTimesGraph(*waitTimesFile)
 transWaitGraph = TransWaitGraph(*transWaitFile)
 capsGraph = CapsGraph(*capFile)
 confTimeGraph = ConfTimeGraph(*confTimeFile)
+poolsBubbleGraph = PoolsBubbleGraph(*poolsBubbleFile)
+poolsRatesGraph = PoolsRatesGraph(*poolsRatesFile)
 
 waitTimesGraphTest = WaitTimesGraph(*test_waitTimesFile)
 transWaitGraphTest = TransWaitGraph(*test_transWaitFile)
 confTimeGraphTest = ConfTimeGraph(*test_confTimeFile)
 capsGraphTest = CapsGraph(*test_capFile)
+poolsBubbleGraphTest = PoolsBubbleGraph(*test_poolsBubbleFile)
+poolsRatesGraphTest = PoolsRatesGraph(*test_poolsRatesFile)
