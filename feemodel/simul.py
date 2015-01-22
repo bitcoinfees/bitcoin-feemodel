@@ -232,6 +232,7 @@ class SimulOnline(TxMempool):
 
         self.predictions = Predictions(self.transientSim.tStats, defaultFeeValues, predictionRetention)
         self.predictions.loadData()
+        self.predictions.calcScore()
 
         super(SimulOnline, self).__init__()
 

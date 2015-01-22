@@ -8,7 +8,7 @@ from datetime import datetime
 
 plotly_user = tls.get_credentials_file()['username']
 
-poolsGridFile = 'poolsgrid'
+#poolsGridFile = 'poolsgrid'
 
 waitTimesFile = (274, 'combinedwaits')
 transWaitFile = (378, 'transwait')
@@ -27,34 +27,34 @@ test_poolsRatesFile = (573, 'poolsrates (test)')
 
 graphLock = threading.RLock()
 
-class PlotlyGrid(object):
-    def __init__(self, grid_filename):
-        self.grid_filename = grid_filename
-        self.cols = []
-
-    def appendColumn(self, colname, colvals):
-        self.cols.append(Column(colvals, colname))
-
-    def postGrid(self):
-        with graphLock:
-            grid = Grid(self.cols)
-            py.grid_ops.upload(grid, self.grid_filename, auto_open=False)
-
-
-class PoolsGrid(PlotlyGrid):
-    def __init__(self):
-        super(self.__class__, self).__init__(poolsGridFile)
-
-    def plotBubbleChart(self, bubbleFile='poolbubble'):
-        grid = Grid(self.cols)
-        names = Grid.get_column('name')
-        proportions = Grid.get_column('proportion')
-        maxBlockSizes = Grid.get_column('maxBlockSize')
-        minFeeRates = Grid.get_column('minFeeRate')
-        if not names or not proportions or not maxBlockSizes or not minFeeRates:
-            logWrite("Error in pool data.")
-            return
-        pools = zip(names,proportions,maxBlockSizes,minFeeRates)
+#class PlotlyGrid(object):
+#    def __init__(self, grid_filename):
+#        self.grid_filename = grid_filename
+#        self.cols = []
+#
+#    def appendColumn(self, colname, colvals):
+#        self.cols.append(Column(colvals, colname))
+#
+#    def postGrid(self):
+#        with graphLock:
+#            grid = Grid(self.cols)
+#            py.grid_ops.upload(grid, self.grid_filename, auto_open=False)
+#
+#
+#class PoolsGrid(PlotlyGrid):
+#    def __init__(self):
+#        super(self.__class__, self).__init__(poolsGridFile)
+#
+#    def plotBubbleChart(self, bubbleFile='poolbubble'):
+#        grid = Grid(self.cols)
+#        names = Grid.get_column('name')
+#        proportions = Grid.get_column('proportion')
+#        maxBlockSizes = Grid.get_column('maxBlockSize')
+#        minFeeRates = Grid.get_column('minFeeRate')
+#        if not names or not proportions or not maxBlockSizes or not minFeeRates:
+#            logWrite("Error in pool data.")
+#            return
+#        pools = zip(names,proportions,maxBlockSizes,minFeeRates)
 
 
 
