@@ -1,85 +1,60 @@
-from bitcoin.rpc import Proxy, JSONRPCException
-from bitcoin.wallet import CBitcoinAddress
-import feemodel.config
-from feemodel.config import logFile, config, historyFile
-from time import ctime
-import sqlite3
 import threading
-from pprint import pprint
+import logging
+from bisect import insort, bisect
+from math import ceil
 from contextlib import contextmanager
 from random import random
 from functools import wraps
-from bisect import insort, bisect
-from math import ceil
-
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
 
-def getCoinbaseInfo(blockHeight=None, block=None):
-    if not block:
-        block = proxy.getblock(proxy.getblockhash(blockHeight))
-    coinbaseTx = block.vtx[0]
-    assert coinbaseTx.is_coinbase()
-    addr = str(CBitcoinAddress.from_scriptPubKey(coinbaseTx.vout[0].scriptPubKey))
-    tag = str(coinbaseTx.vin[0].scriptSig).decode('utf-8', 'ignore')
+from bitcoin.rpc import Proxy, JSONRPCException
+from bitcoin.wallet import CBitcoinAddress, CBitcoinAddressError
 
-    return addr, tag
 
-def getBlockTimeStamp(blockHeight):
-    block = proxy.getblock(proxy.getblockhash(blockHeight))
-    return block.nTime
+logger = logging.getLogger(__name__)
 
 
 class StoppableThread(threading.Thread):
+    '''A thread with a stop flag.'''
+
     def __init__(self):
         super(StoppableThread, self).__init__()
-        self._stop = threading.Event()
+        self.__stopflag = threading.Event()
 
     def stop(self):
-        self._stop.set()
+        '''Set the stop flag.'''
+        self.__stopflag.set()
 
-    def isStopped(self):
-        return self._stop.is_set()
+    def is_stopped(self):
+        '''Returns True if stop flag is set, else False.'''
+        return self.__stopflag.is_set()
 
     def sleep(self, secs):
-        '''Sleep but wakeup immediately on stop()'''
-        self._stop.wait(timeout=secs)
+        '''Like time.sleep but terminates immediately once stop flag is set.'''
+        self.__stopflag.wait(timeout=secs)
 
     @contextmanager
-    def threadStart(self):
+    def thread_start(self):
+        '''Context manager for starting/closing the thread.
+
+        Starts the thread and terminates it cleanly at the end of the
+        context block.
+        '''
         self.start()
         yield
         self.stop()
         self.join()
 
-    def getStopObject(self):
-        return self._stop
-
-
-class Saveable(object):
-    def __init__(self, saveFile):
-        self.saveFile = saveFile
-
-    def saveObject(self):
-        with open(self.saveFile, 'wb') as f:
-            pickle.dump(self, f)
-
-    @staticmethod
-    def loadObject(saveFile):
-        with open(saveFile, 'rb') as f:
-            obj = pickle.load(f)
-        return obj
-
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
+    def get_stop_object(self):
+        '''Returns the stop flag object.'''
+        return self.__stopflag
 
 
 class BlockingProxy(Proxy):
-    '''
-    Thread-safe version of Proxy
-    '''
+    '''Thread-safe version of bitcoin.rpc.Proxy.'''
     def __init__(self):
         super(BlockingProxy, self).__init__()
         self.rlock = threading.RLock()
@@ -90,7 +65,18 @@ class BlockingProxy(Proxy):
 
 
 class BatchProxy(BlockingProxy):
-    def pollMempool(self):
+    '''Provides a method for making batch RPC calls.'''
+
+    def poll_mempool(self):
+        '''Polls mempool in batch mode.
+
+        Sends getblockcount and getrawmempool requests in batch mode to
+        minimize the probability of a race condition in the block count.
+
+        Returns:
+            blockcount - output of proxy.getblockcount()
+            mempool - output of proxy.getrawmempool(verbose=True)
+        '''
         with self.rlock:
             self._RawProxy__id_count += 1
             rpc_call_list = [
@@ -101,7 +87,7 @@ class BatchProxy(BlockingProxy):
                     'id': self._RawProxy__id_count
                 },
                 {
-                    'version':'1.1',
+                    'version': '1.1',
                     'method': 'getrawmempool',
                     'params': [True],
                     'id': self._RawProxy__id_count
@@ -120,51 +106,149 @@ class BatchProxy(BlockingProxy):
             return responses[0]['result'], responses[1]['result']
 
 
-# Have to put a lock.
-def logWrite(entry):
-    s = ctime() + ': ' + entry
-    if feemodel.config.apprun:
-        with open(logFile, 'a') as f:
-            f.write(s + '\n')
-    if toStdOut or not feemodel.config.apprun:
-        print(s)
+class DataSample(object):
+    '''Container for 1-D numerical data with methods to compute statistics.'''
 
-def getHistory(dbFile=historyFile):
-    db = None
-    try:
-        db = sqlite3.connect(dbFile)
-        blocks = db.execute('SELECT * FROM blocks').fetchall()
-        return blocks
-    finally:
-        if db:
-            db.close()
+    def __init__(self, datapoints=None):
+        '''Specify the initial datapoints with an iterable.'''
+        if datapoints:
+            self.datapoints = sorted(datapoints)
+            self.n = len(self.datapoints)
+        else:
+            self.datapoints = []
+            self.n = None
+        self.mean = None
+        self.std = None
+        self.mean_interval = None
 
-def estimateVariance(x, xbar):
-    return float(sum([(x_i - xbar)**2 for x_i in x])) / (len(x) - 1)
+    def add_datapoints(self, datapoints):
+        '''Add additional datapoints with an iterable.'''
+        for d in datapoints:
+            insort(self.datapoints, d)
+        self.n = len(self.datapoints)
 
-def roundRandom(f):
-    '''Returns a random integer with expected value equal to f'''
-    q, r = divmod(f, 1)
-    if random() <= r:
-        return int(q+1)
-    else:
-        return int(q)
+    def calc_stats(self):
+        '''Compute various statistics of the data.
 
-def tryWrap(fn):
-    '''Decorator to try function and fail gracefully.'''
-    # Need to be more informative about the location
-    @wraps(fn)
-    def nicetry(*args, **kwargs):
+        mean - sample mean
+        std - sample standard deviation
+        mean_interval - 95% confidence interval for the sample mean, using a
+                        normal approximation.
+        '''
+        if not self.n:
+            raise ValueError("No datapoints.")
+        self.mean = float(sum(self.datapoints)) / self.n
+        variance = (sum([(d - self.mean)**2 for d in self.datapoints]) /
+                    (self.n - 1))
+        self.std = variance**0.5
+        half_interval = 1.96*(variance/self.n)**0.5
+        self.mean_interval = (self.mean - half_interval,
+                              self.mean + half_interval)
+
+    def get_percentile(self, p, weights=None):
+        '''Returns the (p*100)th percentile of the data.
+
+        p is must be in the interval [0, 1].
+
+        Optional weights argument is a list specifying the weight of each
+        datapoint for computing a weighted percentile.
+        '''
+        if p > 1 or p < 0:
+            raise ValueError("p must be in [0, 1].")
+        if not weights:
+            return self.datapoints[max(int(ceil(p*self.n)) - 1, 0)]
+        elif len(weights) == self.n:
+            total = sum(weights)
+            target = total*p
+            curr_total = 0.
+            for idx, s in enumerate(self.datapoints):
+                curr_total += weights[idx]
+                if curr_total >= target:
+                    return s
+        else:
+            raise ValueError("len(weights) must be equal to len(datapoints).")
+
+    def __repr__(self):
+        return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (
+            self.n, self.mean, self.std, self.mean_interval)
+
+
+def save_obj(obj, filename):
+    '''Convenience function to pickle an object to disk.'''
+    with open(filename, 'wb') as f:
+        pickle.dump(obj, f)
+
+
+def load_obj(filename):
+    '''Convenience function to unpickle an object from disk.'''
+    with open(filename, 'rb') as f:
+        obj = pickle.load(f)
+    return obj
+
+
+def get_coinbase_info(blockheight=None, block=None):
+    '''Gets coinbase tag and addresses of a specified block.
+
+    You can either specify a block height, or pass in a
+    bitcoin.core.CBlock object.
+
+    Keyword args:
+        blockheight - height of block
+        block - a bitcoin.core.CBlock object
+    Returns:
+        addresses - A list of p2sh/p2pkh addresses corresponding to the
+                    outputs. Returns None in place of an unrecognizable
+                    scriptPubKey.
+        tag - the UTF-8 decoded scriptSig.
+
+    '''
+    if not block:
+        block = proxy.getblock(proxy.getblockhash(blockheight))
+    coinbase_tx = block.vtx[0]
+    assert coinbase_tx.is_coinbase()
+    addresses = []
+    for output in coinbase_tx.vout:
         try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            logWrite(str(e))
-    return nicetry
+            addr = str(CBitcoinAddress.from_scriptPubKey(output.scriptPubKey))
+        except CBitcoinAddressError:
+            addr = None
+        addresses.append(addr)
+
+    tag = str(coinbase_tx.vin[0].scriptSig).decode('utf-8', 'ignore')
+
+    return addresses, tag
+
+
+def get_block_timestamp(blockheight):
+    '''Get the timestamp of a block specified by height.'''
+    block = proxy.getblock(proxy.getblockhash(blockheight))
+    return block.nTime
+
+
+def round_random(f):
+    '''Random integer rounding.
+
+    Returns a random integer in {floor(f), ceil(f)} with expected value
+    equal to f.
+    '''
+    int_f = int(f)
+    return int_f + (random() <= f - int_f)
+
 
 def interpolate(x0, x, y):
-    ''' Linear interpolation of y = f(x) at x0.
-        Function f is specified by lists x and y.
-        x is assumed to be sorted.'''
+    '''Linear interpolation of y = f(x) at x0.
+
+     Function f is specified by lists x and y.
+     x is assumed to be sorted and one-to-one.
+
+     Returns:
+        y0 - Interpolated value of the function. If x0 is outside of the
+             domain specified by x, then return the boundary values.
+
+        idx - The unique value such that x[idx-1] <= x0 < x[idx],
+              if it exists. Otherwise idx = 0 if x0 < all values in x,
+              and idx = len(x) if x0 >= all values in x.
+     '''
     idx = bisect(x, x0)
     if idx == len(x):
         return y[-1], idx
@@ -180,61 +264,62 @@ def interpolate(x0, x, y):
         return y0, idx
 
 
-class DataSample(object):
-    '''Container for numerical data'''
-    def __init__(self, samples=None):
-        if samples:
-            self.samples = sorted(samples)
-            self.n = len(self.samples)
-        else:
-            self.samples = []
-            self.n = None
-        self.mean = None
-        self.std = None
-        self.var = None
-        self.meanInterval = None
-
-    def addSample(self, sample):
+def try_wrap(fn):
+    '''Decorator to try a function and log all exceptions without raising.'''
+    @wraps(fn)
+    def nicetry(*args, **kwargs):
         try:
-            for s in sample:
-                insort(self.samples, s)
-        except TypeError:
-            insort(self.samples, sample)
-
-    def calcStats(self):
-        self.n = len(self.samples)
-        if not self.n:
-            raise ValueError("No samples.")
-        self.mean = float(sum(self.samples)) / self.n
-        self.variance = estimateVariance(self.samples, self.mean)
-        self.std = self.variance**0.5
-        halfInterval = 1.96*(self.variance/self.n)**0.5
-        self.meanInterval = (self.mean - halfInterval, self.mean + halfInterval) # 95% confidence interval
-
-    def getPercentile(self, per, weights=None):
-        if per > 1 or per < 0:
-            raise ValueError("Percentile argument must be in [0, 1] interval")
-        if not weights:
-            return self.samples[max(int(ceil(per*self.n)) - 1, 0)]
-        elif len(weights) == self.n:
-            total = sum(weights)
-            target = total*per
-            currTotal = 0.
-            for idx, s in enumerate(self.samples):
-                currTotal += weights[idx]
-                if currTotal >= target:
-                    return s
-            raise ValueError("This shouldn't happen.")
-        else:
-            raise ValueError("Weights length must be equal to num samples.")
-
-    def __repr__(self):
-        return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (self.n, self.mean, self.std, self.meanInterval)
+            return fn(*args, **kwargs)
+        except Exception:
+            logger.exception('try_wrap exception')
+    return nicetry
 
 
 proxy = BatchProxy()
-toStdOut = config['logging']['toStdOut']
 
 
+#class Saveable(object):
+#    '''Provides methods to save/load the object from disk using pickle.'''
+#
+#    def __init__(self, savefile):
+#        '''Specify the savefile location.'''
+#        self.__savefile = savefile
+#        try:
+#            pickle.dumps(self)
+#        except:
+#            raise TypeError("%s instance is not pickleable." % self.__class__)
+#
+#    def save_object(self):
+#        '''Pickle the object to disk.'''
+#        with open(self.__savefile, 'wb') as f:
+#            pickle.dump(self, f)
+#
+#    @staticmethod
+#    def load_object(savefile):
+#        '''Load the object previously pickled to savefile.'''
+#        with open(savefile, 'rb') as f:
+#            obj = pickle.load(f)
+#        return obj
+#
+#    def __eq__(self, other):
+#        return self.__dict__ == other.__dict__
 
+## Put this in txmempool
+#def getHistory(dbFile=historyFile):
+#    db = None
+#    try:
+#        db = sqlite3.connect(dbFile)
+#        blocks = db.execute('SELECT * FROM blocks').fetchall()
+#        return blocks
+#    finally:
+#        if db:
+#            db.close()
 
+# Have to put a lock.
+#def logWrite(entry):
+#    s = ctime() + ': ' + entry
+#    if feemodel.config.apprun:
+#        with open(logFile, 'a') as f:
+#            f.write(s + '\n')
+#    if toStdOut or not feemodel.config.apprun:
+#        print(s)
