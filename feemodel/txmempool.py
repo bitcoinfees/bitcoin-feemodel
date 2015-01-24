@@ -12,7 +12,7 @@ from feemodel.config import config, history_file
 from feemodel.util import proxy, StoppableThread
 
 history_lock = threading.Lock()
-mempool_lock = threading.Lock()
+entries_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 poll_period = config.getint('txmempool', 'poll_period')
@@ -64,7 +64,7 @@ class TxMempool(StoppableThread):
     def update(self):
         '''Mempool polling function.'''
         curr_height, entries_new = proxy.poll_mempool()
-        with mempool_lock:
+        with entries_lock:
             if curr_height > self.best_height:
                 threading.Thread(
                     target=self.process_blocks,
@@ -155,9 +155,9 @@ class TxMempool(StoppableThread):
 
             return memblocks
 
-    def get_mempool(self):
+    def get_entries(self):
         '''Returns a deepcopy of mempool entries.'''
-        with mempool_lock:
+        with entries_lock:
             return deepcopy(self.entries)
 
 
