@@ -44,12 +44,14 @@ class StoppableThread(threading.Thread):
         context block.
         '''
         self.start()
-        yield
-        self.stop()
-        self.join()
+        try:
+            yield
+        finally:
+            self.stop()
+            self.join()
 
     def get_stop_object(self):
-        '''Returns the stop flag object.'''
+        '''Returns the stop flag.'''
         return self.__stopflag
 
 
@@ -147,8 +149,6 @@ class DataSample(object):
 
     def get_percentile(self, p, weights=None):
         '''Returns the (p*100)th percentile of the data.
-
-        p is must be in the interval [0, 1].
 
         Optional weights argument is a list specifying the weight of each
         datapoint for computing a weighted percentile.
@@ -276,50 +276,3 @@ def try_wrap(fn):
 
 
 proxy = BatchProxy()
-
-
-#class Saveable(object):
-#    '''Provides methods to save/load the object from disk using pickle.'''
-#
-#    def __init__(self, savefile):
-#        '''Specify the savefile location.'''
-#        self.__savefile = savefile
-#        try:
-#            pickle.dumps(self)
-#        except:
-#            raise TypeError("%s instance is not pickleable." % self.__class__)
-#
-#    def save_object(self):
-#        '''Pickle the object to disk.'''
-#        with open(self.__savefile, 'wb') as f:
-#            pickle.dump(self, f)
-#
-#    @staticmethod
-#    def load_object(savefile):
-#        '''Load the object previously pickled to savefile.'''
-#        with open(savefile, 'rb') as f:
-#            obj = pickle.load(f)
-#        return obj
-#
-#    def __eq__(self, other):
-#        return self.__dict__ == other.__dict__
-
-## Put this in txmempool
-#def getHistory(dbFile=historyFile):
-#    db = None
-#    try:
-#        db = sqlite3.connect(dbFile)
-#        blocks = db.execute('SELECT * FROM blocks').fetchall()
-#        return blocks
-#    finally:
-#        if db:
-#            db.close()
-
-# Have to put a lock.
-#def logWrite(entry):
-#    s = ctime() + ': ' + entry
-#    if feemodel.config.apprun:
-#        with open(logFile, 'a') as f:
-#            f.write(s + '\n')
-#    if toStdOut or not feemodel.config.apprun:
-#        print(s)
