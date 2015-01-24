@@ -130,9 +130,10 @@ class TxMempool(StoppableThread):
                 incl_text = 'process_blocks: %d of %d in block %d' % (
                             num_memtxs_inblock, len(blocktxs)-1, height)
                 logger.info(incl_text)
-                incl_ratio = num_memtxs_inblock / float(len(blocktxs) - 1)
-                if incl_ratio < 0.9:
-                    logger.warning(incl_text)
+                if len(blocktxs) > 1:
+                    incl_ratio = num_memtxs_inblock / float(len(blocktxs) - 1)
+                    if incl_ratio < 0.9:
+                        logger.warning(incl_text)
 
             # The set of transactions that were removed from the mempool, yet
             # were not included in a block.

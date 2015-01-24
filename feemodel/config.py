@@ -1,56 +1,31 @@
 import os
+import json
+import ConfigParser as configparser
+
 try:
     from installinfo import datadir
-except ImportError:
-    sys.exit("Error: Package has not been installed.")
+except ImportError as e:
+    print("Package has not been installed.")
+    raise(e)
 
-config = {
-    "pollPeriod": 5,
-    "keepHistory": 2016, # Making this smaller will erase part of the history.
-    "historyDb": "history.db",
-    "predictionFeeResolution": 10000,
-    "predictionMaxBlocks": 25,
-    "hardMaxBlockSize": 1000000,
-    "nonparam": {
-        "numBlocksUsed": (6, 144), # ends-inclusive
-        "maxBlockAge": 432,
-        "sigLevel": 0.9,
-        "statsDb": "stats.db",
-        "numBootstrap": 1000,
-        "minP": 0.3
-    },
-    "queue": {
-        "saveQueue": "savequeue.pickle",
-        "feeResolution": 1000,
-        "adaptiveWindow": 2016
-    },
-    "measurement": {
-        "saveWait": "savewait.pickle",
-        "saveRates": "saverates.pickle",
-        "priorityThresh": 57.6e6
-    },
-    "simul": {
-        "blockRate": 1./600,
-        "savePools": "savepools.pickle",
-        "saveSS": "savess.pickle",
-        "savePredict": "savepredict.pickle"
-    },
-    "logging": {
-        "logFile": 'debug.log',
-        "toStdOut": True
-    }
-}
+config = configparser.ConfigParser()
+config_file = os.path.join(datadir, 'config.ini')
+try:
+    config.read(config_file)
+except Exception as e:
+    print("Unable to load config.ini.")
+    raise(e)
 
-statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
-saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
-saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
-saveRatesFile = os.path.join(datadir, config['measurement']['saveRates'])
-savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
-saveSSFile = os.path.join(datadir, config['simul']['saveSS'])
-savePredictFile = os.path.join(datadir, config['simul']['savePredict'])
-historyFile = os.path.join(datadir, config['historyDb'])
-logFile = os.path.join(datadir, 'debug.log')
+# statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
+# saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
+# saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
+# saveRatesFile = os.path.join(datadir, config['measurement']['saveRates'])
+# savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
+# saveSSFile = os.path.join(datadir, config['simul']['saveSS'])
+# savePredictFile = os.path.join(datadir, config['simul']['savePredict'])
+# historyFile = os.path.join(datadir, config['historyDb'])
+# logFile = os.path.join(datadir, 'debug.log')
 
-poolInfoFile = os.path.join(datadir, 'pools.json')
+history_file = os.path.join(datadir, config.get('txmempool', 'history_file'))
+pool_info_file = os.path.join(datadir, 'pools.json')
 
-apprun = False # If true, TxMempool.processBlocks will write history, and logWrite will write to the log file
