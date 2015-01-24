@@ -7,6 +7,7 @@ from random import random, choice
 
 __all__ = ['tx_preprocess', 'calc_stranding_feerate']
 
+
 def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
                   remove_zero_fee=True):
     '''Preprocess MemBlock transactions for calculating stranding fee rate.
@@ -77,7 +78,7 @@ def calc_stranding_feerate(txs, bootstrap=True):
 
         bs_estimates = [_calc_stranding_single(bootstrap_sample(txs))
                         for i in range(1000)]
-        if all([b < float("inf") for b in bs_estimates]):
+        if not any([b == float("inf") for b in bs_estimates]):
             mean = float(sum(bs_estimates)) / len(bs_estimates)
             std = (sum([(b-mean)**2 for b in bs_estimates]) /
                    (len(bs_estimates)-1))**0.5

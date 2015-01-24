@@ -12,9 +12,9 @@ class SimpleMiner(object):
         return blockinterval, self.maxblocksize, self.minfeerate
 
     def calc_capacities(self, tx_source):
-        feerates = [self.minfeerate]
+        feerates = [0, self.minfeerate]
         tx_byterates = tx_source.get_byterates(feerates)
-        caps = [self.blockrate*self.maxblocksize]
+        caps = [0., self.blockrate*self.maxblocksize]
 
         return feerates, tx_byterates, caps
 
