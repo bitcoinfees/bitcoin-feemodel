@@ -1,6 +1,5 @@
 import threading
 import sqlite3
-import json
 import os
 import decimal
 import logging
@@ -92,7 +91,7 @@ class TxMempool(StoppableThread):
             inblock - whether or not the transaction was included in the block
             leadtime - difference between block discovery and mempool entry
                        time of the transaction.
-            feerate - fee per kB of transaction size
+            feerate - fee (satoshis) per kB of transaction size
             isconflict - whether or not the transaction is a conflict, meaning
                          that it was removed from the mempool as a result of
                          being invalidated by some other transaction in the
@@ -177,7 +176,7 @@ class MemBlock(object):
             inblock - whether or not the transaction was included in the block
             leadtime - difference between block discovery and mempool entry
                        time of the transaction.
-            feerate - fee per kB of transaction size
+            feerate - fee (satoshis) per kB of transaction size
             isconflict - whether or not the transaction is a conflict, meaning
                          that it was removed from the mempool as a result of
                          being invalidated by some other transaction in the
@@ -212,18 +211,42 @@ class MemBlock(object):
                         'CREATE TABLE blocks '
                         '(height INTEGER UNIQUE, size INTEGER, time REAL)')
                     db.execute(
-                        'CREATE TABLE txs '
-                        '(blockheight INTEGER, txid TEXT, data TEXT)')
+                        'CREATE TABLE txs ('
+                        'blockheight INTEGER,'
+                        'txid TEXT,'
+                        'size INTEGER,'
+                        'fee TEXT,'
+                        'startingpriority TEXT,'
+                        'currentpriority TEXT,'
+                        'time INTEGER,'
+                        'height INTEGER,'
+                        'depends TEXT,'
+                        'feerate INTEGER,'
+                        'leadtime INTEGER,'
+                        'isconflict INTEGER,'
+                        'inblock INTEGER)')
             db.execute('CREATE INDEX IF NOT EXISTS heightidx '
                        'ON txs (blockheight)')
             with db:
                 db.execute('INSERT INTO blocks VALUES (?,?,?)',
                            (self.height, self.size, self.time))
                 db.executemany(
-                    'INSERT INTO txs VALUES (?,?,?)',
-                    [(self.height, txid,
-                      json.dumps(entry, default=decimal_default))
-                     for txid, entry in self.entries.iteritems()])
+                    'INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [(
+                        self.height,
+                        txid,
+                        entry['size'],
+                        str(entry['fee']),
+                        str(entry['startingpriority']),
+                        str(entry['currentpriority']),
+                        entry['time'],
+                        entry['height'],
+                        ','.join(entry['depends']),
+                        entry['feerate'],
+                        entry['leadtime'],
+                        entry['isconflict'],
+                        entry['inblock'])
+                        for txid, entry in self.entries.iteritems()])
             if keep_history > 0:
                 history_limit = self.height - keep_history
                 with db:
@@ -252,16 +275,9 @@ class MemBlock(object):
                 blocksize, blocktime = block[0]
             else:
                 return None
-            txlist = db.execute('SELECT txid, data FROM txs '
-                                'WHERE blockheight=?',
+            txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
                                 (blockheight,))
-            entries = {txid: json.loads(data) for txid, data in txlist}
-            for entry in entries.itervalues():
-                entry['fee'] = decimal.Decimal(entry['fee'])
-                entry['startingpriority'] = decimal.Decimal(
-                    entry['startingpriority'])
-                entry['currentpriority'] = decimal.Decimal(
-                    entry['currentpriority'])
+            entries = {tx[1]: _load_entries(tx[2:]) for tx in txlist}
             return cls(entries, blockheight, blocksize, blocktime)
         except:
             logger.exception("MemBlock: Unable to read history.")
@@ -307,6 +323,23 @@ def decimal_default(obj):
     if isinstance(obj, decimal.Decimal):
         return str(obj)
     raise TypeError
+
+
+def _load_entries(data):
+    entry = {
+        'size': data[0],
+        'fee': decimal.Decimal(data[1]),
+        'startingpriority': decimal.Decimal(data[2]),
+        'currentpriority': decimal.Decimal(data[3]),
+        'time': data[4],
+        'height': data[5],
+        'depends': data[6].split(',') if data[6] else [],
+        'feerate': data[7],
+        'leadtime': data[8],
+        'isconflict': bool(data[9]),
+        'inblock': bool(data[10])
+    }
+    return entry
 
 
 # class LoadHistory(object):
