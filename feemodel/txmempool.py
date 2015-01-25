@@ -12,11 +12,34 @@ from feemodel.config import config, history_file
 from feemodel.util import proxy, StoppableThread
 
 history_lock = threading.Lock()
-entries_lock = threading.Lock()
+mempool_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 poll_period = config.getint('txmempool', 'poll_period')
 keep_history = config.getint('txmempool', 'keep_history')
+
+MEMBLOCK_TABLE_SCHEMA = {
+    'blocks': [
+        'height INTEGER UNIQUE',
+        'size INTEGER',
+        'time INTEGER'
+    ],
+    'txs': [
+        'blockheight INTEGER',
+        'txid TEXT',
+        'size INTEGER',
+        'fee TEXT',
+        'startingpriority TEXT',
+        'currentpriority TEXT',
+        'time INTEGER',
+        'height INTEGER',
+        'depends TEXT',
+        'feerate INTEGER',
+        'leadtime INTEGER',
+        'isconflict INTEGER',
+        'inblock INTEGER'
+    ]
+}
 
 
 class TxMempool(StoppableThread):
@@ -42,7 +65,9 @@ class TxMempool(StoppableThread):
 
     In addition, chain re-orgs are not handled. If a re-org happens, the
     transactions that we record are not necessarily representative of the
-    pool of valid transactions seen by the miner.
+    pool of valid transactions seen by the miner. Any inference algorithm
+    must be tolerant of such errors, in addition to any other kinds of network
+    errors.
     '''
     # Have to handle RPC errors
 
@@ -51,7 +76,7 @@ class TxMempool(StoppableThread):
         Polls mempool every poll_period seconds until stop flag is set.
         '''
         logger.info("Starting TxMempool")
-        self.best_height, self.entries = proxy.poll_mempool()
+        self.best_height, self.rawmempool = proxy.poll_mempool()
         while not self.is_stopped():
             self.update()
             self.sleep(poll_period)
@@ -63,125 +88,75 @@ class TxMempool(StoppableThread):
 
     def update(self):
         '''Mempool polling function.'''
-        curr_height, entries_new = proxy.poll_mempool()
-        with entries_lock:
+        curr_height, rawmp_new = proxy.poll_mempool()
+        with mempool_lock:
             if curr_height > self.best_height:
+                entries = {txid: MemEntry(rawentry)
+                           for txid, rawentry in self.rawmempool.iteritems()}
                 threading.Thread(
                     target=self.process_blocks,
                     args=(range(self.best_height+1, curr_height+1),
-                          deepcopy(self.entries),
-                          deepcopy(entries_new)),
+                          entries, set(rawmp_new)),
                     name='mempool-processblocks').start()
-                self.entries = entries_new
+                self.rawmempool = rawmp_new
                 self.best_height = curr_height
                 return True
             else:
-                self.entries = entries_new
+                self.rawmempool = rawmp_new
                 return False
 
-    def process_blocks(self, blockheight_range, entries_prev, entries_new,
-                       blocktime=None):
+    def process_blocks(self, blockheight_range, entries, new_entries_ids):
         '''Called when block count has increased.
 
         Records the mempool entries in a MemBlock instance and writes to disk.
-
-        entries is a dict that maps txids to entry objects.
-        entry represents a transaction: the dict that is returned by
-        getrawmempool(verbose=True), plus some additional keys:
-            inblock - whether or not the transaction was included in the block
-            leadtime - difference between block discovery and mempool entry
-                       time of the transaction.
-            feerate - fee (satoshis) per kB of transaction size
-            isconflict - whether or not the transaction is a conflict, meaning
-                         that it was removed from the mempool as a result of
-                         being invalidated by some other transaction in the
-                         block.
+        entries is a dict that maps txids to MemEntry objects.
         '''
         with history_lock:
-            if not blocktime:
-                blocktime = int(time())
             memblocks = []
             for height in blockheight_range:
                 block = proxy.getblock(proxy.getblockhash(height))
-                blocksize = len(block.serialize())
-                blocktxs = [b2lx(tx.GetHash()) for tx in block.vtx]
-                entries = deepcopy(entries_prev)
-
-                num_memtxs_inblock = 0
-                for txid, entry in entries.iteritems():
-                    if txid in blocktxs:
-                        entry['inblock'] = True
-                        num_memtxs_inblock += 1
-                        del entries_prev[txid]
-                    else:
-                        entry['inblock'] = False
-                    entry['leadtime'] = blocktime - entry['time']
-                    entry['feerate'] = int(
-                        entry['fee']*COIN) * 1000 // (entry['size'])
-                    entry['isconflict'] = False
-
-                memblocks.append(
-                    MemBlock(entries, height, blocksize, blocktime))
-
-                # As a measure of our node's connectivity, we want to note the
-                # size of the intersection of set(blocktxs) and
-                # set(entries_prev). If it is low, it means that our node is
-                # not being informed of many transactions.
-                incl_text = 'process_blocks: %d of %d in block %d' % (
-                            num_memtxs_inblock, len(blocktxs)-1, height)
-                logger.info(incl_text)
-                if len(blocktxs) > 1:
-                    incl_ratio = num_memtxs_inblock / float(len(blocktxs) - 1)
-                    if incl_ratio < 0.9:
-                        logger.warning(incl_text)
+                memblocks.append(MemBlock(height, block, entries))
 
             # The set of transactions that were removed from the mempool, yet
             # were not included in a block.
-            conflicts = set(entries_prev) - set(entries_new)
-
+            conflicts = set(entries) - new_entries_ids
             for txid in conflicts:
-                # Assume the conflict was removed after the first block.
-                memblocks[0].entries[txid]['isconflict'] = True
+                # For the first block, label the MemBlock entries that are
+                # conflicts. Assume the conflict was removed after the first
+                # block, so remove them from the remaining blocks.
+                memblocks[0].entries[txid].isconflict = True
                 for memblock in memblocks[1:]:
                     del memblock.entries[txid]
-
             if len(conflicts):
                 logger.warning("process_blocks: %d conflicts removed." %
                                len(conflicts))
 
-            if self and self.is_alive():
+            if self.is_alive():
                 for memblock in memblocks:
                     memblock.write()
 
             return memblocks
 
     def get_entries(self):
-        '''Returns a deepcopy of mempool entries.'''
-        with entries_lock:
-            return deepcopy(self.entries)
+        '''Returns mempool entries.'''
+        if not self.is_alive():
+            raise ValueError("Thread not started yet.")
+        with mempool_lock:
+            entries = {txid: MemEntry(rawentry)
+                       for txid, rawentry in self.rawmempool.iteritems()}
+            return entries
 
 
 class MemBlock(object):
-    '''Info about the mempool state at the time a block was discovered.
+    '''Represents the mempool state at the time a block was discovered.
 
     Instance vars:
-        entries - {txid: entry} dict of mempool entries at block discovery
-                  time. entry is the tx dict returned by
-                  getrawmempool(verbose=True) with additional keys.*
+        entries - {txid: entry} dict of mempool entries just prior to block
+                  discovery time. entry is a MemEntry object.
         height - The block height
         size - The block size in bytes
         time - The block discovery time as recorded by this node
                (not the block timestamp).
-
-        * Additional keys:
-            inblock - whether or not the transaction was included in the block
-            leadtime - difference between block discovery and mempool entry
-                       time of the transaction.
-            feerate - fee (satoshis) per kB of transaction size
-            isconflict - whether or not the transaction is a conflict, meaning
-                         that it was removed from the mempool as a result of
-                         being invalidated by some other transaction in the
-                         block.
 
     Methods:
         write - Write to disk.
@@ -189,11 +164,39 @@ class MemBlock(object):
         get_block_list - Get the list of stored block heights.
     '''
 
-    def __init__(self, entries, blockheight, blocksize, blocktime):
-        self.entries = entries
-        self.height = blockheight
-        self.size = blocksize
-        self.time = blocktime
+    def __init__(self, blockheight=None, block=None, entries=None):
+        '''Label the mempool entries based on the block data.
+
+        We record various block statistics, and for each MemEntry we label
+        inblock and leadtime. See MemEntry docstring for more info.
+        '''
+        if blockheight and block and entries is not None:
+            self.height = blockheight
+            self.size = len(block.serialize())
+            self.time = int(time())
+            self.entries = deepcopy(entries)
+            for entry in self.entries.values():
+                entry.inblock = False
+                entry.isconflict = False
+                entry.leadtime = self.time - entry.time
+
+            blocktxs = [b2lx(tx.GetHash()) for tx in block.vtx]
+            entries_inblock = set(entries) & set(blocktxs)
+            for txid in entries_inblock:
+                self.entries[txid].inblock = True
+                del entries[txid]
+
+            # As a measure of our node's connectivity, we want to note the
+            # size of the intersection of set(blocktxs) and
+            # set(entries_prev). If it is low, it means that our node is
+            # not being informed of many transactions.
+            incl_text = 'MemBlock: %d of %d in block %d' % (
+                len(entries_inblock), len(blocktxs)-1, blockheight)
+            logger.info(incl_text)
+            if len(blocktxs) > 1:
+                incl_ratio = len(entries_inblock) / float(len(blocktxs)-1)
+                if incl_ratio < 0.9:
+                    logger.warning(incl_text)
 
     def write(self, dbfile=history_file, keep_history=keep_history):
         '''Write MemBlock to disk.
@@ -208,24 +211,10 @@ class MemBlock(object):
             db = sqlite3.connect(dbfile)
             if not db_exists:
                 with db:
-                    db.execute(
-                        'CREATE TABLE blocks '
-                        '(height INTEGER UNIQUE, size INTEGER, time REAL)')
-                    db.execute(
-                        'CREATE TABLE txs ('
-                        'blockheight INTEGER,'
-                        'txid TEXT,'
-                        'size INTEGER,'
-                        'fee TEXT,'
-                        'startingpriority TEXT,'
-                        'currentpriority TEXT,'
-                        'time INTEGER,'
-                        'height INTEGER,'
-                        'depends TEXT,'
-                        'feerate INTEGER,'
-                        'leadtime INTEGER,'
-                        'isconflict INTEGER,'
-                        'inblock INTEGER)')
+                    for key, val in MEMBLOCK_TABLE_SCHEMA.items():
+                        db.execute('CREATE TABLE %s (%s)' %
+                                   (key, ','.join(val)))
+
             db.execute('CREATE INDEX IF NOT EXISTS heightidx '
                        'ON txs (blockheight)')
             with db:
@@ -233,21 +222,8 @@ class MemBlock(object):
                            (self.height, self.size, self.time))
                 db.executemany(
                     'INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                    [(
-                        self.height,
-                        txid,
-                        entry['size'],
-                        str(entry['fee']),
-                        str(entry['startingpriority']),
-                        str(entry['currentpriority']),
-                        entry['time'],
-                        entry['height'],
-                        ','.join(entry['depends']),
-                        entry['feerate'],
-                        entry['leadtime'],
-                        entry['isconflict'],
-                        entry['inblock'])
-                        for txid, entry in self.entries.iteritems()])
+                    [(self.height, txid) + entry._get_attr_tuple()
+                     for txid, entry in self.entries.iteritems()])
             if keep_history > 0:
                 history_limit = self.height - keep_history
                 with db:
@@ -278,8 +254,13 @@ class MemBlock(object):
                 return None
             txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
                                 (blockheight,))
-            entries = {tx[1]: _load_entries(tx[2:]) for tx in txlist}
-            return cls(entries, blockheight, blocksize, blocktime)
+            memblock = cls()
+            memblock.height = blockheight
+            memblock.size = blocksize
+            memblock.time = blocktime
+            memblock.entries = {
+                tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
+            return memblock
         except:
             logger.exception("MemBlock: Unable to read history.")
             return None
@@ -301,12 +282,86 @@ class MemBlock(object):
                 db.close()
 
     def __repr__(self):
-        return "MemBlock{height: %d, size: %d, num entries: %d" % (
+        return "MemBlock{height: %d, size: %d, num entries: %d}" % (
             self.height, self.size, len(self.entries))
 
     def __eq__(self, other):
         if not isinstance(other, MemBlock):
             return False
+        return self.__dict__ == other.__dict__
+
+
+class MemEntry(object):
+    '''Represents a mempool entry.
+
+    This is basically the data returned by getrawmempool, but with additional
+    attributes if it is part of a MemBlock:
+        inblock - whether or not the transaction was included in the block
+        leadtime - difference between block discovery time and mempol entry
+                   time
+        isconflict - whether or not the transaction is a conflict, meaning
+                     that it was removed from the mempool as a result of
+                     being invalidated by some other transaction in the
+                     block.
+    In addition, for convenience we compute and store the feerate (satoshis
+    per kB of transaction size)
+    '''
+    def __init__(self, rawmempool_entry=None):
+        if rawmempool_entry:
+            self.size = rawmempool_entry['size']
+            self.fee = rawmempool_entry['fee']
+            self.startingpriority = rawmempool_entry['startingpriority']
+            self.currentpriority = rawmempool_entry['currentpriority']
+            self.time = rawmempool_entry['time']
+            self.height = rawmempool_entry['height']
+            self.depends = rawmempool_entry['depends'][:]
+
+            # Additional fields
+            self.feerate = int(self.fee*COIN) * 1000 // self.size
+            self.leadtime = None
+            self.isconflict = None
+            self.inblock = None
+
+    def _get_attr_tuple(self):
+        for attr in ['leadtime', 'isconflict', 'inblock']:
+            if getattr(self, attr) is None:
+                raise ValueError("MemEntry not yet processed with MemBlock.")
+        attr_tuple = (
+            self.size,
+            str(self.fee),
+            str(self.startingpriority),
+            str(self.currentpriority),
+            self.time,
+            self.height,
+            ','.join(self.depends),
+            self.feerate,
+            self.leadtime,
+            self.isconflict,
+            self.inblock
+        )
+        return attr_tuple
+
+    @classmethod
+    def _from_attr_tuple(cls, tup):
+        m = cls()
+
+        (m.size, m.fee, m.startingpriority, m.currentpriority,
+         m.time, m.height, m.depends, m.feerate, m.leadtime,
+         m.isconflict, m.inblock) = tup
+
+        m.fee = decimal.Decimal(m.fee)
+        m.currentpriority = decimal.Decimal(m.currentpriority)
+        m.startingpriority = decimal.Decimal(m.startingpriority)
+        m.depends = m.depends.split(',') if m.depends else []
+        m.isconflict = bool(m.isconflict)
+        m.inblock = bool(m.inblock)
+
+        return m
+
+    def __repr__(self):
+        return str(self.__dict__)
+
+    def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
 
@@ -318,29 +373,6 @@ def check_missed_blocks(start, end):
           (len(missed_blocks), end-start))
 
     return missed_blocks
-
-
-def decimal_default(obj):
-    if isinstance(obj, decimal.Decimal):
-        return str(obj)
-    raise TypeError
-
-
-def _load_entries(data):
-    entry = {
-        'size': data[0],
-        'fee': decimal.Decimal(data[1]),
-        'startingpriority': decimal.Decimal(data[2]),
-        'currentpriority': decimal.Decimal(data[3]),
-        'time': data[4],
-        'height': data[5],
-        'depends': data[6].split(',') if data[6] else [],
-        'feerate': data[7],
-        'leadtime': data[8],
-        'isconflict': bool(data[9]),
-        'inblock': bool(data[10])
-    }
-    return entry
 
 
 # class LoadHistory(object):
