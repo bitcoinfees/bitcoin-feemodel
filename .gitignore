@@ -1,8 +1,9 @@
-*_.*
+*_
 *.pyc
 *.ipynb
 *.log
 *-info
 *.swp
 feemodel/installinfo.py
+tests/data/archive
 venv

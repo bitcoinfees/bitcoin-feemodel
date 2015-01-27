@@ -1,4 +1,7 @@
-import os, sys, shutil
+import os
+import sys
+import shutil
+import json
 from setuptools import setup, find_packages
 from appdirs import user_data_dir
 
@@ -19,6 +22,7 @@ else:
 
 # We must run git submodule init and update
 shutil.copyfile('knownpools/pools.json', os.path.join(datadir, 'pools.json'))
+shutil.copyfile('./config.ini', os.path.join(datadir, 'config.ini'))
 
 # We must require plotly and also specify plotly account
 setup(

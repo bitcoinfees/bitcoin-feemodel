@@ -297,7 +297,7 @@ class MemEntry(object):
     This is basically the data returned by getrawmempool, but with additional
     attributes if it is part of a MemBlock:
         inblock - whether or not the transaction was included in the block
-        leadtime - difference between block discovery time and mempol entry
+        leadtime - difference between block discovery time and mempool entry
                    time
         isconflict - whether or not the transaction is a conflict, meaning
                      that it was removed from the mempool as a result of

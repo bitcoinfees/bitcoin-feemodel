@@ -1,4 +1,6 @@
+from math import sqrt, cos, exp, log, pi
 from bisect import bisect
+from random import random
 
 
 class SimTx(object):
@@ -15,25 +17,45 @@ class SimTx(object):
             self.txid, self.size, self.feerate)
 
 
-class SimpleTxSource(object):
-    def __init__(self, txsize, txfeerate, txrate):
-        self.txsize = txsize
-        self.txfeerate = txfeerate
+class TxSource(object):
+    def __init__(self, txsample, txrate):
+        self.txsample = txsample
         self.txrate = txrate
 
-    def generate_txs(self, time_interval, cutoff=0):
-        if self.txfeerate >= cutoff:
-            return [SimTx('', self.txsize, self.txfeerate)
-                    for i in range(int(self.txrate*time_interval))]
-        else:
-            return []
+    def generate_txs(self, time_interval):
+        k = poisson_sample(self.txrate*time_interval)
+        n = len(self.txsample)
 
-    def get_byterates(self, feepoints):
-        byterates = [0.]*len(feepoints)
-        fee_idx = bisect(feepoints, self.txfeerate)
-        if fee_idx > 0:
-            byterates[fee_idx-1] = self.txrate*self.txsize
+        return [self.txsample[int(random()*n)] for i in range(k)]
+
+    def get_byterates(self, feerates):
+        n = float(len(self.txsample))
+        byterates = [0.]*len(feerates)
+        for tx in self.txsample:
+            fee_idx = bisect(feerates, tx.feerate)
+            if fee_idx > 0:
+                byterates[fee_idx-1] += self.txrate*tx.size/n
         return byterates
 
-    def get_feepoints(self):
-        return [self.txfeerate]
+
+def poisson_sample(l):
+    # http://en.wikipedia.org/wiki/Poisson_distribution
+    # #Generating_Poisson-distributed_random_variables
+    if l > 30:
+        return int(round(poisson_approx(l)))
+    L = exp(-l)
+    k = 0
+    p = 1
+    while p > L:
+        k += 1
+        p *= random()
+    return k - 1
+
+
+def poisson_approx(l):
+    # box-muller
+    u = random()
+    v = random()
+
+    z = sqrt(-2*log(u))*cos(2*pi*v)
+    return z*sqrt(l) + l
