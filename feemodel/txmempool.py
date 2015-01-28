@@ -6,10 +6,10 @@ import logging
 from time import time
 from copy import deepcopy
 
-from bitcoin.core import COIN, b2lx
+from bitcoin.core import b2lx
 
 from feemodel.config import config, history_file
-from feemodel.util import proxy, StoppableThread
+from feemodel.util import proxy, StoppableThread, get_feerate
 
 history_lock = threading.Lock()
 mempool_lock = threading.Lock()
@@ -317,7 +317,7 @@ class MemEntry(object):
             self.depends = rawmempool_entry['depends'][:]
 
             # Additional fields
-            self.feerate = int(self.fee*COIN) * 1000 // self.size
+            self.feerate = get_feerate(rawmempool_entry)
             self.leadtime = None
             self.isconflict = None
             self.inblock = None

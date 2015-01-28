@@ -13,6 +13,7 @@ except ImportError:
 
 from bitcoin.rpc import Proxy, JSONRPCException
 from bitcoin.wallet import CBitcoinAddress, CBitcoinAddressError
+from bitcoin.core import COIN
 
 
 logger = logging.getLogger(__name__)
@@ -225,6 +226,13 @@ def get_block_timestamp(blockheight):
     '''Get the timestamp of a block specified by height.'''
     block = proxy.getblock(proxy.getblockhash(blockheight))
     return block.nTime
+
+
+def get_feerate(rawentry):
+    '''Return the feerate of a mempool entry.
+    rawentry is the dict returned by getrawmempool(verbose=True).
+    '''
+    return int(rawentry['fee']*COIN) * 1000 // rawentry['size']
 
 
 def round_random(f):

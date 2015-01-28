@@ -14,12 +14,8 @@ class SimTx(object):
             txid = ''
         self._txid = txid
 
-    @classmethod
-    def from_simtx(cls, simtx):
-        # may not need this.
-        newtx = copy(simtx)
-        newtx.depends = newtx.depends[:]
-        return newtx
+    def __copy__(self):
+        return SimTx(self.size, self.feerate, self._txid, copy(self.depends))
 
     def __cmp__(self, other):
         return cmp(self.feerate, other.feerate)
@@ -48,6 +44,15 @@ class TxSource(object):
             if fee_idx > 0:
                 byterates[fee_idx-1] += self.txrate*tx.size/n
         return byterates
+
+
+class TxSourceCopy(TxSource):
+    # This is so slow :(
+    def generate_txs(self, time_interval):
+        k = poisson_sample(self.txrate*time_interval)
+        n = len(self.txsample)
+
+        return [copy(self.txsample[int(random()*n)]) for i in range(k)]
 
 
 def poisson_sample(l):
