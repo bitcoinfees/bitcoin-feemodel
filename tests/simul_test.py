@@ -2,6 +2,9 @@ import unittest
 from pprint import pprint
 from collections import Counter
 from copy import copy
+
+from feemodel.util import proxy
+from feemodel.txmempool import MemEntry
 from feemodel.simul import Pool, Pools, Simul, SimTx, TxSource
 
 init_pools = {
@@ -79,14 +82,31 @@ class TxSourceTests(unittest.TestCase):
             self.assertLess(diff, 10)
 
 
-# #class SimpleSimul(unittest.TestCase):
-# #    def test_basic(self):
-# #        miner = SimpleMiner(1000000, 1000)
-# #        tx_source = SimpleTxSource(640, 11000, 1.1)
-# #        sim = Simul(miner, tx_source)
-# #        sim.steady_state(maxtime=5)
+class SimTest(unittest.TestCase):
+    def setUp(self):
+        self.tx_source = copy(tx_source)
+        self.tx_source.txrate = 1.1
+        self.sim = Simul(pools, self.tx_source)
+        rawmempool = proxy.getrawmempool(verbose=True)
+        self.entries = {txid: MemEntry(rawentry)
+                        for txid, rawentry in rawmempool.items()}
 
+    def test_basic(self):
+        stat = self.sim.steady_state(maxiters=2016)
+        stat.print_stats()
 
+    def test_initmempool(self):
+        print("Steady-state with mempool init")
+        print("%d initial mempool entries." % len(entries))
+        stat = self.sim.steady_state(maxiters=2016, mempool=self.entries)
+        stat.print_stats()
+
+    def test_transient(self):
+        stat = self.sim.transient({}, maxtime=5)
+        stat.print_stats()
+
+        stat = self.sim.transient(self.entries, maxtime=5)
+        stat.print_stats()
 
 if __name__ == '__main__':
     unittest.main()

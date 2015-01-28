@@ -5,6 +5,7 @@ from math import ceil
 from contextlib import contextmanager
 from random import random
 from functools import wraps
+from time import time
 try:
     import cPickle as pickle
 except ImportError:
@@ -57,6 +58,7 @@ class StoppableThread(threading.Thread):
 
 class BlockingProxy(Proxy):
     '''Thread-safe version of bitcoin.rpc.Proxy.'''
+
     def __init__(self):
         super(BlockingProxy, self).__init__()
         self.rlock = threading.RLock()
@@ -67,10 +69,10 @@ class BlockingProxy(Proxy):
 
 
 class BatchProxy(BlockingProxy):
-    '''Provides a method for making batch RPC calls.'''
+    '''Proxy with batch calls.'''
 
     def poll_mempool(self):
-        '''Polls mempool in batch mode.
+        '''Polls mempool for block count and mempool entries.
 
         Sends getblockcount and getrawmempool requests in batch mode to
         minimize the probability of a race condition in the block count.
@@ -238,12 +240,11 @@ def round_random(f):
 def interpolate(x0, x, y):
     '''Linear interpolation of y = f(x) at x0.
 
-     Function f is specified by lists x and y.
-     x is assumed to be sorted and one-to-one.
+     x is assumed sorted.
 
      Returns:
         y0 - Interpolated value of the function. If x0 is outside of the
-             domain specified by x, then return the boundary values.
+             range of x, then return the boundary values.
 
         idx - The unique value such that x[idx-1] <= x0 < x[idx],
               if it exists. Otherwise idx = 0 if x0 < all values in x,
@@ -273,6 +274,24 @@ def try_wrap(fn):
         except Exception:
             logger.exception('try_wrap exception')
     return nicetry
+
+
+def itertimer(maxiters, maxtime, stopflag):
+    '''Generator function which iterates till specified limits.
+
+    maxiters - max number of iterations
+    maxtime - max time in seconds that should be spent on the iteration
+    stopflag - threading.Event() object. Stop iteration immediately if this
+               is set.
+    '''
+    starttime = time()
+    for i in xrange(maxiters):
+        if stopflag and stopflag.is_set():
+            raise ValueError("Iteration stopped.")
+        elapsedtime = time() - starttime
+        if elapsedtime > maxtime:
+            break
+        yield i, elapsedtime
 
 
 proxy = BatchProxy()

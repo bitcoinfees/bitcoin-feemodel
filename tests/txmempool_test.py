@@ -77,6 +77,9 @@ class ProcessBlocksTest(unittest.TestCase):
                                        self.test_blockheight+1)
 
         self.entries = deepcopy(self.memblock.entries)
+        for entry in self.entries.values():
+            entry.isconflict = None
+            entry.inblock = None
 
     def test_process_blocks(self):
         processed_memblock = TxMempool.process_blocks(

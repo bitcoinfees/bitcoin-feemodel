@@ -1,4 +1,4 @@
-from random import expovariate, random
+from random import random
 from math import log, exp
 from copy import copy
 from bisect import bisect_left
@@ -175,19 +175,3 @@ class PoolCapacity(object):
         for f in feerates:
             self.caps[f][1] = residualcap if f >= self.minfeerate else 0.
             residualcap = max(self.caps[f][1] - self.caps[f][0], 0)
-
-
-# #class PoolsCapacity(object):
-# #    def __init__(self, feerates, tx_byterates, capacities):
-# #        if feerates[0] != 0:
-# #            raise ValueError("First feerate must be 0.")
-# #        self.feerates = feerates
-# #        self.tx_byterates = tx_byterates
-# #        self.capacities = capacities
-# #
-# #        # Consistency checks
-# #        for idx in range(1, len(self.feerates)):
-# #            if self.capacities[idx-1] > (
-# #                    self.capacities[idx]-self.tx_byterates[idx]):
-# #                raise ValueError("Capacities are not "
-# #                                 "consistent with byterates.")

@@ -4,7 +4,8 @@ class QueueStats(object):
 
     def next_block(self, blockheight, blockinterval, stranding_feerate):
         for queueclass in self.stats:
-            queueclass.next_block(blockheight, blockinterval, stranding_feerate)
+            queueclass.next_block(blockheight, blockinterval,
+                                  stranding_feerate)
 
 
 class QueueClass(object):
