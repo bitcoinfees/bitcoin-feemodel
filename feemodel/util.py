@@ -139,8 +139,8 @@ class DataSample(object):
         mean_interval - 95% confidence interval for the sample mean, using a
                         normal approximation.
         '''
-        if not self.n:
-            raise ValueError("No datapoints.")
+        if self.n < 2:
+            raise ValueError("Need at least 2 datapoints.")
         self.mean = float(sum(self.datapoints)) / self.n
         variance = (sum([(d - self.mean)**2 for d in self.datapoints]) /
                     (self.n - 1))
@@ -285,13 +285,14 @@ def itertimer(maxiters, maxtime, stopflag):
                is set.
     '''
     starttime = time()
-    for i in xrange(maxiters):
-        if stopflag and stopflag.is_set():
-            raise ValueError("Iteration stopped.")
+    i = 0
+    while True:
         elapsedtime = time() - starttime
-        if elapsedtime > maxtime:
+        if stopflag and stopflag.is_set() or (
+                elapsedtime > maxtime or i >= maxiters):
             break
         yield i, elapsedtime
+        i += 1
 
 
 proxy = BatchProxy()

@@ -375,6 +375,17 @@ def check_missed_blocks(start, end):
     return missed_blocks
 
 
+def get_mempool_size(minfeerate):
+    '''Get size of mempool.
+
+    Returns size of mempool in bytes for all transactions that have a feerate
+    >= minfeerate.
+    '''
+    rawmempool = proxy.getrawmempool(verbose=True)
+    txs = [MemEntry(entry) for entry in rawmempool.values()]
+    return sum([tx.size for tx in txs if tx.feerate >= minfeerate])
+
+
 # class LoadHistory(object):
 #     def __init__(self, dbfile=historyFile):
 #         self.fns = []

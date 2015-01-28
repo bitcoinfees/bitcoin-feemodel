@@ -16,10 +16,11 @@ class Pools(object):
     def next_block(self):
         poolidx = bisect_left(self._poolsidx, random())
         name, pool = self._pools_sorted[poolidx]
-        return pool.maxblocksize, pool.minfeerate
+        return name, pool.maxblocksize, pool.minfeerate
 
     def calc_capacities(self, tx_source, blockrate):
         mfrs = sorted(set([pool.minfeerate for pool in self._pools.values()]))
+        mfrs = filter(lambda fee: fee < float("inf"), mfrs)
         mfrs.insert(0, 0)
         tx_byterates = tx_source.get_byterates(mfrs)
         pool_caps = {
@@ -48,19 +49,25 @@ class Pools(object):
 
         return Capacity(mfrs, tx_byterates, pool_caps)
 
-    def update(self, pools_dict):
-        self._pools.update(pools_dict)
+    def update(self, pools):
+        self._pools.update({name: copy(pool) for name, pool in pools.items()})
         self._calc_idx()
 
     def remove(self, poolname):
         try:
             del self._pools[poolname]
         except KeyError:
-            raise KeyError("No such pool.")
+            raise KeyError("%s: no such pool." % poolname)
         self._calc_idx()
 
-    def getpools(self):
-        return {name: copy(pool) for name, pool in self}
+    def get(self, poolname):
+        try:
+            return copy(self._pools[poolname])
+        except KeyError:
+            raise KeyError("%s: no such pool." % poolname)
+
+    def getall(self):
+        return dict(self)
 
     def print_pools(self):
         poolitems = sorted(self._pools.items(),
@@ -82,7 +89,10 @@ class Pools(object):
                   maxblocksizes[idx], minfeerates[idx]))
 
     def __iter__(self):
-        return self._pools.iteritems()
+        def poolgen():
+            for name, pool in self._pools.iteritems():
+                yield name, copy(pool)
+        return poolgen()
 
     def __repr__(self):
         elogp = sum([p.proportion*log(p.proportion)

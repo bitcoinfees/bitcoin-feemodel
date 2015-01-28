@@ -1,20 +1,32 @@
 from math import sqrt, cos, exp, log, pi
 from bisect import bisect
 from random import random
+from copy import copy
 
 
 class SimTx(object):
-    def __init__(self, txid, size, feerate):
-        self.txid = txid
+    def __init__(self, size, feerate, txid=None, depends=None):
         self.size = size
         self.feerate = feerate
+        self.depends = depends
+        if txid is None:
+            assert depends is None
+            txid = ''
+        self._txid = txid
+
+    @classmethod
+    def from_simtx(cls, simtx):
+        # may not need this.
+        newtx = copy(simtx)
+        newtx.depends = newtx.depends[:]
+        return newtx
 
     def __cmp__(self, other):
         return cmp(self.feerate, other.feerate)
 
     def __repr__(self):
-        return "SimTx{txid: %s, size: %d, feerate: %d}" % (
-            self.txid, self.size, self.feerate)
+        return "SimTx{txid: %s, size: %d, feerate: %d, depends: %s}" % (
+            self.txid, self.size, self.feerate, self.depends)
 
 
 class TxSource(object):
