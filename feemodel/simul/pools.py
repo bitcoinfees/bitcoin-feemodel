@@ -2,9 +2,11 @@ from random import random
 from math import log, exp
 from copy import copy
 from bisect import bisect_left
+from feemodel.util import Table
 
 
-class Pools(object):
+# Change the structure to match PoolsEstimator: dump all the 'get' stuff
+class SimPools(object):
     def __init__(self, init_pools=None):
         self._pools = {}
         self._poolsidx = []
@@ -72,21 +74,14 @@ class Pools(object):
     def print_pools(self):
         poolitems = sorted(self._pools.items(),
                            key=lambda p: p[1], reverse=True)
-        names = [name for name, pool in poolitems]
-        maxblocksizes = [str(pool.maxblocksize) for name, pool in poolitems]
-        minfeerates = [str(pool.minfeerate) for name, pool in poolitems]
-        proportions = [pool.proportion for name, pool in poolitems]
-
-        namefmt = '%' + str(max([len(name) for name in names])) + 's\t'
-        mbsfmt = '%' + str(max([len(mbs) for mbs in maxblocksizes])) + 's\t'
-        mfrfmt = '%' + str(max([len(mfr) for mfr in minfeerates])) + 's\t'
-
-        print((namefmt + '%5s\t' + mbsfmt + mfrfmt) %
-              ('Name', 'Prop', 'MBS', 'MFR'))
-        for idx in range(len(poolitems)):
-            print((namefmt + '%5.2f\t' + mbsfmt + mfrfmt) %
-                  (names[idx], proportions[idx],
-                  maxblocksizes[idx], minfeerates[idx]))
+        maxnamelen = max([len(name) for name, pool in poolitems])
+        colwidths = (maxnamelen, 10.2, 10, 10.0)
+        coltypes = 'sfdf'
+        table = Table(colwidths, coltypes)
+        table.print_header("Name", "Prop", "MBS", "MFR")
+        for name, pool in poolitems:
+            table.print_row(name, pool.proportion,
+                            pool.maxblocksize, pool.minfeerate)
 
     def __iter__(self):
         def poolgen():
@@ -98,7 +93,7 @@ class Pools(object):
         elogp = sum([p.proportion*log(p.proportion)
                      for p in self._pools.values()])
         numeffpools = exp(elogp)
-        return "Pools{Num: %d, NumEffective: %.2f}" % (
+        return "SimPools{Num: %d, NumEffective: %.2f}" % (
             len(self._pools), numeffpools)
 
     def _calc_idx(self):
@@ -109,6 +104,8 @@ class Pools(object):
                            key=lambda p: p[1], reverse=True)
         p = 0.
         for name, pool in poolitems:
+            for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
+                assert getattr(pool, attr) > 0
             p += pool.proportion
             self._poolsidx.append(p)
             self._pools_sorted.append((name, pool))
@@ -124,11 +121,8 @@ class Pools(object):
             pool.proportion = pool.hashrate / totalhashrate
 
 
-class Pool(object):
+class SimPool(object):
     def __init__(self, hashrate, maxblocksize, minfeerate):
-        assert hashrate > 0
-        assert maxblocksize > 0
-        assert minfeerate > 0
         self.hashrate = hashrate
         self.maxblocksize = maxblocksize
         self.minfeerate = minfeerate
@@ -138,7 +132,7 @@ class Pool(object):
         return cmp(self.hashrate, other.hashrate)
 
     def __repr__(self):
-        return ("Pool{hashrate: %.2f, maxblocksize: %d, minfeerate: %d}" %
+        return ("SimPool{hashrate: %.2f, maxblocksize: %d, minfeerate: %.0f}" %
                 (self.hashrate, self.maxblocksize, self.minfeerate))
 
 
@@ -165,10 +159,13 @@ class Capacity(object):
         return stablefeerate
 
     def print_caps(self):
-        print("Feerate\tTxRate\tCapacity")
+        colwidths = (10, 10.2, 10.2)
+        coltypes = 'dff'
+        table = Table(colwidths, coltypes)
+        table.print_header("Feerate", "TxRate", "Capacity")
         for idx in range(len(self.feerates)):
-            print("%d\t%.1f\t%.1f" %
-                  (self.feerates[idx], self.tx_byterates[idx], self.caps[idx]))
+            table.print_row(
+                self.feerates[idx], self.tx_byterates[idx], self.caps[idx])
 
 
 class PoolCapacity(object):

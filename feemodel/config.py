@@ -27,5 +27,5 @@ except Exception as e:
 # logFile = os.path.join(datadir, 'debug.log')
 
 history_file = os.path.join(datadir, config.get('txmempool', 'history_file'))
-pool_info_file = os.path.join(datadir, 'pools.json')
+poolinfo_file = os.path.join(datadir, 'pools.json')
 

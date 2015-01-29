@@ -25,21 +25,21 @@ def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
         remove_zero_fee - remove all transactions which have zero fee
     '''
     try:
-        min_leadtime = min([entry['leadtime']
+        min_leadtime = min([entry.leadtime
                             for entry in memblock.entries.itervalues()
-                            if entry['inblock']])
+                            if entry.inblock])
     except ValueError:
         # No memblock entries are inblock
         min_leadtime = 0
 
     txs = [
-        (entry['feerate'], entry['inblock'])
+        (entry.feerate, entry.inblock)
         for entry in memblock.entries.itervalues()
         if _deps_check(entry, memblock.entries, remove_depped) and
-        entry['leadtime'] >= min_leadtime and
-        not entry.get('isconflict') and
-        (entry['feerate'] if remove_zero_fee else True) and
-        (entry['currentpriority'] < 57.6e6 if remove_high_priority else True)]
+        entry.leadtime >= min_leadtime and
+        not entry.isconflict and
+        (entry.feerate if remove_zero_fee else True) and
+        (entry.currentpriority < 57.6e6 if remove_high_priority else True)]
 
     return txs
 
@@ -138,6 +138,6 @@ def bootstrap_sample(txs):
 
 def _deps_check(entry, entries, remove_depped=False):
     if remove_depped:
-        return not entry['depends']
-    deps = [entries.get(dep_id) for dep_id in entry['depends']]
-    return all([dep['inblock'] if dep else True for dep in deps])
+        return not entry.depends
+    deps = [entries.get(dep_id) for dep_id in entry.depends]
+    return all([dep.inblock if dep else True for dep in deps])

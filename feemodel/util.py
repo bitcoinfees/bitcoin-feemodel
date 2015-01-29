@@ -176,6 +176,27 @@ class DataSample(object):
             self.n, self.mean, self.std, self.mean_interval)
 
 
+class Table(object):
+    def __init__(self, colwidths, coltypes, justifs=None):
+        self.colwidths = colwidths
+        self.coltypes = coltypes
+        self.justifs = justifs if justifs else '>'*len(self.colwidths)
+
+    def print_header(self, *colnames):
+        s = ''
+        for just, colwidth, coltype in zip(self.justifs, self.colwidths,
+                                           self.coltypes):
+            s += '{:' + just + str(int(colwidth)) + 's}'
+        print(s.format(*colnames))
+
+    def print_row(self, *colvals):
+        s = ''
+        for just, colwidth, coltype in zip(self.justifs, self.colwidths,
+                                           self.coltypes):
+            s += '{:' + just + str(colwidth) + coltype + '}'
+        print(s.format(*colvals))
+
+
 def save_obj(obj, filename):
     '''Convenience function to pickle an object to disk.'''
     with open(filename, 'wb') as f:
@@ -213,8 +234,10 @@ def get_coinbase_info(blockheight=None, block=None):
     for output in coinbase_tx.vout:
         try:
             addr = str(CBitcoinAddress.from_scriptPubKey(output.scriptPubKey))
-        except CBitcoinAddressError:
+        except (CBitcoinAddressError, ValueError):
             addr = None
+        else:
+            addr = addr.decode('ascii')
         addresses.append(addr)
 
     tag = str(coinbase_tx.vin[0].scriptSig).decode('utf-8', 'ignore')

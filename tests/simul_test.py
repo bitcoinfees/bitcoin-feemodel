@@ -5,13 +5,13 @@ from copy import copy
 
 from feemodel.util import proxy
 from feemodel.txmempool import MemEntry
-from feemodel.simul import Pool, Pools, Simul, SimTx, TxSource
+from feemodel.simul import SimPool, SimPools, Simul, SimTx, SimTxSource
 from feemodel.simul.simul import steadystate, transient
 
 init_pools = {
-    'pool0': Pool(0.2, 500000, 20000),
-    'pool1': Pool(0.3, 750000, 10000),
-    'pool2': Pool(0.5, 1000000, 1000)
+    'pool0': SimPool(0.2, 500000, 20000),
+    'pool1': SimPool(0.3, 750000, 10000),
+    'pool2': SimPool(0.5, 1000000, 1000)
 }
 
 txsample = [
@@ -22,8 +22,8 @@ txrate = 1.1
 avgtxbyterate = sum([tx.size for tx in txsample])/float(len(txsample))*txrate
 blockrate = 1./600
 
-pools = Pools(init_pools=init_pools)
-tx_source = TxSource(txsample, txrate)
+pools = SimPools(init_pools=init_pools)
+tx_source = SimTxSource(txsample, txrate)
 
 rawmempool = proxy.getrawmempool(verbose=True)
 print("Mempool size is %d" %
@@ -80,7 +80,7 @@ class TxSourceTests(unittest.TestCase):
         self.txrate = len(tx_gen) / t
         diff = abs(self.txrate - txrate)
         self.assertLess(diff, 0.05)
-        source = TxSource(tx_gen, self.txrate)
+        source = SimTxSource(tx_gen, self.txrate)
         tx_byterates = source.get_byterates(self.feerates)
         for idx in range(len(self.tx_byterates)):
             diff = abs(self.tx_byterates[idx] - tx_byterates[idx])
@@ -158,6 +158,11 @@ class TransientTest(unittest.TestCase):
             entry.depends = []
             entry.feerate = 100000
         stats = transient(self.entries, pools, self.tx_source, maxtime=10)
+        stats.print_stats()
+
+    def test_stopflag(self):
+        print("Stop test with normal mempool")
+        stats = transient(self.entries, pools, self.tx_source, maxiters=500)
         stats.print_stats()
 
 

@@ -25,7 +25,7 @@ class SimTx(object):
             self.txid, self.size, self.feerate, self.depends)
 
 
-class TxSource(object):
+class SimTxSource(object):
     def __init__(self, txsample, txrate):
         self.txsample = txsample
         self.txrate = txrate
@@ -46,7 +46,7 @@ class TxSource(object):
         return byterates
 
 
-class TxSourceCopy(TxSource):
+class TxSourceCopy(SimTxSource):
     # This is so slow :(
     def generate_txs(self, time_interval):
         k = poisson_sample(self.txrate*time_interval)
