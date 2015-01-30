@@ -73,7 +73,7 @@ class BatchProxy(BlockingProxy):
     '''Proxy with batch calls.'''
 
     def poll_mempool(self):
-        '''Polls mempool for block count and mempool entries.
+        '''Polls Bitcoin Core for block count and mempool entries.
 
         Sends getblockcount and getrawmempool requests in batch mode to
         minimize the probability of a race condition in the block count.

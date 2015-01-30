@@ -1,6 +1,7 @@
 import logging
 import warnings
 import json
+from time import time
 from feemodel.config import poolinfo_file, history_file
 from feemodel.util import get_coinbase_info, Table
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
@@ -28,7 +29,7 @@ class PoolEstimate(SimPool):
         for height in self.blockheights:
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            memblock = MemBlock.read(height, dbfile)
+            memblock = MemBlock.read(height, dbfile=dbfile)
             if memblock is None:
                 continue
             blocktxs = [tx for tx in memblock.entries.values()
@@ -100,11 +101,15 @@ class PoolsEstimator(SimPools):
     def update(self):
         super(self.__class__, self).update(self.pools)
 
-    def start(self, blockrangetuple, dbfile=history_file):
-        logger.info("Beginning pool estimation.")
-        self.id_blocks(blockrangetuple)
-        self.estimate_pools(dbfile=dbfile)
+    def start(self, blockrangetuple, stopflag=None, dbfile=history_file):
+        logger.info("Beginning pool estimation "
+                    "from blockrange({}, {})".format(*blockrangetuple))
+        starttime = time()
+        self.id_blocks(blockrangetuple, stopflag=stopflag)
+        self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
         self.update()
+        logger.info("Finished pool estimation in %.2f seconds." %
+                    (time()-starttime))
 
     def id_blocks(self, blockrangetuple, stopflag=None):
         for height in range(*blockrangetuple):
@@ -169,7 +174,6 @@ class PoolsEstimator(SimPools):
             pool.estimate_params(stopflag=stopflag, dbfile=dbfile)
             logger.info("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool
-        logger.info("Finished estimating pools.")
 
     def get_bestheight(self):
         return max(self.blockmap)

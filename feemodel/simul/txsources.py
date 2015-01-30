@@ -2,6 +2,7 @@ from math import sqrt, cos, exp, log, pi
 from bisect import bisect
 from random import random
 from copy import copy
+from feemodel.util import DataSample
 
 
 class SimTx(object):
@@ -30,12 +31,14 @@ class SimTxSource(object):
         self.txrate = txrate
 
     def generate_txs(self, time_interval):
+        # This will raise an IndexError if the sample size is zero.
         k = poisson_sample(self.txrate*time_interval)
         n = len(self.txsample)
 
         return [self.txsample[int(random()*n)] for i in range(k)]
 
     def get_byterates(self, feerates):
+        '''Get byterates as a function of feerate.'''
         n = float(len(self.txsample))
         byterates = [0.]*len(feerates)
         for tx in self.txsample:
@@ -43,6 +46,32 @@ class SimTxSource(object):
             if fee_idx > 0:
                 byterates[fee_idx-1] += self.txrate*tx.size/n
         return byterates
+
+    def calc_mean_byterate(self):
+        '''Calculate the mean byterate.
+
+        Returns the mean byterate with its standard error, computed using
+        bootstrap resampling.
+        '''
+        n = len(self.txsample)
+
+        def _calc_single(txsample):
+            return sum([tx.size for tx in txsample])*self.txrate/float(n)
+
+        mean_byterate = _calc_single(self.txsample)
+        bootstrap_ests = DataSample()
+        for i in range(1000):
+            txsample = [self.txsample[int(random()*n)] for idx in range(n)]
+            bootstrap_ests.add_datapoints([_calc_single(txsample)])
+
+        bootstrap_ests.calc_stats()
+        std = bootstrap_ests.std
+
+        return mean_byterate, std
+
+    def __repr__(self):
+        return "SimTxSource{{samplesize: {}, txrate: {}}}".format(
+            len(self.txsample), self.txrate)
 
 
 class TxSourceCopy(SimTxSource):

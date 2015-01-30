@@ -1,5 +1,4 @@
 import unittest
-from pprint import pprint
 from collections import Counter
 from copy import copy
 
@@ -109,13 +108,25 @@ class BasicSimTest(unittest.TestCase):
         self.sim.run(self.my_initmemcb, mempool=self.entries, maxiters=50)
         self.sim.cap.print_caps()
 
+    def test_degenerate_pools(self):
+        self.init_pools = {'pool0': SimPool(1, 0, float("inf")),
+                           'pool1': SimPool(1, 0, 0)}
+        # Raises ValueError because not enough capacity.
+        self.assertRaises(ValueError, Simul, SimPools(self.init_pools),
+                          self.tx_source)
+        self.init_pools.update({'pool2': SimPool(3, 1000000, 1000)})
+        self.sim = Simul(SimPools(self.init_pools), self.tx_source)
+        print("Degenerate pools:")
+        print("sfr\tblksize\tmemsize")
+        self.sim.run(self.my_memcb, maxiters=50)
+        self.sim.cap.print_caps()
+
     def my_memcb(self, sim):
         numbytes, dum = sim.mempool._calc_size()
-        memtxs = sim.mempool.get_txs()
         blocktxsize = sum([tx.size for tx in sim.lastblock['txs']])
         self.assertEqual(blocktxsize, sim.lastblock['blocksize'])
-        print("%d\t%d\t%d" % (sim.lastblock['sfr'],
-                              sim.lastblock['blocksize'], numbytes))
+        print("%.0f\t%d\t%d" % (sim.lastblock['sfr'],
+                                sim.lastblock['blocksize'], numbytes))
 
     def my_initmemcb(self, sim):
         self.my_memcb(sim)
@@ -163,8 +174,6 @@ class TransientTest(unittest.TestCase):
         print("Stop test with normal mempool")
         stats = transient(self.entries, pools, self.tx_source, maxiters=500)
         stats.print_stats()
-
-
 
 
 if __name__ == '__main__':

@@ -36,7 +36,7 @@ class SimPools(object):
         cumprop = 0.
         for name, pool in poolitems:
             for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
-                assert getattr(pool, attr) > 0
+                assert getattr(pool, attr) >= 0
             pool.proportion = pool.hashrate / totalhashrate
             cumprop += pool.proportion
             self.__poolsidx.append(cumprop)
@@ -45,9 +45,9 @@ class SimPools(object):
         self.__poolsidx[-1] = 1.
 
     def calc_capacities(self, tx_source):
-        mfrs = sorted(set([pool.minfeerate for name, pool in self.__pools]))
+        mfrs = [pool.minfeerate for name, pool in self.__pools]
+        mfrs = sorted(set(mfrs + [0]))
         mfrs = filter(lambda fee: fee < float("inf"), mfrs)
-        mfrs.insert(0, 0)
         tx_byterates = tx_source.get_byterates(mfrs)
         pool_caps = {
             name: PoolCapacity(mfrs, self.__blockrate, pool)

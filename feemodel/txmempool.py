@@ -57,11 +57,10 @@ class TxMempool(StoppableThread):
     The goal is to make inferences about the transaction selection policies
     of miners.
 
-    The mempool polling is done via batch call; however, they are not
-    processed atomically by Bitcoin Core - there is the probability of a
-    race condition in which the block count increases in between processing
-    the two requests. In this case the statistics for that block will be
-    somewhat degraded.
+    The polling is done via batch call; however, they are not processed
+    atomically by Bitcoin Core - there is the probability of a race condition
+    in which the block count increases in between processing the two requests.
+    In this case the statistics for that block will be somewhat degraded.
 
     In addition, chain re-orgs are not handled. If a re-org happens, the
     transactions that we record are not necessarily representative of the
