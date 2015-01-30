@@ -5,24 +5,23 @@ from copy import copy
 
 
 class SimTx(object):
-    def __init__(self, size, feerate, txid=None, depends=None):
+    def __init__(self, size, feerate, _id='', _depends=None):
         self.size = size
         self.feerate = feerate
-        self.depends = depends
-        if txid is None:
-            assert depends is None
-            txid = ''
-        self._txid = txid
+        self._depends = _depends
+        self._id = _id
+        if not _id:
+            assert _depends is None
 
     def __copy__(self):
-        return SimTx(self.size, self.feerate, self._txid, copy(self.depends))
+        return SimTx(self.size, self.feerate, self._id, copy(self._depends))
 
     def __cmp__(self, other):
         return cmp(self.feerate, other.feerate)
 
     def __repr__(self):
-        return "SimTx{txid: %s, size: %d, feerate: %d, depends: %s}" % (
-            self.txid, self.size, self.feerate, self.depends)
+        return "SimTx{size: %d, feerate: %d}" % (
+            self.size, self.feerate)
 
 
 class SimTxSource(object):

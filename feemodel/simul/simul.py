@@ -114,16 +114,16 @@ class SimMempool(object):
 
         for txid, entry in mempool.items():
             simtx = SimTx(entry.size, entry.feerate, txid, entry.depends)
-            if not simtx.depends:
+            if not simtx._depends:
                 self._tx_nodeps.append(simtx)
             else:
-                for dep in simtx.depends:
+                for dep in simtx._depends:
                     self._depmap[dep].append(txid)
                 self._tx_havedeps[txid] = simtx
 
         self._tx_nodeps_bak = self._tx_nodeps[:]
         self._tx_havedeps_bak = self._tx_havedeps.values()
-        self._deps_bak = [tx.depends[:] for tx in self._tx_havedeps_bak]
+        self._deps_bak = [tx._depends[:] for tx in self._tx_havedeps_bak]
 
     def get_txs(self):
         mempool_txs = self._tx_nodeps[:] + self._tx_havedeps.values()
@@ -132,8 +132,8 @@ class SimMempool(object):
     def reset(self):
         self._tx_nodeps = self._tx_nodeps_bak[:]
         for idx, tx in enumerate(self._tx_havedeps_bak):
-            tx.depends = self._deps_bak[idx][:]
-        self._tx_havedeps = {tx._txid: tx for tx in self._tx_havedeps_bak}
+            tx._depends = self._deps_bak[idx][:]
+        self._tx_havedeps = {tx._id: tx for tx in self._tx_havedeps_bak}
 
     def _add_txs(self, newtxs):
         self._tx_nodeps.extend(newtxs)
@@ -158,12 +158,12 @@ class SimMempool(object):
                     blocktxs.append(newtx)
                     blocksize += newtx.size
 
-                    dependants = self._depmap.get(newtx._txid)
+                    dependants = self._depmap.get(newtx._id)
                     if dependants:
                         for txid in dependants:
                             deptx = self._tx_havedeps[txid]
-                            deptx.depends.remove(newtx._txid)
-                            if not deptx.depends:
+                            deptx._depends.remove(newtx._id)
+                            if not deptx._depends:
                                 insort(self._tx_nodeps, deptx)
                                 del self._tx_havedeps[txid]
                 else:
