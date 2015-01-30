@@ -41,7 +41,7 @@ class PoolSimTests(unittest.TestCase):
         numiters = 10000
         mbs = []
         for i in range(numiters):
-            name, maxblocksize, minfeerate = self.pools.next_block()
+            blockint, name, maxblocksize, minfeerate = self.pools.next_block()
             mbs.append(maxblocksize)
 
         c = Counter(mbs)
@@ -54,12 +54,12 @@ class PoolSimTests(unittest.TestCase):
         for rate in range(1, 4):
             source = copy(tx_source)
             source.txrate = rate
-            cap = self.pools.calc_capacities(source, blockrate)
+            cap = self.pools.calc_capacities(source)
             stablefeerate = cap.calc_stablefeerate(0.9)
             cap.print_caps()
             print("The stable fee rate is %d" % stablefeerate)
 
-        cap = self.pools.calc_capacities(tx_source, blockrate)
+        cap = self.pools.calc_capacities(tx_source)
         self.assertAlmostEqual(sum(cap.tx_byterates), avgtxbyterate)
 
 

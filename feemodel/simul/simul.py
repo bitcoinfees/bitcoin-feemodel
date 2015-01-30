@@ -1,6 +1,5 @@
 from collections import defaultdict
 from bisect import insort, bisect_left
-from random import expovariate
 import threading
 
 from feemodel.queuestats import QueueStats
@@ -8,13 +7,12 @@ from feemodel.simul.txsources import SimTx
 from feemodel.util import DataSample, itertimer
 
 rate_ratio_thresh = 0.9
-default_blockrate = 1./600
 
 
-def transient(mempool, pools, tx_source, blockrate=default_blockrate,
+def transient(mempool, pools, tx_source,
               maxiters=10000, maxtime=60, feeclasses=None):
     stopflag = threading.Event()
-    sim = Simul(pools, tx_source, blockrate)
+    sim = Simul(pools, tx_source)
     if not feeclasses:
         feeclasses = _get_feeclasses(sim.cap)
     else:
@@ -50,9 +48,9 @@ def transient(mempool, pools, tx_source, blockrate=default_blockrate,
                           callback.numiters, sim.stablefeerate)
 
 
-def steadystate(pools, tx_source, blockrate=default_blockrate,
+def steadystate(pools, tx_source,
                 maxiters=100000, maxtime=600, feeclasses=None):
-    sim = Simul(pools, tx_source, blockrate)
+    sim = Simul(pools, tx_source)
     if not feeclasses:
         feeclasses = _get_feeclasses(sim.cap)
     else:
@@ -70,11 +68,10 @@ def steadystate(pools, tx_source, blockrate=default_blockrate,
 
 
 class Simul(object):
-    def __init__(self, pools, tx_source, blockrate=default_blockrate):
+    def __init__(self, pools, tx_source):
         self.pools = pools
         self.tx_source = tx_source
-        self.blockrate = blockrate
-        self.cap = self.pools.calc_capacities(self.tx_source, self.blockrate)
+        self.cap = self.pools.calc_capacities(self.tx_source)
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "
@@ -92,9 +89,8 @@ class Simul(object):
             mempool = {}
         self.mempool = SimMempool(mempool)
         for self.i, self.elapsedtime in itertimer(maxiters, maxtime, stopflag):
-            blockinterval = expovariate(self.blockrate)
-            name, maxblocksize, minfeerate = self.pools.next_block()
-            newtxs = self.tx_source.generate_txs(blockinterval)
+            blockint, name, maxblocksize, minfeerate = self.pools.next_block()
+            newtxs = self.tx_source.generate_txs(blockint)
             newtxs = filter(lambda tx: tx.feerate >= self.stablefeerate,
                             newtxs)
             self.mempool._add_txs(newtxs)
@@ -105,7 +101,7 @@ class Simul(object):
             self.lastblock['is_blocksizeltd'] = blockstat[2]
             self.lastblock['txs'] = blockstat[3]
             self.lastblock['poolname'] = name
-            self.lastblock['blockinterval'] = blockinterval
+            self.lastblock['blockinterval'] = blockint
 
             callback(self)
 

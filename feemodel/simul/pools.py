@@ -1,13 +1,15 @@
-from random import random
+from random import random, expovariate
 from math import log, exp
 from copy import copy
 from bisect import bisect_left
 from feemodel.util import Table
 
+default_blockrate = 1./600
 
-# Change the structure to match PoolsEstimator: dump all the 'get' stuff
+
 class SimPools(object):
-    def __init__(self, pools=None):
+    def __init__(self, pools=None, blockrate=default_blockrate):
+        self.__blockrate = blockrate
         self.__pools = []
         self.__poolsidx = []
 
@@ -17,7 +19,8 @@ class SimPools(object):
     def next_block(self):
         poolidx = bisect_left(self.__poolsidx, random())
         name, pool = self.__pools[poolidx]
-        return name, pool.maxblocksize, pool.minfeerate
+        blockinterval = expovariate(self.__blockrate)
+        return blockinterval, name, pool.maxblocksize, pool.minfeerate
 
     def update(self, pools):
         poolitems = sorted(
@@ -41,13 +44,13 @@ class SimPools(object):
 
         self.__poolsidx[-1] = 1.
 
-    def calc_capacities(self, tx_source, blockrate):
+    def calc_capacities(self, tx_source):
         mfrs = sorted(set([pool.minfeerate for name, pool in self.__pools]))
         mfrs = filter(lambda fee: fee < float("inf"), mfrs)
         mfrs.insert(0, 0)
         tx_byterates = tx_source.get_byterates(mfrs)
         pool_caps = {
-            name: PoolCapacity(mfrs, blockrate, pool)
+            name: PoolCapacity(mfrs, self.__blockrate, pool)
             for name, pool in self.__pools}
         for feerate, byterate in reversed(zip(mfrs, tx_byterates)):
             excessrate = byterate
