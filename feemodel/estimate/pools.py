@@ -175,8 +175,9 @@ class PoolsEstimator(SimPools):
         return max(self.blockmap)
 
     def print_pools(self):
-        poolitems = sorted(self._pools.items(),
-                           key=lambda p: p[1], reverse=True)
+        # poolitems = sorted(self.pools.items(),
+        #                    key=lambda p: p[1], reverse=True)
+        poolitems = self._SimPools__pools
         maxnamelen = max([len(name) for name, pool in poolitems])
         colwidths = (maxnamelen, 10.2, 10, 10.0, 15, 15, 10.2, 10.2, 10.2)
         coltypes = 'sfdfssfff'

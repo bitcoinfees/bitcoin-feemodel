@@ -7,27 +7,48 @@ from feemodel.util import Table
 
 # Change the structure to match PoolsEstimator: dump all the 'get' stuff
 class SimPools(object):
-    def __init__(self, init_pools=None):
-        self._pools = {}
-        self._poolsidx = []
-        self._pools_sorted = []
+    def __init__(self, pools=None):
+        self.__pools = []
+        self.__poolsidx = []
 
-        if init_pools:
-            self.update(init_pools)
+        if pools:
+            self.update(pools)
 
     def next_block(self):
-        poolidx = bisect_left(self._poolsidx, random())
-        name, pool = self._pools_sorted[poolidx]
+        poolidx = bisect_left(self.__poolsidx, random())
+        name, pool = self.__pools[poolidx]
         return name, pool.maxblocksize, pool.minfeerate
 
+    def update(self, pools):
+        poolitems = sorted(
+            [(name, copy(pool)) for name, pool in pools.items()],
+            key=lambda p: p[1], reverse=True)
+        totalhashrate = float(sum(
+            [pool.hashrate for name, pool in poolitems]))
+        if not totalhashrate:
+            raise ValueError("No pools.")
+
+        self.__poolsidx = []
+        self.__pools = []
+        cumprop = 0.
+        for name, pool in poolitems:
+            for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
+                assert getattr(pool, attr) > 0
+            pool.proportion = pool.hashrate / totalhashrate
+            cumprop += pool.proportion
+            self.__poolsidx.append(cumprop)
+            self.__pools.append((name, pool))
+
+        self.__poolsidx[-1] = 1.
+
     def calc_capacities(self, tx_source, blockrate):
-        mfrs = sorted(set([pool.minfeerate for pool in self._pools.values()]))
+        mfrs = sorted(set([pool.minfeerate for name, pool in self.__pools]))
         mfrs = filter(lambda fee: fee < float("inf"), mfrs)
         mfrs.insert(0, 0)
         tx_byterates = tx_source.get_byterates(mfrs)
         pool_caps = {
             name: PoolCapacity(mfrs, blockrate, pool)
-            for name, pool in self._pools.items()}
+            for name, pool in self.__pools}
         for feerate, byterate in reversed(zip(mfrs, tx_byterates)):
             excessrate = byterate
             while excessrate > 0:
@@ -51,74 +72,22 @@ class SimPools(object):
 
         return Capacity(mfrs, tx_byterates, pool_caps)
 
-    def update(self, pools):
-        self._pools.update({name: copy(pool) for name, pool in pools.items()})
-        self._calc_idx()
-
-    def remove(self, poolname):
-        try:
-            del self._pools[poolname]
-        except KeyError:
-            raise KeyError("%s: no such pool." % poolname)
-        self._calc_idx()
-
-    def get(self, poolname):
-        try:
-            return copy(self._pools[poolname])
-        except KeyError:
-            raise KeyError("%s: no such pool." % poolname)
-
-    def getall(self):
-        return dict(self)
-
     def print_pools(self):
-        poolitems = sorted(self._pools.items(),
-                           key=lambda p: p[1], reverse=True)
-        maxnamelen = max([len(name) for name, pool in poolitems])
+        maxnamelen = max([len(name) for name, pool in self.__pools])
         colwidths = (maxnamelen, 10.2, 10, 10.0)
         coltypes = 'sfdf'
         table = Table(colwidths, coltypes)
         table.print_header("Name", "Prop", "MBS", "MFR")
-        for name, pool in poolitems:
+        for name, pool in self.__pools:
             table.print_row(name, pool.proportion,
                             pool.maxblocksize, pool.minfeerate)
 
-    def __iter__(self):
-        def poolgen():
-            for name, pool in self._pools.iteritems():
-                yield name, copy(pool)
-        return poolgen()
-
     def __repr__(self):
         elogp = sum([p.proportion*log(p.proportion)
-                     for p in self._pools.values()])
+                     for n, p in self.__pools])
         numeffpools = exp(elogp)
         return "SimPools{Num: %d, NumEffective: %.2f}" % (
-            len(self._pools), numeffpools)
-
-    def _calc_idx(self):
-        self._calc_proportions()
-        self._poolsidx = []
-        self._pools_sorted = []
-        poolitems = sorted(self._pools.items(),
-                           key=lambda p: p[1], reverse=True)
-        p = 0.
-        for name, pool in poolitems:
-            for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
-                assert getattr(pool, attr) > 0
-            p += pool.proportion
-            self._poolsidx.append(p)
-            self._pools_sorted.append((name, pool))
-
-        self._poolsidx[-1] = 1.
-
-    def _calc_proportions(self):
-        totalhashrate = float(sum(
-            [pool.hashrate for pool in self._pools.values()]))
-        if not totalhashrate:
-            raise ValueError("No pools.")
-        for pool in self._pools.values():
-            pool.proportion = pool.hashrate / totalhashrate
+            len(self.__pools), numeffpools)
 
 
 class SimPool(object):

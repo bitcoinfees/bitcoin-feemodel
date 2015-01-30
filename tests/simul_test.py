@@ -22,7 +22,7 @@ txrate = 1.1
 avgtxbyterate = sum([tx.size for tx in txsample])/float(len(txsample))*txrate
 blockrate = 1./600
 
-pools = SimPools(init_pools=init_pools)
+pools = SimPools(pools=init_pools)
 tx_source = SimTxSource(txsample, txrate)
 
 rawmempool = proxy.getrawmempool(verbose=True)
@@ -36,7 +36,6 @@ class PoolSimTests(unittest.TestCase):
 
     def test_basic(self):
         self.pools.print_pools()
-        pprint(self.pools.getall())
 
     def test_randompool(self):
         numiters = 10000
@@ -46,7 +45,7 @@ class PoolSimTests(unittest.TestCase):
             mbs.append(maxblocksize)
 
         c = Counter(mbs)
-        for name, pool in self.pools:
+        for name, pool in init_pools.items():
             count = float(c[pool.maxblocksize])
             diff = abs(pool.hashrate - count/numiters)
             self.assertLess(diff, 0.01)

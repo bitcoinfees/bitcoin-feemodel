@@ -15,6 +15,5 @@ class PoolEstimateTest(unittest.TestCase):
         print(self.pe)
 
 
-
 if __name__ == '__main__':
     unittest.main()
