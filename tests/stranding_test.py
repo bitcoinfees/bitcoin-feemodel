@@ -12,6 +12,7 @@ class StrandingTests(unittest.TestCase):
     def test_regular(self):
         txs = tx_preprocess(self.memblock)
         stat = calc_stranding_feerate(txs)
+        print("Regular: %s" % stat)
         self.assertEqual(stat['sfr'], 23310)
         self.assertEqual(stat['abovekn'], (490, 493))
         self.assertEqual(stat['belowkn'], (282, 285))
@@ -24,7 +25,7 @@ class StrandingTests(unittest.TestCase):
     def test_all_inblock(self):
         self.memblock.entries = {
             txid: entry for txid, entry in self.memblock.entries.iteritems()
-            if entry['inblock']}
+            if entry.inblock}
         txs = tx_preprocess(self.memblock)
         stat = calc_stranding_feerate(txs)
         print("All in block: %s" % stat)
@@ -35,15 +36,13 @@ class StrandingTests(unittest.TestCase):
     def test_zero_inblock(self):
         self.memblock.entries = {
             txid: entry for txid, entry in self.memblock.entries.iteritems()
-            if not entry['inblock']}
+            if not entry.inblock}
         txs = tx_preprocess(self.memblock)
         stat = calc_stranding_feerate(txs)
         print("Zero inblock: %s" % stat)
         self.assertEqual(stat['sfr'], float('inf'))
         self.assertEqual(stat['abovekn'], (0, 0))
         self.assertEqual(stat['belowkn'], (312, 312))
-
-
 
 
 if __name__ == '__main__':

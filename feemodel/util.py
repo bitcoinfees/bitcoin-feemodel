@@ -177,24 +177,33 @@ class DataSample(object):
 
 
 class Table(object):
-    def __init__(self, colwidths, coltypes, justifs=None):
+    def __init__(self, colwidths=None, padding=3):
         self.colwidths = colwidths
-        self.coltypes = coltypes
-        self.justifs = justifs if justifs else '>'*len(self.colwidths)
+        self.rows = []
+        self.justifs = []
+        self.padding = padding
 
-    def print_header(self, *colnames):
-        s = ''
-        for just, colwidth, coltype in zip(self.justifs, self.colwidths,
-                                           self.coltypes):
-            s += '{:' + just + str(int(colwidth)) + 's}'
-        print(s.format(*colnames))
+    def add_row(self, row, justifs=None):
+        if self.colwidths is None:
+            self.colwidths = [0]*len(row)
+        newrow = [str(el) for el in row]
+        self.rows.append(newrow)
+        self._adjust_colwidths(newrow)
 
-    def print_row(self, *colvals):
-        s = ''
-        for just, colwidth, coltype in zip(self.justifs, self.colwidths,
-                                           self.coltypes):
-            s += '{:' + just + str(colwidth) + coltype + '}'
-        print(s.format(*colvals))
+        if justifs is None:
+            justifs = '>'*len(row)
+        self.justifs.append(justifs)
+
+    def _adjust_colwidths(self, row):
+        for idx, el in enumerate(row):
+            self.colwidths[idx] = max(len(el), self.colwidths[idx])
+
+    def print_table(self):
+        for row, justifs in zip(self.rows, self.justifs):
+            s = ''
+            for just, colwidth in zip(justifs, self.colwidths):
+                s += '{:' + just + str(colwidth + self.padding) + '}'
+            print(s.format(*row))
 
 
 def save_obj(obj, filename):

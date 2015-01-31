@@ -29,31 +29,31 @@ class PoolEstimate(SimPool):
         for height in self.blockheights:
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            memblock = MemBlock.read(height, dbfile=dbfile)
-            if memblock is None:
+            block = MemBlock.read(height, dbfile=dbfile)
+            if block is None:
                 continue
-            blocktxs = [tx for tx in memblock.entries.values()
+            blocktxs = [tx for tx in block.entries.values()
                         if tx.inblock]
             if blocktxs:
-                memblock.avgtxsize = sum([
+                block.avgtxsize = sum([
                     tx.size for tx in blocktxs]) / float(len(blocktxs))
             else:
-                memblock.avgtxsize = 0.
+                block.avgtxsize = 0.
 
-            if memblock.size > self.maxblocksize:
-                self.maxblocksize = memblock.size
-                deferredblocks.append(memblock)
+            if block.size > self.maxblocksize:
+                self.maxblocksize = block.size
+                deferredblocks.append(block)
                 continue
-            self._addblock(memblock, txs)
+            self._addblock(block, txs)
 
-        for memblock in deferredblocks:
-            self._addblock(memblock, txs)
+        for block in deferredblocks:
+            self._addblock(block, txs)
 
         if not txs and deferredblocks:
             # All the blocks are close to the max block size. We take the
             # smallest block.
-            memblock = min(deferredblocks, key=lambda block: block.size)
-            txs.extend(tx_preprocess(memblock, remove_high_priority=True,
+            block = min(deferredblocks, key=lambda block: block.size)
+            txs.extend(tx_preprocess(block, remove_high_priority=True,
                                      remove_depped=True))
 
         if txs:
@@ -77,14 +77,14 @@ class PoolEstimate(SimPool):
             logger.warning("Pool estimation: only %d memblocks found out "
                            "of possible %d" % (nblocks, maxblocks))
 
-    def _addblock(self, memblock, txs):
-        if self.maxblocksize - memblock.size > memblock.avgtxsize:
-            self.feelimitedblocks.append((memblock.height, memblock.size))
-            txs_new = tx_preprocess(memblock, remove_high_priority=True,
+    def _addblock(self, block, txs):
+        if self.maxblocksize - block.size > block.avgtxsize:
+            self.feelimitedblocks.append((block.height, block.size))
+            txs_new = tx_preprocess(block, remove_high_priority=True,
                                     remove_depped=True)
             txs.extend(txs_new)
         else:
-            self.sizelimitedblocks.append((memblock.height, memblock.size))
+            self.sizelimitedblocks.append((block.height, block.size))
 
 
 class PoolsEstimator(SimPools):
@@ -154,7 +154,7 @@ class PoolsEstimator(SimPools):
                     warnings.warn(
                         "Unable to identify pool of block %d" % height)
 
-        for height in self.blockmap:
+        for height in self.blockmap.keys():
             if height < blockrangetuple[0] or height >= blockrangetuple[1]:
                 del self.blockmap[height]
 
@@ -175,21 +175,21 @@ class PoolsEstimator(SimPools):
             logger.info("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool
 
-    def get_bestheight(self):
-        return max(self.blockmap)
-
     def print_pools(self):
-        # poolitems = sorted(self.pools.items(),
-        #                    key=lambda p: p[1], reverse=True)
         poolitems = self._SimPools__pools
-        maxnamelen = max([len(name) for name, pool in poolitems])
-        colwidths = (maxnamelen, 10.2, 10, 10.0, 15, 15, 10.2, 10.2, 10.2)
-        coltypes = 'sfdfssfff'
-        table = Table(colwidths, coltypes)
-        table.print_header("Name", "Prop", "MBS", "MFR", "AKN", "BKN",
-                           "mean", "std", "bias")
+        table = Table()
+        table.add_row(("Name", "Prop", "MBS", "MFR", "AKN", "BKN",
+                       "mean", "std", "bias"))
         for name, pool in poolitems:
-            table.print_row(
-                name, pool.proportion, pool.maxblocksize, pool.minfeerate,
-                pool.stats['abovekn'], pool.stats['belowkn'],
-                pool.stats['mean'], pool.stats['std'], pool.stats['bias'])
+            table.add_row((
+                name,
+                '%.2f' % pool.proportion,
+                pool.maxblocksize,
+                pool.minfeerate,
+                pool.stats['abovekn'],
+                pool.stats['belowkn'],
+                '%.2f' % pool.stats['mean'],
+                '%.2f' % pool.stats['std'],
+                '%.2f' % pool.stats['bias']))
+
+        table.print_table()

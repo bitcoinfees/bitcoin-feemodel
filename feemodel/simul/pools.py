@@ -36,7 +36,8 @@ class SimPools(object):
         cumprop = 0.
         for name, pool in poolitems:
             for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
-                assert getattr(pool, attr) >= 0
+                if getattr(pool, attr) < 0:
+                    raise ValueError("%s must be >= 0." % attr)
             pool.proportion = pool.hashrate / totalhashrate
             cumprop += pool.proportion
             self.__poolsidx.append(cumprop)
@@ -76,14 +77,15 @@ class SimPools(object):
         return Capacity(mfrs, tx_byterates, pool_caps)
 
     def print_pools(self):
-        maxnamelen = max([len(name) for name, pool in self.__pools])
-        colwidths = (maxnamelen, 10.2, 10, 10.0)
-        coltypes = 'sfdf'
-        table = Table(colwidths, coltypes)
-        table.print_header("Name", "Prop", "MBS", "MFR")
+        table = Table()
+        table.add_row(("Name", "Prop", "MBS", "MFR"))
         for name, pool in self.__pools:
-            table.print_row(name, pool.proportion,
-                            pool.maxblocksize, pool.minfeerate)
+            table.add_row((
+                name,
+                '%.2f' % pool.proportion,
+                pool.maxblocksize,
+                pool.minfeerate))
+        table.print_table()
 
     def __repr__(self):
         elogp = sum([p.proportion*log(p.proportion)
@@ -91,6 +93,9 @@ class SimPools(object):
         numeffpools = exp(elogp)
         return "SimPools{Num: %d, NumEffective: %.2f}" % (
             len(self.__pools), numeffpools)
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 class SimPool(object):
@@ -131,13 +136,14 @@ class Capacity(object):
         return stablefeerate
 
     def print_caps(self):
-        colwidths = (10, 10.2, 10.2)
-        coltypes = 'dff'
-        table = Table(colwidths, coltypes)
-        table.print_header("Feerate", "TxRate", "Capacity")
+        table = Table()
+        table.add_row(("Feerate", "TxRate", "Capacity"))
         for idx in range(len(self.feerates)):
-            table.print_row(
-                self.feerates[idx], self.tx_byterates[idx], self.caps[idx])
+            table.add_row((
+                self.feerates[idx],
+                '%.2f' % self.tx_byterates[idx],
+                '%.2f' % self.caps[idx]))
+        table.print_table()
 
 
 class PoolCapacity(object):

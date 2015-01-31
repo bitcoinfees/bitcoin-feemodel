@@ -8,15 +8,12 @@ from copy import deepcopy
 
 from bitcoin.core import b2lx
 
-from feemodel.config import config, history_file
+from feemodel.config import history_file, poll_period, keep_history
 from feemodel.util import proxy, StoppableThread, get_feerate
 
 history_lock = threading.Lock()
 mempool_lock = threading.Lock()
 logger = logging.getLogger(__name__)
-
-poll_period = config.getint('txmempool', 'poll_period')
-keep_history = config.getint('txmempool', 'keep_history')
 
 MEMBLOCK_TABLE_SCHEMA = {
     'blocks': [

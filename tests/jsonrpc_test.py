@@ -4,13 +4,13 @@ from feemodel.util import proxy
 
 class RPCTests(unittest.TestCase):
     def test_pollMempool(self):
-        blockcount, mapTx = proxy.pollMempool()
-        if not mapTx:
+        blockcount, rawmempool = proxy.poll_mempool()
+        if not rawmempool:
             self.fail("No transactions in mempool!")
         else:
-            txid = mapTx.keys()[0]
+            txid = rawmempool.keys()[0]
             self.assertTrue(txid.isalnum())
-            entry = mapTx[txid]
+            entry = rawmempool[txid]
             self.assertTrue(isinstance(entry['currentpriority'], decimal.Decimal))
             self.assertTrue(isinstance(entry['startingpriority'], decimal.Decimal))
             self.assertTrue(isinstance(entry['fee'], decimal.Decimal))

@@ -18,7 +18,6 @@ class TxRateEstimator(SimTxSource):
     def _reset_params(self):
         self.txsample = []
         self.txrate = 0.
-        self.bestheight = 0
         self.totaltime = 0.
         self.totaltxs = 0
 
@@ -33,7 +32,6 @@ class TxRateEstimator(SimTxSource):
                 raise StopIteration("Stop flag set.")
             block = MemBlock.read(height, dbfile=dbfile)
             if block and prevblock and prevblock.height == height - 1:
-                self.bestheight = height
                 self._addblock(block, prevblock)
             prevblock = block
         if self.totaltxs < 0 or self.totaltime <= 0:
