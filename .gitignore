@@ -6,5 +6,6 @@ _*
 *-info
 *.swp
 feemodel/installinfo.py
+feemodel/archive
 tests/data/archive
 venv

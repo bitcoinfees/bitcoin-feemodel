@@ -83,8 +83,10 @@ class Simul(object):
         self.i = None
         self.elapsedtime = None
 
-    def run(self, callback, mempool=None, maxiters=100000,
+    def run(self, callback=None, mempool=None, maxiters=100000,
             maxtime=60, stopflag=None):
+        if callback is None:
+            callback = lambda x: None
         if mempool is None:
             mempool = {}
         self.mempool = SimMempool(mempool)
