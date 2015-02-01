@@ -1,11 +1,11 @@
 import unittest
 from collections import Counter
-from copy import copy
+from copy import copy, deepcopy
 
 from feemodel.util import proxy
 from feemodel.txmempool import MemEntry
 from feemodel.simul import SimPool, SimPools, Simul, SimTx, SimTxSource
-from feemodel.simul.simul import steadystate, transient
+from feemodel.simul.stats import steadystate, transient
 
 init_pools = {
     'pool0': SimPool(0.2, 500000, 20000),
@@ -25,6 +25,8 @@ pools = SimPools(pools=init_pools)
 tx_source = SimTxSource(txsample, txrate)
 
 rawmempool = proxy.getrawmempool(verbose=True)
+entries = {txid: MemEntry(rawentry)
+                for txid, rawentry in rawmempool.items()}
 print("Mempool size is %d" %
       sum([entry['size'] for entry in rawmempool.values()]))
 
@@ -38,14 +40,15 @@ class PoolSimTests(unittest.TestCase):
 
     def test_randompool(self):
         numiters = 10000
-        mbs = []
-        for i in range(numiters):
-            blockint, name, maxblocksize, minfeerate = self.pools.next_block()
-            mbs.append(maxblocksize)
+        poolnames = []
+        for idx, simblock in enumerate(self.pools.blockgen()):
+            if idx >= numiters:
+                break
+            poolnames.append(simblock.poolinfo[0])
 
-        c = Counter(mbs)
+        c = Counter(poolnames)
         for name, pool in init_pools.items():
-            count = float(c[pool.maxblocksize])
+            count = float(c[name])
             diff = abs(pool.hashrate - count/numiters)
             self.assertLess(diff, 0.01)
 
@@ -88,24 +91,27 @@ class TxSourceTests(unittest.TestCase):
 class BasicSimTest(unittest.TestCase):
     def setUp(self):
         self.tx_source = copy(tx_source)
-        self.tx_source.txrate = 1.1
-        self.sim = Simul(pools, self.tx_source)
-        self.entries = {txid: MemEntry(rawentry)
-                        for txid, rawentry in rawmempool.items()}
+        self.pools = pools
+        self.sim = Simul(self.pools, self.tx_source)
+        self.entries = deepcopy(entries)
 
     def test_basic(self):
-        print("basic test...")
-        print("sfr\tblksize\tmemsize")
-        self.sim.run(self.my_memcb, maxiters=50)
+        print("Height\tNumtxs\tSize\tSFR")
+        for simblock, t in self.sim.run(maxiters=50):
+            print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
+                                        simblock.size, simblock.sfr))
+        self.sim.cap.print_caps()
 
-    def test_initmempool(self):
-        print("init mempool test...")
-        print("sfr\tblksize\tmemsize")
+    def test_mempool(self):
         for entry in self.entries.values():
             entry.depends = []
             entry.feerate = 100000
             entry.size = 10000
-        self.sim.run(self.my_initmemcb, mempool=self.entries, maxiters=50)
+        print("With init mempool:")
+        print("Height\tNumtxs\tSize\tSFR")
+        for simblock, t in self.sim.run(mempool=self.entries, maxiters=50):
+            print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
+                                        simblock.size, simblock.sfr))
         self.sim.cap.print_caps()
 
     def test_degenerate_pools(self):
@@ -117,24 +123,11 @@ class BasicSimTest(unittest.TestCase):
         self.init_pools.update({'pool2': SimPool(3, 1000000, 1000)})
         self.sim = Simul(SimPools(self.init_pools), self.tx_source)
         print("Degenerate pools:")
-        print("sfr\tblksize\tmemsize")
-        self.sim.run(self.my_memcb, maxiters=50)
+        print("Height\tNumtxs\tSize\tSFR")
+        for simblock, t in self.sim.run(maxiters=50):
+            print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
+                                        simblock.size, simblock.sfr))
         self.sim.cap.print_caps()
-
-    def my_memcb(self, sim):
-        numbytes, dum = sim.mempool._calc_size()
-        blocktxsize = sum([tx.size for tx in sim.lastblock['txs']])
-        self.assertEqual(blocktxsize, sim.lastblock['blocksize'])
-        print("%.0f\t%d\t%d" % (sim.lastblock['sfr'],
-                                sim.lastblock['blocksize'], numbytes))
-
-    def my_initmemcb(self, sim):
-        self.my_memcb(sim)
-        for tx in sim.mempool._tx_havedeps.values():
-            self.assertTrue(tx.depends)
-
-        for tx in sim.mempool._tx_nodeps:
-            self.assertLessEqual(tx.feerate, sim.lastblock['sfr'])
 
 
 class SteadyStateTest(unittest.TestCase):

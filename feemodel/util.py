@@ -316,7 +316,7 @@ def try_wrap(fn):
     return nicetry
 
 
-def itertimer(maxiters, maxtime, stopflag):
+def itertimer(maxiters=None, maxtime=None, stopflag=None):
     '''Generator function which iterates till specified limits.
 
     maxiters - max number of iterations
@@ -324,6 +324,10 @@ def itertimer(maxiters, maxtime, stopflag):
     stopflag - threading.Event() object. Stop iteration immediately if this
                is set.
     '''
+    if maxiters is None:
+        maxiters = float("inf")
+    if maxtime is None:
+        maxtime = float("inf")
     starttime = time()
     i = 0
     while True:

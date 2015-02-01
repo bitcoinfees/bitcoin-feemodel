@@ -7,6 +7,22 @@ from feemodel.util import Table
 default_blockrate = 1./600
 
 
+class SimBlock(object):
+    def __init__(self, blockheight, blocktime, blockinterval, poolinfo):
+        self.height = blockheight
+        self.txs = []
+        self.size = 0
+        self.time = blocktime
+        self.interval = blockinterval
+        self.poolinfo = poolinfo
+        self.sfr = float("inf")
+        self.is_sizeltd = None
+
+    def __repr__(self):
+        return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (
+            self.height, len(self.txs), self.size, self.sfr)
+
+
 class SimPools(object):
     def __init__(self, pools=None, blockrate=default_blockrate):
         self.__blockrate = blockrate
@@ -16,11 +32,21 @@ class SimPools(object):
         if pools:
             self.update(pools)
 
-    def next_block(self):
-        poolidx = bisect_left(self.__poolsidx, random())
-        name, pool = self.__pools[poolidx]
-        blockinterval = expovariate(self.__blockrate)
-        return blockinterval, name, pool.maxblocksize, pool.minfeerate
+    def blockgen(self):
+        def blockgenfn():
+            simtime = 0.
+            blockheight = 0
+            while True:
+                poolidx = bisect_left(self.__poolsidx, random())
+                poolinfo = self.__pools[poolidx]
+                blockinterval = expovariate(self.__blockrate)
+                simtime += blockinterval
+                simblock = SimBlock(blockheight, simtime,
+                                    blockinterval, poolinfo)
+                blockheight += 1
+                yield simblock
+
+        return blockgenfn()
 
     def update(self, pools):
         poolitems = sorted(
