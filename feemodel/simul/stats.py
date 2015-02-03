@@ -2,9 +2,9 @@ from feemodel.simul import Simul
 from feemodel.util import DataSample, Table
 from feemodel.queuestats import QueueStats
 
+
 def transient(mempool, pools, tx_source,
               maxiters=10000, maxtime=60, feeclasses=None):
-    stopflag = threading.Event()
     sim = Simul(pools, tx_source)
     if not feeclasses:
         feeclasses = _get_feeclasses(sim.cap)
@@ -13,32 +13,30 @@ def transient(mempool, pools, tx_source,
     feeclasses = filter(lambda fee: fee >= sim.stablefeerate, feeclasses)
     tstats = {feerate: DataSample() for feerate in feeclasses}
 
-    def callback(sim):
-        callback.totaltime += sim.lastblock['blockinterval']
-        stranding_feerate = sim.lastblock['sfr']
-        sidx = bisect_left(callback.stranded, stranding_feerate)
+    simtime = 0.
+    stranded = set(feeclasses)
+    numiters = 0
+    for block, realtime in sim.run(mempool=mempool, maxiters=float("inf"),
+                                   maxtime=maxtime):
+        simtime += block.interval
+        stranding_feerate = block.sfr
 
-        for feerate in callback.stranded[sidx:]:
-            tstats[feerate].add_datapoints([callback.totaltime])
-        callback.stranded = callback.stranded[:sidx]
+        for feerate in list(stranded):
+            if feerate >= stranding_feerate:
+                tstats[feerate].add_datapoints([simtime])
+                stranded.remove(feerate)
 
-        if not callback.stranded:
-            callback.numiters += 1
-            if callback.numiters == maxiters:
-                stopflag.set()
+        if not stranded:
+            numiters += 1
+            if numiters >= maxiters:
+                break
             else:
-                callback.totaltime = 0.
-                callback.stranded = feeclasses[:]
+                simtime = 0.
+                stranded = set(feeclasses)
                 sim.mempool.reset()
 
-    callback.totaltime = 0.
-    callback.numiters = 0
-    callback.stranded = feeclasses[:]
-    sim.run(callback, mempool=mempool, maxtime=maxtime,
-            maxiters=float("inf"), stopflag=stopflag)
-
-    return TransientStats(tstats, sim.cap, sim.elapsedtime,
-                          callback.numiters, sim.stablefeerate)
+    return TransientStats(tstats, sim.cap, realtime, numiters,
+                          sim.stablefeerate)
 
 
 def steadystate(pools, tx_source,
@@ -69,7 +67,7 @@ class SimStats(object):
     def print_stats(self):
         print("Num iters: %d" % self.numiters)
         print("Time spent: %.2f" % self.timespent)
-        print("Stable feerate: %d\n" % self.stablefeerate)
+        print("Stable feerate: %d" % self.stablefeerate)
         self.cap.print_caps()
 
 
@@ -105,10 +103,15 @@ class TransientStats(SimStats):
     def print_stats(self):
         super(self.__class__, self).print_stats()
         sitems = sorted(self.stats.items())
-        print("\nFeerate\tAvgwait\tError")
+        table = Table()
+        table.add_row(('Feerate', 'Avgwait', 'Error'))
         for feerate, twait in sitems:
-            print("%d\t%.2f\t%.2f" %
-                  (feerate, twait.mean, twait.mean_interval[1] - twait.mean))
+            table.add_row((
+                feerate,
+                '%.2f' % twait.mean,
+                '%.2f' % (twait.mean_interval[1] - twait.mean)
+            ))
+        table.print_table()
 
 
 def _get_feeclasses(cap):

@@ -1,3 +1,6 @@
+from feemodel.util import Table
+
+
 class QueueStats(object):
     def __init__(self, feepoints):
         self.stats = [QueueClass(feerate) for feerate in feepoints]
@@ -6,6 +9,18 @@ class QueueStats(object):
         for queueclass in self.stats:
             queueclass.next_block(blockheight, blockinterval,
                                   stranding_feerate)
+
+    def print_stats(self):
+        table = Table()
+        table.add_row(('Feerate', 'Avgwait', 'SP', 'ASB'))
+        for qc in self.stats:
+            table.add_row((
+                qc.feerate,
+                '%.2f' % qc.avgwait,
+                '%.2f' % qc.stranded_proportion,
+                '%.2f' % qc.avg_strandedblocks,
+            ))
+        table.print_table()
 
 
 class QueueClass(object):

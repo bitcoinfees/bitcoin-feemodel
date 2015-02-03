@@ -1,5 +1,4 @@
 import os
-import json
 import ConfigParser as configparser
 
 try:
@@ -32,4 +31,3 @@ prioritythresh = config.getfloat('general', 'prioritythresh')
 
 history_file = os.path.join(datadir, config.get('txmempool', 'history_file'))
 poolinfo_file = os.path.join(datadir, 'pools.json')
-

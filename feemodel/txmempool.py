@@ -382,6 +382,11 @@ def get_mempool_size(minfeerate):
     return sum([tx.size for tx in txs if tx.feerate >= minfeerate])
 
 
+def get_mempool():
+    rawmempool = proxy.getrawmempool(verbose=True)
+    return {txid: MemEntry(entry) for txid, entry in rawmempool.items()}
+
+
 # class LoadHistory(object):
 #     def __init__(self, dbfile=historyFile):
 #         self.fns = []

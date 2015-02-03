@@ -1,8 +1,7 @@
 from collections import defaultdict
 from bisect import insort
 from time import time
-
-from feemodel.simul.txsources import SimTx
+from copy import copy
 
 rate_ratio_thresh = 0.9
 
@@ -20,7 +19,7 @@ class Simul(object):
 
     def run(self, mempool=None, maxiters=10000, maxtime=60):
         if mempool is None:
-            mempool = {}
+            mempool = []
         self.mempool = SimMempool(mempool)
         starttime = time()
         for simblock in self.pools.blockgen():
@@ -45,29 +44,34 @@ class SimMempool(object):
         self._tx_havedeps = {}
         self._depmap = defaultdict(list)
 
-        for txid, entry in mempool.items():
-            simtx = SimTx(entry.size, entry.feerate, txid, entry.depends)
+        for simtx in mempool:
             if not simtx._depends:
                 self._tx_nodeps.append(simtx)
             else:
                 for dep in simtx._depends:
-                    self._depmap[dep].append(txid)
-                self._tx_havedeps[txid] = simtx
+                    self._depmap[dep].append(simtx._id)
+                self._tx_havedeps[simtx._id] = simtx
 
         self._tx_nodeps_bak = self._tx_nodeps[:]
         self._tx_havedeps_bak = self._tx_havedeps.values()
         self._deps_bak = [tx._depends[:] for tx in self._tx_havedeps_bak]
 
-    # Use a property
-    def get_txs(self):
-        mempool_txs = self._tx_nodeps[:] + self._tx_havedeps.values()
-        return mempool_txs
+    @property
+    def txs(self):
+        return [copy(tx)
+                for tx in self._tx_nodeps + self._tx_havedeps.values()]
 
     def reset(self):
         self._tx_nodeps = self._tx_nodeps_bak[:]
         for idx, tx in enumerate(self._tx_havedeps_bak):
             tx._depends = self._deps_bak[idx][:]
         self._tx_havedeps = {tx._id: tx for tx in self._tx_havedeps_bak}
+
+    def calc_size(self):
+        numbytes = (sum([tx.size for tx in self._tx_nodeps]) +
+                    sum([tx.size for tx in self._tx_havedeps.values()]))
+        numtxs = len(self._tx_nodeps) + len(self._tx_havedeps)
+        return numbytes, numtxs
 
     def _add_txs(self, newtxs):
         self._tx_nodeps.extend(newtxs)
@@ -115,11 +119,5 @@ class SimMempool(object):
         simblock.size = blocksize
         simblock.txs = blocktxs
 
-    def _calc_size(self):
-        numbytes = (sum([tx.size for tx in self._tx_nodeps]) +
-                    sum([tx.size for tx in self._tx_havedeps.values()]))
-        numtxs = len(self._tx_nodeps) + len(self._tx_havedeps)
-        return numbytes, numtxs
-
     def __repr__(self):
-        return ("SimMempool{numbytes: %d, numtxs: %d}" % self._calc_size())
+        return ("SimMempool{numbytes: %d, numtxs: %d}" % self.calc_size())

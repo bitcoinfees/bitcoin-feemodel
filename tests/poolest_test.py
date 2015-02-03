@@ -29,7 +29,9 @@ class PoolEstimateTest(unittest.TestCase):
 
     def test_basic(self):
         self.pe.print_pools()
+        pools = self.pe.get()
         print(self.pe)
+        print(pools)
 
     def test_saveload(self):
         save_obj(self.pe, savefile)

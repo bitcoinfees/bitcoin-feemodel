@@ -8,4 +8,5 @@ _*
 feemodel/installinfo.py
 feemodel/archive
 tests/data/archive
+tests/archive
 venv

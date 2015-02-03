@@ -177,7 +177,7 @@ class DataSample(object):
 
 
 class Table(object):
-    def __init__(self, colwidths=None, padding=3):
+    def __init__(self, colwidths=None, padding=2):
         self.colwidths = colwidths
         self.rows = []
         self.justifs = []
@@ -199,11 +199,13 @@ class Table(object):
             self.colwidths[idx] = max(len(el), self.colwidths[idx])
 
     def print_table(self):
+        print("")
         for row, justifs in zip(self.rows, self.justifs):
             s = ''
             for just, colwidth in zip(justifs, self.colwidths):
                 s += '{:' + just + str(colwidth + self.padding) + '}'
             print(s.format(*row))
+        print("")
 
 
 def save_obj(obj, filename):

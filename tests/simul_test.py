@@ -3,8 +3,9 @@ from collections import Counter
 from copy import copy, deepcopy
 
 from feemodel.util import proxy
-from feemodel.txmempool import MemEntry
+from feemodel.txmempool import MemEntry, get_mempool
 from feemodel.simul import SimPool, SimPools, Simul, SimTx, SimTxSource
+from feemodel.simul.txsources import TxSourceCopy
 from feemodel.simul.stats import steadystate, transient
 
 init_pools = {
@@ -23,12 +24,12 @@ blockrate = 1./600
 
 pools = SimPools(pools=init_pools)
 tx_source = SimTxSource(txsample, txrate)
+tx_source_copy = TxSourceCopy(txsample, txrate)
 
-rawmempool = proxy.getrawmempool(verbose=True)
-entries = {txid: MemEntry(rawentry)
-                for txid, rawentry in rawmempool.items()}
+init_mempool = [SimTx.from_mementry(txid, entry)
+                for txid, entry in get_mempool().items()]
 print("Mempool size is %d" %
-      sum([entry['size'] for entry in rawmempool.values()]))
+      sum([tx.size for tx in init_mempool]))
 
 
 class PoolSimTests(unittest.TestCase):
@@ -37,6 +38,12 @@ class PoolSimTests(unittest.TestCase):
 
     def test_basic(self):
         self.pools.print_pools()
+        pools = self.pools.get()
+        # Make sure the pools returned by get() is a copy
+        for pool in pools.values():
+            pool.hashrate = 10000
+        self.assertNotEqual(self.pools.get(), pools)
+        print(pools)
 
     def test_randompool(self):
         numiters = 10000
@@ -93,25 +100,31 @@ class BasicSimTest(unittest.TestCase):
         self.tx_source = copy(tx_source)
         self.pools = pools
         self.sim = Simul(self.pools, self.tx_source)
-        self.entries = deepcopy(entries)
+        self.init_mempool = deepcopy(init_mempool)
 
     def test_basic(self):
-        print("Height\tNumtxs\tSize\tSFR")
+        print("Height\tNumtxs\tSize\tSFR\tMPsize")
         for simblock, t in self.sim.run(maxiters=50):
-            print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
-                                        simblock.size, simblock.sfr))
+            mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
+            print("%d\t%d\t%d\t%.0f\t%d" %
+                  (simblock.height, len(simblock.txs),
+                   simblock.size, simblock.sfr, mempoolsize))
+
         self.sim.cap.print_caps()
 
     def test_mempool(self):
-        for entry in self.entries.values():
-            entry.depends = []
-            entry.feerate = 100000
-            entry.size = 10000
+        for tx in self.init_mempool:
+            tx.depends = []
+            tx.feerate = 100000
+            tx.size = 10000
         print("With init mempool:")
-        print("Height\tNumtxs\tSize\tSFR")
-        for simblock, t in self.sim.run(mempool=self.entries, maxiters=50):
-            print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
-                                        simblock.size, simblock.sfr))
+        print("Height\tNumtxs\tSize\tSFR\tMPsize")
+        for simblock, t in self.sim.run(mempool=self.init_mempool,
+                                        maxiters=50):
+            mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
+            print("%d\t%d\t%d\t%.0f\t%d" %
+                  (simblock.height, len(simblock.txs),
+                   simblock.size, simblock.sfr, mempoolsize))
         self.sim.cap.print_caps()
 
     def test_degenerate_pools(self):
@@ -142,30 +155,30 @@ class TransientTest(unittest.TestCase):
     def setUp(self):
         self.tx_source = copy(tx_source)
         self.tx_source.txrate = 1.1
-        self.entries = {txid: MemEntry(rawentry)
-                        for txid, rawentry in rawmempool.items()}
+        self.init_mempool = deepcopy(init_mempool)
 
     def test_normal(self):
         print("Normal mempool")
-        stats = transient(self.entries, pools, self.tx_source, maxtime=10)
+        stats = transient(self.init_mempool, pools, self.tx_source, maxtime=10)
         stats.print_stats()
 
     def test_no_mp(self):
         print("No mempool")
-        stats = transient({}, pools, self.tx_source, maxtime=10)
+        stats = transient([], pools, self.tx_source, maxtime=10)
         stats.print_stats()
 
     def test_aug_mp(self):
         print("Augmented mempool")
-        for entry in self.entries.values():
-            entry.depends = []
-            entry.feerate = 100000
-        stats = transient(self.entries, pools, self.tx_source, maxtime=10)
+        for simtx in self.init_mempool:
+            simtx.depends = []
+            simtx.feerate = 100000
+            simtx.size = 10000
+        stats = transient(self.init_mempool, pools, self.tx_source, maxtime=10)
         stats.print_stats()
 
     def test_stopflag(self):
         print("Stop test with normal mempool")
-        stats = transient(self.entries, pools, self.tx_source, maxiters=500)
+        stats = transient(self.init_mempool, pools, self.tx_source, maxiters=500)
         stats.print_stats()
 
 

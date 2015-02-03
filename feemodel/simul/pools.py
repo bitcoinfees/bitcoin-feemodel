@@ -1,6 +1,6 @@
 from random import random, expovariate
 from math import log, exp
-from copy import copy
+from copy import deepcopy, copy
 from bisect import bisect_left
 from feemodel.util import Table
 
@@ -10,13 +10,33 @@ default_blockrate = 1./600
 class SimBlock(object):
     def __init__(self, blockheight, blocktime, blockinterval, poolinfo):
         self.height = blockheight
-        self.txs = []
         self.size = 0
         self.time = blocktime
         self.interval = blockinterval
         self.poolinfo = poolinfo
         self.sfr = float("inf")
         self.is_sizeltd = None
+
+        self._txs = []
+        self._txs_copied = False
+
+    @property
+    def txs(self):
+        # Only make a copy of the txs if it is accessed, for efficiency.
+        # If the attribute was not accessed in the current sim iteration,
+        # then the tx object might change (specifically the _depends attr).
+        if not self._txs_copied:
+            self._txs_copied = True
+            self._txs = [copy(tx) for tx in self._txs]
+        return self._txs
+
+    @txs.setter
+    def txs(self, val):
+        # The block txs are set in SimMempool._process_blocks.
+        # We defer making copies of the SimTx objects until they are
+        # accessed.
+        self._txs_copied = False
+        self._txs = val
 
     def __repr__(self):
         return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (
@@ -48,9 +68,12 @@ class SimPools(object):
 
         return blockgenfn()
 
+    def get(self):
+        return {name: deepcopy(pool) for name, pool in self.__pools}
+
     def update(self, pools):
         poolitems = sorted(
-            [(name, copy(pool)) for name, pool in pools.items()],
+            [(name, deepcopy(pool)) for name, pool in pools.items()],
             key=lambda p: p[1], reverse=True)
         totalhashrate = float(sum(
             [pool.hashrate for name, pool in poolitems]))
@@ -60,14 +83,21 @@ class SimPools(object):
         self.__poolsidx = []
         self.__pools = []
         cumprop = 0.
-        for name, pool in poolitems:
-            for attr in ['hashrate', 'maxblocksize', 'minfeerate']:
-                if getattr(pool, attr) < 0:
-                    raise ValueError("%s must be >= 0." % attr)
-            pool.proportion = pool.hashrate / totalhashrate
-            cumprop += pool.proportion
-            self.__poolsidx.append(cumprop)
-            self.__pools.append((name, pool))
+        try:
+            for name, pool in poolitems:
+                for attr in ['maxblocksize', 'minfeerate']:
+                    if getattr(pool, attr) < 0:
+                        raise ValueError("%s must be >= 0." % attr)
+                if pool.hashrate <= 0:
+                    raise ValueError("hashrate must be > 0.")
+                pool.proportion = pool.hashrate / totalhashrate
+                cumprop += pool.proportion
+                self.__poolsidx.append(cumprop)
+                self.__pools.append((name, pool))
+        except ValueError as e:
+            self.__poolsidx = []
+            self.__pools = []
+            raise(e)
 
         self.__poolsidx[-1] = 1.
 
@@ -113,8 +143,11 @@ class SimPools(object):
                 pool.minfeerate))
         table.print_table()
 
+    def get_numpools(self):
+        return len(self.__pools)
+
     def __repr__(self):
-        elogp = sum([p.proportion*log(p.proportion)
+        elogp = -sum([p.proportion*log(p.proportion)
                      for n, p in self.__pools])
         numeffpools = exp(elogp)
         return "SimPools{Num: %d, NumEffective: %.2f}" % (

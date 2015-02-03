@@ -9,13 +9,19 @@ class SimTx(object):
     def __init__(self, size, feerate, _id='', _depends=None):
         self.size = size
         self.feerate = feerate
+        if _depends is None:
+            _depends = []
         self._depends = _depends
         self._id = _id
         if not _id:
-            assert _depends is None
+            assert not _depends
+
+    @classmethod
+    def from_mementry(cls, txid, entry):
+        return cls(entry.size, entry.feerate, _id=txid, _depends=entry.depends)
 
     def __copy__(self):
-        return SimTx(self.size, self.feerate, self._id, copy(self._depends))
+        return SimTx(self.size, self.feerate, self._id, self._depends[:])
 
     def __cmp__(self, other):
         return cmp(self.feerate, other.feerate)
@@ -31,7 +37,8 @@ class SimTxSource(object):
         self.txrate = txrate
 
     def generate_txs(self, time_interval):
-        # This will raise an IndexError if the sample size is zero.
+        if not self.txsample:
+            raise ValueError("Empty txsample.")
         k = poisson_sample(self.txrate*time_interval)
         n = len(self.txsample)
 
@@ -39,6 +46,7 @@ class SimTxSource(object):
 
     def get_byterates(self, feerates):
         '''Get byterates as a function of feerate.'''
+        # feerates assumed sorted.
         n = float(len(self.txsample))
         byterates = [0.]*len(feerates)
         for tx in self.txsample:
