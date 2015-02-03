@@ -1,8 +1,9 @@
 import unittest
 from collections import Counter
 from copy import copy, deepcopy
+from bisect import bisect
 
-from feemodel.util import proxy
+from feemodel.util import proxy, Table
 from feemodel.txmempool import MemEntry, get_mempool
 from feemodel.simul import SimPool, SimPools, Simul, SimTx, SimTxSource
 from feemodel.simul.txsources import TxSourceCopy
@@ -141,6 +142,58 @@ class BasicSimTest(unittest.TestCase):
             print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
                                         simblock.size, simblock.sfr))
         self.sim.cap.print_caps()
+
+
+class SimCapsTest(unittest.TestCase):
+    def setUp(self):
+        self.tx_source = copy(tx_source)
+        self.tx_source.txrate = 3.
+        self.pools = pools
+        self.sim = Simul(self.pools, self.tx_source)
+
+    def test_A(self):
+        cap = self.sim.cap
+        pool_empcaps = {name: PoolEmpiricalCap(poolcap)
+                        for name, poolcap in cap.pool_caps.items()}
+        for simblock, t in self.sim.run(maxtime=60.):
+            for poolec in pool_empcaps.values():
+                poolec.totaltime += simblock.interval
+            pool_empcaps[simblock.poolinfo[0]].addblock(simblock)
+        print("Completed in %.2fs with %d iters." % (t, simblock.height+1))
+        cap.print_caps()
+        for name, poolec in pool_empcaps.items():
+            print("%s:\n=================" % name)
+            poolec.calc_simproc()
+            poolec.print_procs()
+
+
+class PoolEmpiricalCap(object):
+    def __init__(self, poolcap):
+        self.feerates = poolcap.feerates
+        self.procrates_theory = poolcap.procrates
+        self.procrates_sim = [0.]*len(self.feerates)
+        self.caps = poolcap.caps
+        self.totaltime = 0.
+
+    def addblock(self, simblock):
+        for tx in simblock.txs:
+            fidx = bisect(self.feerates, tx.feerate)
+            self.procrates_sim[fidx-1] += tx.size
+
+    def calc_simproc(self):
+        self.procrates_sim = [r / self.totaltime for r in self.procrates_sim]
+
+    def print_procs(self):
+        table = Table()
+        table.add_row(("Feerate", "Theory", "Sim", "Caps"))
+        for idx in range(len(self.feerates)):
+            table.add_row((
+                self.feerates[idx],
+                '%.2f' % self.procrates_theory[idx],
+                '%.2f' % self.procrates_sim[idx],
+                '%.2f' % self.caps[idx],
+            ))
+        table.print_table()
 
 
 class SteadyStateTest(unittest.TestCase):

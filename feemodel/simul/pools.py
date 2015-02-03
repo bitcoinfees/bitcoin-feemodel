@@ -102,35 +102,34 @@ class SimPools(object):
         self.__poolsidx[-1] = 1.
 
     def calc_capacities(self, tx_source):
-        mfrs = [pool.minfeerate for name, pool in self.__pools]
-        mfrs = sorted(set(mfrs + [0]))
-        mfrs = filter(lambda fee: fee < float("inf"), mfrs)
-        tx_byterates = tx_source.get_byterates(mfrs)
+        poolfeerates = [pool.minfeerate for name, pool in self.__pools]
+        poolfeerates = sorted(set(poolfeerates + [0]))
+        poolfeerates = filter(lambda fee: fee < float("inf"), poolfeerates)
+        tx_byterates = tx_source.get_byterates(poolfeerates)
         pool_caps = {
-            name: PoolCapacity(mfrs, self.__blockrate, pool)
+            name: PoolCapacity(poolfeerates, self.__blockrate, pool)
             for name, pool in self.__pools}
-        for feerate, byterate in reversed(zip(mfrs, tx_byterates)):
-            excessrate = byterate
+        for idx in range(len(poolfeerates)-1, -1, -1):
+            excessrate = tx_byterates[idx]
             while excessrate > 0:
                 nonmaxedpools = filter(
-                    lambda pool: (pool.caps[feerate][0] <
-                                  pool.caps[feerate][1]),
+                    lambda pool: pool.procrates[idx] < pool.caps[idx],
                     pool_caps.values())
                 if not nonmaxedpools:
                     break
-                totalproportion = sum([
+                totalprop = sum([
                     pool.proportion for pool in nonmaxedpools])
                 for pool in nonmaxedpools:
-                    ratealloc = pool.proportion * excessrate / totalproportion
-                    pool.caps[feerate][0] += ratealloc
-                    pool.caps[feerate][0] = min(pool.caps[feerate][0],
-                                                pool.caps[feerate][1])
-                excessrate = byterate - sum([
-                    pool.caps[feerate][0] for pool in pool_caps.values()])
+                    ratealloc = pool.proportion * excessrate / totalprop
+                    pool.procrates[idx] += ratealloc
+                    pool.procrates[idx] = min(pool.procrates[idx],
+                                              pool.caps[idx])
+                excessrate = tx_byterates[idx] - sum([
+                    pool.procrates[idx] for pool in pool_caps.values()])
             for pool in pool_caps.values():
                 pool.update_capacities()
 
-        return Capacity(mfrs, tx_byterates, pool_caps)
+        return Capacity(poolfeerates, tx_byterates, pool_caps)
 
     def print_pools(self):
         table = Table()
@@ -178,8 +177,8 @@ class Capacity(object):
         self.tx_byterates = tx_byterates
         self.pool_caps = pool_caps
         self.caps = [
-            sum([pool.caps[f][1] for pool in pool_caps.values()])
-            for f in feerates]
+            sum([pool.caps[idx] for pool in pool_caps.values()])
+            for idx in range(len(self.feerates))]
 
     def calc_stablefeerate(self, ratio_thresh):
         stablefeerate = None
@@ -207,15 +206,27 @@ class Capacity(object):
 
 class PoolCapacity(object):
     def __init__(self, feerates, blockrate, pool):
-        self.caps = {feerate: [0., 0.] for feerate in feerates}
+        self.feerates = feerates
+        self.procrates = [0.]*len(feerates)
+        self.caps = [0.]*len(feerates)
         self.proportion = pool.proportion
         self.maxcap = pool.maxblocksize*blockrate*pool.proportion
         self.minfeerate = pool.minfeerate
         self.update_capacities()
 
     def update_capacities(self):
-        feerates = sorted(self.caps.keys(), reverse=True)
         residualcap = self.maxcap
-        for f in feerates:
-            self.caps[f][1] = residualcap if f >= self.minfeerate else 0.
-            residualcap = max(self.caps[f][1] - self.caps[f][0], 0)
+        for idx in range(len(self.feerates)-1, -1, -1):
+            f = self.feerates[idx]
+            self.caps[idx] = residualcap if f >= self.minfeerate else 0.
+            residualcap = max(self.caps[idx]-self.procrates[idx], 0)
+
+    def print_caps(self):
+        table = Table()
+        table.add_row(("Feerate", "ProcRate", "Capacity"))
+        for idx in range(len(self.feerates)):
+            table.add_row((
+                self.feerates[idx],
+                '%.2f' % self.procrates[idx],
+                '%.2f' % self.caps[idx]))
+        table.print_table()
