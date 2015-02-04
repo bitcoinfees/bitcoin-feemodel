@@ -15,6 +15,8 @@ class PoolsEstimatorOnline(StoppableThread):
 
     def __init__(self, window, update_period=144):
         self.pools_lock = threading.Lock()
+        self.window = window
+        self.update_period = update_period
         try:
             self.load_pe()
         except:
@@ -26,13 +28,18 @@ class PoolsEstimatorOnline(StoppableThread):
                 self.height = max(self.pe.blockmap)
             except:
                 self.height = 0
-            logger.info("Pools Estimator loaded with best height %d" %
-                        self.height)
+            else:
+                currheight = proxy.getblockcount()
+                if currheight - self.height > self.update_period:
+                    logger.info("Loaded pool estimates are outdated; "
+                                "starting from scratch.")
+                    self.pe = PoolsEstimator()
+                else:
+                    logger.info("Pools Estimator loaded with best height %d." %
+                                self.height)
 
         if not os.path.exists(self.savedir):
             os.mkdir(self.savedir)
-        self.window = window
-        self.update_period = update_period
         super(self.__class__, self).__init__()
 
     def run(self):
@@ -47,10 +54,13 @@ class PoolsEstimatorOnline(StoppableThread):
 
     def update(self):
         currheight = proxy.getblockcount()
+        pe = deepcopy(self.pe)
+        pe._calc_blockrate(currheight=currheight)
+        self.pe = pe
         if currheight - self.height < self.update_period:
             return
-        rangetuple = (currheight-self.window+1, currheight+1)
         pe = deepcopy(self.pe)
+        rangetuple = (currheight-self.window+1, currheight+1)
         try:
             pe.start(rangetuple, stopflag=self.get_stop_object())
         except ValueError:

@@ -26,6 +26,8 @@ class TransientOnline(StoppableThread):
         self.update_period = update_period_secs
         self.maxiters = maxiters
         self.maxtime = maxtime
+        self.tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
+
         self.stats = TransientStats()
         super(self.__class__, self).__init__()
 
@@ -34,8 +36,8 @@ class TransientOnline(StoppableThread):
         try:
             while not self.is_stopped():
                 self.update()
-                updatetimediff = time() - self.stats.time
-                time_till_next = max(0, self.update_period - updatetimediff)
+                time_till_next = max(
+                    0, self.update_period + self.stats.time - time())
                 self.sleep(time_till_next)
         except StopIteration:
             pass
@@ -44,15 +46,15 @@ class TransientOnline(StoppableThread):
     def update(self):
         currheight = proxy.getblockcount()
         blockrangetuple = (currheight-self.window+1, currheight+1)
-        tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
-        tx_source.start(blockrangetuple, stopflag=self.get_stop_object())
-
+        if currheight > self.tx_source.height:
+            self.tx_source.start(blockrangetuple,
+                                 stopflag=self.get_stop_object())
         pools = self.peo.pe
-        if not pools.get_numpools():
+        if not pools:
             logger.debug("No pools.")
             return
-        sim = Simul(pools, tx_source)
-        feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
+        sim = Simul(pools, self.tx_source)
+        feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
         try:
             self.simulate(sim, feeclasses)
         except ValueError:
@@ -133,3 +135,6 @@ class TransientStats(object):
                 '%.2f' % (twait.mean_interval[1] - twait.mean)
             ))
         table.print_table()
+
+    def __nonzero__(self):
+        return bool(self.time)

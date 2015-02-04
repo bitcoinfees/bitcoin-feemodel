@@ -94,6 +94,7 @@ class SimPools(object):
                 cumprop += pool.proportion
                 self.__poolsidx.append(cumprop)
                 self.__pools.append((name, pool))
+            assert abs(cumprop-1) < 0.0001
         except ValueError as e:
             self.__poolsidx = []
             self.__pools = []
@@ -143,8 +144,8 @@ class SimPools(object):
         table.print_table()
         print("Avg block interval is %.2f" % (1./self.blockrate,))
 
-    def get_numpools(self):
-        return len(self.__pools)
+    def __nonzero__(self):
+        return bool(len(self.__pools))
 
     def __repr__(self):
         elogp = -sum([p.proportion*log(p.proportion)

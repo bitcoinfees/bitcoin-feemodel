@@ -63,7 +63,7 @@ class SteadyStateOnline(StoppableThread):
         tx_source.start(blockrangetuple, stopflag=self.get_stop_object())
 
         pools = self.peo.pe
-        if not pools.get_numpools():
+        if not pools:
             logger.debug("No pools.")
             return
         sim = Simul(pools, tx_source)
@@ -141,3 +141,6 @@ class SteadyStateStats(object):
         self.stablefeerate = None
         self.height = 0
         self.waitmeasure = WaitMeasure([])
+
+    def __nonzero__(self):
+        return bool(self.height)

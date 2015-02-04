@@ -20,6 +20,7 @@ class TxRateEstimator(SimTxSource):
         self.txrate = 0.
         self.totaltime = 0.
         self.totaltxs = 0
+        self.height = 0
 
     def start(self, blockrangetuple, stopflag=None, dbfile=history_file):
         logger.info("Starting TxRate estimation "
@@ -39,6 +40,7 @@ class TxRateEstimator(SimTxSource):
         self.txrate = self.totaltxs / self.totaltime
         for tx in self.txsample:
             tx._id = ''
+        self.height = blockrangetuple[1] - 1
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
 
