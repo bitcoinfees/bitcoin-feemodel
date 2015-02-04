@@ -14,6 +14,7 @@ class PoolsEstimatorOnline(StoppableThread):
     savedir = os.path.join(datadir, 'pools/')
 
     def __init__(self, window, update_period=144):
+        self.pools_lock = threading.Lock()
         try:
             self.load_pe()
         except:
@@ -32,8 +33,6 @@ class PoolsEstimatorOnline(StoppableThread):
             os.mkdir(self.savedir)
         self.window = window
         self.update_period = update_period
-        self.pools_lock = threading.Lock()
-        self._copy_cache()
         super(self.__class__, self).__init__()
 
     def run(self):
@@ -51,17 +50,28 @@ class PoolsEstimatorOnline(StoppableThread):
         if currheight - self.height < self.update_period:
             return
         rangetuple = (currheight-self.window+1, currheight+1)
+        pe = deepcopy(self.pe)
         try:
-            self.pe.start(rangetuple, stopflag=self.get_stop_object())
+            pe.start(rangetuple, stopflag=self.get_stop_object())
         except ValueError:
             logger.exception("No pools estimated.")
         else:
             self.height = currheight
+            self.pe = pe
             try:
                 self.save_pe()
             except:
                 logger.exception("Unable to save pools.")
-            self._copy_cache()
+
+    @property
+    def pe(self):
+        with self.pools_lock:
+            return self._pe
+
+    @pe.setter
+    def pe(self, val):
+        with self.pools_lock:
+            self._pe = val
 
     def load_pe(self):
         savefiles = sorted(os.listdir(self.savedir))
@@ -72,11 +82,3 @@ class PoolsEstimatorOnline(StoppableThread):
         savefilename = 'pe' + str(self.height) + '.pickle'
         savefile = os.path.join(self.savedir, savefilename)
         save_obj(self.pe, savefile)
-
-    def get_pools(self):
-        with self.pools_lock:
-            return self.pe_cached
-
-    def _copy_cache(self):
-        with self.pools_lock:
-            self.pe_cached = deepcopy(self.pe)

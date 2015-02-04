@@ -2,6 +2,9 @@ from collections import defaultdict
 from bisect import insort
 from time import time
 from copy import copy
+from math import ceil
+
+from feemodel.util import DataSample
 
 rate_ratio_thresh = 0.9
 
@@ -121,3 +124,37 @@ class SimMempool(object):
 
     def __repr__(self):
         return ("SimMempool{numbytes: %d, numtxs: %d}" % self.calc_size())
+
+
+def get_feeclasses(cap, tx_source, stablefeerate):
+    '''Choose suitable feerates at which to evaluate stats.'''
+    feerates = cap.feerates[1:]
+    caps = cap.caps
+    capsdiff = [caps[idx] - caps[idx-1]
+                for idx in range(1, len(feerates)+1)]
+    feeDS = DataSample(feerates)
+    feeclasses = [feeDS.get_percentile(p/100., weights=capsdiff)
+                  for p in range(5, 100, 5)]
+    # Round up to nearest 1000 satoshis
+    quantize = 1000
+    feeclasses = [int(ceil(float(feerate) / quantize)*quantize)
+                  for feerate in feeclasses]
+    feeclasses = sorted(set(feeclasses))
+
+    new_feeclasses = [True]
+    while new_feeclasses:
+        byterates = tx_source.get_byterates(feeclasses)
+        # The byterate in each feeclass should not exceed 0.1 of the total
+        byteratethresh = 0.1 * sum(byterates)
+        new_feeclasses = []
+        for idx, byterate in enumerate(byterates[:-1]):
+            if byterate > byteratethresh:
+                feegap = feeclasses[idx+1] - feeclasses[idx]
+                if feegap > 1:
+                    new_feeclasses.append(feeclasses[idx] + int(feegap/2))
+        feeclasses.extend(new_feeclasses)
+        feeclasses.sort()
+
+    feeclasses = filter(lambda fee: fee >= stablefeerate, feeclasses)
+
+    return feeclasses

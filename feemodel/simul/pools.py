@@ -45,7 +45,7 @@ class SimBlock(object):
 
 class SimPools(object):
     def __init__(self, pools=None, blockrate=default_blockrate):
-        self.__blockrate = blockrate
+        self.blockrate = blockrate
         self.__pools = []
         self.__poolsidx = []
 
@@ -59,7 +59,7 @@ class SimPools(object):
             while True:
                 poolidx = bisect_left(self.__poolsidx, random())
                 poolinfo = self.__pools[poolidx]
-                blockinterval = expovariate(self.__blockrate)
+                blockinterval = expovariate(self.blockrate)
                 simtime += blockinterval
                 simblock = SimBlock(blockheight, simtime,
                                     blockinterval, poolinfo)
@@ -107,7 +107,7 @@ class SimPools(object):
         poolfeerates = filter(lambda fee: fee < float("inf"), poolfeerates)
         tx_byterates = tx_source.get_byterates(poolfeerates)
         pool_caps = {
-            name: PoolCapacity(poolfeerates, self.__blockrate, pool)
+            name: PoolCapacity(poolfeerates, self.blockrate, pool)
             for name, pool in self.__pools}
         for idx in range(len(poolfeerates)-1, -1, -1):
             excessrate = tx_byterates[idx]
@@ -141,6 +141,7 @@ class SimPools(object):
                 pool.maxblocksize,
                 pool.minfeerate))
         table.print_table()
+        print("Avg block interval is %.2f" % (1./self.blockrate,))
 
     def get_numpools(self):
         return len(self.__pools)

@@ -1,7 +1,7 @@
 import threading
 import logging
 from bisect import insort, bisect
-from math import ceil
+from math import ceil, log
 from contextlib import contextmanager
 from random import random
 from functools import wraps
@@ -23,7 +23,7 @@ class StoppableThread(threading.Thread):
     '''A thread with a stop flag.'''
 
     def __init__(self):
-        super(StoppableThread, self).__init__()
+        super(StoppableThread, self).__init__(name=self.__class__.__name__)
         self.__stopflag = threading.Event()
 
     def stop(self):
@@ -254,6 +254,23 @@ def get_coinbase_info(blockheight=None, block=None):
     tag = str(coinbase_tx.vin[0].scriptSig).decode('utf-8', 'ignore')
 
     return addresses, tag
+
+
+def get_pph(blockheight=None, block=None):
+    '''Get probability p of finding a block, per hash performed.'''
+    if not block:
+        block = proxy.getblock(proxy.getblockhash(blockheight))
+    nbits = hex(block.nBits)[2:]
+    assert len(nbits) == 8
+    significand = int(nbits[2:], base=16)
+    exponent = (int(nbits[:2], base=16)-3)*8
+    logtarget = log(significand, 2) + exponent
+
+    # This is not technically correct because the target is fulfilled in the
+    # case of equality. It should more correctly be:
+    # (2**logtarget + 1) / 2**256,
+    # but of course the difference is negligible.
+    return 2**(logtarget - 256)
 
 
 def get_block_timestamp(blockheight):

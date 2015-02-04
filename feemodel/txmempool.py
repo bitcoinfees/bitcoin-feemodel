@@ -11,8 +11,6 @@ from bitcoin.core import b2lx
 from feemodel.config import history_file, poll_period, keep_history
 from feemodel.util import proxy, StoppableThread, get_feerate
 
-history_lock = threading.Lock()
-mempool_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 MEMBLOCK_TABLE_SCHEMA = {
@@ -66,6 +64,16 @@ class TxMempool(StoppableThread):
     errors.
     '''
     # Have to handle RPC errors
+    def __init__(self, write_history=True, dbfile=history_file,
+                 keep_history=keep_history):
+        self.history_lock = threading.Lock()
+        self.mempool_lock = threading.Lock()
+        self.best_height = None
+        self.rawmempool = None
+        self.write_history = write_history
+        self.dbfile = dbfile
+        self.keep_history = keep_history
+        super(self.__class__, self).__init__()
 
     def run(self):
         '''Target function of the thread.
@@ -85,7 +93,7 @@ class TxMempool(StoppableThread):
     def update(self):
         '''Mempool polling function.'''
         curr_height, rawmp_new = proxy.poll_mempool()
-        with mempool_lock:
+        with self.mempool_lock:
             if curr_height > self.best_height:
                 entries = {txid: MemEntry(rawentry)
                            for txid, rawentry in self.rawmempool.iteritems()}
@@ -107,7 +115,7 @@ class TxMempool(StoppableThread):
         Records the mempool entries in a MemBlock instance and writes to disk.
         entries is a dict that maps txids to MemEntry objects.
         '''
-        with history_lock:
+        with self.history_lock:
             memblocks = []
             for height in blockheight_range:
                 block = proxy.getblock(proxy.getblockhash(height))
@@ -127,17 +135,17 @@ class TxMempool(StoppableThread):
                 logger.warning("process_blocks: %d conflicts removed." %
                                len(conflicts))
 
-            if self.is_alive():
+            if self.write_history and self.is_alive():
                 for memblock in memblocks:
-                    memblock.write()
+                    memblock.write(self.dbfile, self.keep_history)
 
             return memblocks
 
     def get_entries(self):
         '''Returns mempool entries.'''
-        if not self.is_alive():
+        if self.rawmempool is None:
             raise ValueError("Thread not started yet.")
-        with mempool_lock:
+        with self.mempool_lock:
             entries = {txid: MemEntry(rawentry)
                        for txid, rawentry in self.rawmempool.iteritems()}
             return entries
@@ -194,7 +202,7 @@ class MemBlock(object):
                 if incl_ratio < 0.9:
                     logger.warning(incl_text)
 
-    def write(self, dbfile=history_file, keep_history=keep_history):
+    def write(self, dbfile, keep_history):
         '''Write MemBlock to disk.
 
         keep_history specifies how many blocks of information should be

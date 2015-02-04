@@ -3,7 +3,7 @@ import warnings
 import json
 from time import time
 from feemodel.config import poolinfo_file, history_file
-from feemodel.util import get_coinbase_info, Table
+from feemodel.util import get_coinbase_info, Table, get_block_timestamp
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock
@@ -108,6 +108,9 @@ class PoolsEstimator(SimPools):
         self.id_blocks(blockrangetuple, stopflag=stopflag)
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
         self.update()
+        # to-do: think about using shorter / variable estimation windows
+        blockinterval = estimate_block_interval(blockrangetuple)
+        self.blockrate = 1./blockinterval
         logger.info("Finished pool estimation in %.2f seconds." %
                     (time()-starttime))
 
@@ -191,5 +194,17 @@ class PoolsEstimator(SimPools):
                 '%.2f' % pool.stats['mean'],
                 '%.2f' % pool.stats['std'],
                 '%.2f' % pool.stats['bias']))
-
         table.print_table()
+        print("Avg block interval is %.2f" % (1./self.blockrate,))
+
+
+def estimate_block_interval(blockrangetuple):
+    start = blockrangetuple[0]
+    end = blockrangetuple[1] - 1
+    numintervals = end - start
+    if numintervals < 1:
+        raise ValueError("Number of intervals must be > 1.")
+    timeinterval = get_block_timestamp(end) - get_block_timestamp(start)
+    if not timeinterval:
+        raise ValueError("Time interval is zero.")
+    return timeinterval / float(numintervals)

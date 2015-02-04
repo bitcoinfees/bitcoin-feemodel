@@ -43,7 +43,7 @@ class WriteReadTests(unittest.TestCase):
         '''Tests write/read of empty entries dict'''
         memblock = MemBlock.read(self.test_blockheight, dbfile=dbfile)
         memblock.entries = {}
-        memblock.write(dbfile=tmpdbfile)
+        memblock.write(dbfile=tmpdbfile, keep_history=2016)
         memblock_read = MemBlock.read(self.test_blockheight, dbfile=tmpdbfile)
         self.assertEqual(memblock_read, memblock)
 
