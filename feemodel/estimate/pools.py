@@ -133,8 +133,8 @@ class PoolsEstimator(SimPools):
                     "from blockrange({}, {})".format(*blockrangetuple))
         starttime = time()
         self.id_blocks(blockrangetuple, stopflag=stopflag)
-        self._estimate_pools(stopflag=stopflag, dbfile=dbfile)
-        self._calc_blockrate()
+        self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
+        self.calc_blockrate()
         self.update()
         logger.info("Finished pool estimation in %.2f seconds." %
                     (time()-starttime))
@@ -191,7 +191,7 @@ class PoolsEstimator(SimPools):
 
         logger.info("Finished identifying blocks.")
 
-    def _estimate_pools(self, stopflag=None, dbfile=history_file):
+    def estimate_pools(self, stopflag=None, dbfile=history_file):
         self.pools = {}
         poollist = set(self.blockmap.values())
         blockrangetuple = (min(self.blockmap), max(self.blockmap)+1)
@@ -205,7 +205,7 @@ class PoolsEstimator(SimPools):
             logger.info("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool
 
-    def _calc_blockrate(self, currheight=None):
+    def calc_blockrate(self, currheight=None):
         if not currheight:
             currheight = max(self.blockmap)
         totalhashrate = sum([pool.hashrate for pool in self.pools.values()])

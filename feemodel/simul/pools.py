@@ -53,6 +53,9 @@ class SimPools(object):
             self.update(pools)
 
     def blockgen(self):
+        if not self:
+            raise ValueError("No pools.")
+
         def blockgenfn():
             simtime = 0.
             blockheight = 0

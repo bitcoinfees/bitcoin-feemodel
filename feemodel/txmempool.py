@@ -132,8 +132,8 @@ class TxMempool(StoppableThread):
                 for memblock in memblocks[1:]:
                     del memblock.entries[txid]
             if len(conflicts):
-                logger.warning("process_blocks: %d conflicts removed." %
-                               len(conflicts))
+                logger.info("process_blocks: %d conflicts removed." %
+                            len(conflicts))
 
             if self.write_history and self.is_alive():
                 for memblock in memblocks:
@@ -165,14 +165,14 @@ class MemBlock(object):
     Methods:
         write - Write to disk.
         read - Read from disk.
-        get_block_list - Get the list of stored block heights.
+        get_block_list - Get the list of heights of stored blocks.
     '''
 
     def __init__(self, blockheight=None, block=None, entries=None):
         '''Label the mempool entries based on the block data.
 
         We record various block statistics, and for each MemEntry we label
-        inblock and leadtime. See MemEntry docstring for more info.
+        inblock and leadtime. See MemEntry for more info.
         '''
         if blockheight and block and entries is not None:
             self.height = blockheight
@@ -299,14 +299,14 @@ class MemEntry(object):
     '''Represents a mempool entry.
 
     This is basically the data returned by getrawmempool, but with additional
-    attributes if it is part of a MemBlock:
+    attributes if it is associated with a MemBlock:
         inblock - whether or not the transaction was included in the block
         leadtime - difference between block discovery time and mempool entry
                    time
         isconflict - whether or not the transaction is a conflict, meaning
-                     that it was removed from the mempool as a result of
-                     being invalidated by some other transaction in the
-                     block.
+                     that it was subsequently removed from the mempool as a
+                     result of being invalidated by some other transaction
+                     in the block.
     In addition, for convenience we compute and store the feerate (satoshis
     per kB of transaction size)
     '''

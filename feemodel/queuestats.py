@@ -6,6 +6,8 @@ class QueueStats(object):
         self.stats = [QueueClass(feerate) for feerate in feepoints]
 
     def next_block(self, blockheight, blockinterval, stranding_feerate):
+        if not blockinterval:
+            raise ValueError("blockinterval must be > 0.")
         for queueclass in self.stats:
             queueclass.next_block(blockheight, blockinterval,
                                   stranding_feerate)

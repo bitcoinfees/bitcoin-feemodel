@@ -1,6 +1,7 @@
 import threading
 import logging
 from time import time
+from copy import deepcopy
 
 from feemodel.util import StoppableThread, DataSample, proxy, Table
 from feemodel.simul.simul import get_feeclasses
@@ -49,10 +50,11 @@ class TransientOnline(StoppableThread):
         if currheight > self.tx_source.height:
             self.tx_source.start(blockrangetuple,
                                  stopflag=self.get_stop_object())
-        pools = self.peo.pe
+        pools = deepcopy(self.peo.pe)
         if not pools:
             logger.debug("No pools.")
             return
+        pools.calc_blockrate()
         sim = Simul(pools, self.tx_source)
         feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
         try:
@@ -92,14 +94,14 @@ class TransientOnline(StoppableThread):
                     sim.mempool.reset()
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
-                    (realtime, block.height+1, mempoolsize))
+                    (realtime, numiters, mempoolsize))
 
         for feerate, twait in tstats.items():
             if twait.n > 1:
                 twait.calc_stats()
             else:
                 # Something very bad happened - not likely
-                raise ValueError("Only 1 iteration was performed.")
+                raise ValueError("Less than 2 iterations.")
         stats.tstats = tstats
         stats.cap = sim.cap
         stats.stablefeerate = sim.stablefeerate

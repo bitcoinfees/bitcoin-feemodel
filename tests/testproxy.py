@@ -1,7 +1,7 @@
-from bitcoin.rpc import Proxy
+from feemodel.util import BlockingProxy
 from feemodel.txmempool import MemBlock
 
-class TestProxy(Proxy):
+class TestProxy(BlockingProxy):
     '''A class that mimics bitcoin.rpc.Proxy for testing purposes.'''
 
     def getblockcount(self):

@@ -54,9 +54,6 @@ class PoolsEstimatorOnline(StoppableThread):
 
     def update(self):
         currheight = proxy.getblockcount()
-        pe = deepcopy(self.pe)
-        pe._calc_blockrate(currheight=currheight)
-        self.pe = pe
         if currheight - self.height < self.update_period:
             return
         pe = deepcopy(self.pe)

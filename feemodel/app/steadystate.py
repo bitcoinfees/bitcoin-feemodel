@@ -62,10 +62,11 @@ class SteadyStateOnline(StoppableThread):
         tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
         tx_source.start(blockrangetuple, stopflag=self.get_stop_object())
 
-        pools = self.peo.pe
+        pools = deepcopy(self.peo.pe)
         if not pools:
             logger.debug("No pools.")
             return
+        pools.calc_blockrate()
         sim = Simul(pools, tx_source)
         feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
         stats = self.simulate(sim, feeclasses)
@@ -127,10 +128,6 @@ class SteadyStateOnline(StoppableThread):
         savefilename = 'ss' + str(self.stats.height) + '.pickle'
         savefile = os.path.join(self.savedir, savefilename)
         save_obj(self.stats, savefile)
-
-    def _copy_cache(self):
-        with self.stats_lock:
-            self.stats_cached = deepcopy(self.stats)
 
 
 class SteadyStateStats(object):
