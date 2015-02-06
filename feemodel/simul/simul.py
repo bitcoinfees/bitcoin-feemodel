@@ -135,8 +135,8 @@ def get_feeclasses(cap, tx_source, stablefeerate):
     feeDS = DataSample(feerates)
     feeclasses = [feeDS.get_percentile(p/100., weights=capsdiff)
                   for p in range(5, 100, 5)]
-    # Round up to nearest 1000 satoshis
-    quantize = 1000
+    # Round up to nearest 200 satoshis
+    quantize = 200
     feeclasses = [int(ceil(float(feerate) / quantize)*quantize)
                   for feerate in feeclasses]
     feeclasses = sorted(set(feeclasses))

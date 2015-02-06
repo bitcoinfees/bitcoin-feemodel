@@ -3,43 +3,44 @@ import logging
 from time import time
 from copy import deepcopy
 
-from feemodel.util import StoppableThread, DataSample, proxy, Table
+from feemodel.util import StoppableThread, DataSample, proxy
 from feemodel.simul.simul import get_feeclasses
 from feemodel.simul import Simul, SimTx
+from feemodel.simul.stats import SimStats, WaitFn
 from feemodel.estimate import TxRateEstimator
 
 tx_maxsamplesize = 10000
 default_update_period = 60.
 default_maxiters = 10000
 default_maxtime = 60.
+default_predict_level = 0.9
 
 logger = logging.getLogger(__name__)
 
 
 class TransientOnline(StoppableThread):
     def __init__(self, mempool, peo, window,
-                 update_period_secs=default_update_period,
+                 update_period=default_update_period,
                  maxiters=default_maxiters, maxtime=default_maxtime):
         self.stats_lock = threading.Lock()
         self.mempool = mempool
         self.peo = peo
         self.window = window
-        self.update_period = update_period_secs
+        self.update_period = update_period
         self.maxiters = maxiters
         self.maxtime = maxtime
         self.tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
-
         self.stats = TransientStats()
+        self.next_update = self.stats.timestamp + update_period
         super(self.__class__, self).__init__()
 
     def run(self):
         logger.info("Starting transient online sim.")
         try:
+            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
-                time_till_next = max(
-                    0, self.update_period + self.stats.time - time())
-                self.sleep(time_till_next)
+                self.sleep(max(0, self.next_update-time()))
         except StopIteration:
             pass
         logger.info("Stopped transient online sim.")
@@ -64,7 +65,8 @@ class TransientOnline(StoppableThread):
 
     def simulate(self, sim, feeclasses):
         stats = TransientStats()
-        stats.time = time()
+        stats.timestamp = time()
+
         init_mempool = [SimTx.from_mementry(txid, entry)
                         for txid, entry in self.mempool.get_entries().items()]
         mempoolsize = sum([tx.size for tx in init_mempool])
@@ -76,6 +78,8 @@ class TransientOnline(StoppableThread):
         for block, realtime in sim.run(mempool=init_mempool,
                                        maxiters=float("inf"),
                                        maxtime=self.maxtime):
+            if self.is_stopped():
+                raise StopIteration
             simtime += block.interval
             stranding_feerate = block.sfr
 
@@ -92,21 +96,19 @@ class TransientOnline(StoppableThread):
                     simtime = 0.
                     stranded = set(feeclasses)
                     sim.mempool.reset()
+
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
                     (realtime, numiters, mempoolsize))
 
-        for feerate, twait in tstats.items():
-            if twait.n > 1:
-                twait.calc_stats()
-            else:
-                # Something very bad happened - not likely
-                raise ValueError("Less than 2 iterations.")
         stats.tstats = tstats
+        stats.numiters = numiters
+        stats.timespent = realtime
         stats.cap = sim.cap
         stats.stablefeerate = sim.stablefeerate
         stats.mempoolsize = mempoolsize
         self.stats = stats
+        self.next_update = stats.timestamp + self.update_period
 
     @property
     def stats(self):
@@ -119,24 +121,54 @@ class TransientOnline(StoppableThread):
             self._stats = val
 
 
-class TransientStats(object):
-    def __init__(self):
+class TransientStats(SimStats):
+    def __init__(self, predict_level=default_predict_level):
+        self.predict_level = predict_level
         self.tstats = None
-        self.cap = None
-        self.time = 0.
-        self.stablefeerate = None
+        super(self.__class__, self).__init__()
+
+    def predict(self, feerate):
+        '''Predict the wait time of a transaction with specified feerate.
+
+        Returns t such that the wait time of the transaction, given the
+        current mempool state, is less than t seconds with probability
+        self.predict_level.
+        '''
+        if not self:
+            return None
+        return self.predictwaits(feerate)
+
+    @property
+    def tstats(self):
+        return self._tstats
+
+    @tstats.setter
+    def tstats(self, tstats):
+        self._tstats = tstats
+        if not tstats:
+            self.avgwaits = None
+            self.predictwaits = None
+            return
+        titems = sorted(tstats.items())
+        for feerate, stat in titems:
+            try:
+                stat.calc_stats()
+            except ValueError:
+                # Not likely to happen
+                raise ValueError("Less than 2 iterations performed.")
+        avgwaits = [stat.mean for feerate, stat in titems]
+        errors = [stat.mean_interval[1]-stat.mean for f, stat in titems]
+        feerates = [feerate for feerate, stat in titems]
+        self.avgwaits = WaitFn(feerates, avgwaits, errors)
+
+        predictwaits = [stat.get_percentile(self.predict_level)
+                        for f, stat in titems]
+        self.predictwaits = WaitFn(feerates, predictwaits)
 
     def print_stats(self):
-        titems = sorted(self.tstats.items())
-        table = Table()
-        table.add_row(('Feerate', 'Avgwait', 'Error'))
-        for feerate, twait in titems:
-            table.add_row((
-                feerate,
-                '%.2f' % twait.mean,
-                '%.2f' % (twait.mean_interval[1] - twait.mean)
-            ))
-        table.print_table()
+        super(self.__class__, self).print_stats()
+        if self:
+            self.avgwaits.print_fn()
 
     def __nonzero__(self):
-        return bool(self.time)
+        return bool(self.tstats)

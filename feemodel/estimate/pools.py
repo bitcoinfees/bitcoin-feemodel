@@ -118,6 +118,7 @@ class PoolsEstimator(SimPools):
     def __init__(self):
         self.blockmap = {}
         self.pools = {}
+        self.timestamp = 0.
         try:
             with open(poolinfo_file, 'r') as f:
                 self.poolinfo = json.load(f)
@@ -136,6 +137,7 @@ class PoolsEstimator(SimPools):
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
         self.calc_blockrate()
         self.update()
+        self.timestamp = starttime
         logger.info("Finished pool estimation in %.2f seconds." %
                     (time()-starttime))
 

@@ -41,6 +41,7 @@ class PoolEstimateTest(unittest.TestCase):
     def test_redorange(self):
         pe_tmp = deepcopy(self.pe)
         pe_tmp.start(blockrange, dbfile=dbfile)
+        pe_tmp.timestamp = self.pe.timestamp
         self.assertEqual(pe_tmp, self.pe)
 
     def test_smallrange(self):

@@ -32,16 +32,15 @@ class SteadyStateTest(unittest.TestCase):
             with self.ssonline.thread_start(), self.trans.thread_start():
                 while not (self.ssonline.stats and self.trans.stats):
                     sleep(1)
-                stats = self.ssonline.stats
-                stats.qstats.print_stats()
-                stats.cap.print_caps()
+                print("Finished stats calc.")
+                self.ssonline.stats.print_stats()
                 self.trans.stats.print_stats()
 
     def test_B(self):
         '''test loading of saved stats'''
         self.ssonline = SteadyStateOnline(self.peo, 25, maxtime=10)
-        self.assertTrue(self.ssonline.stats.height)
-        self.assertTrue(self.peo.height)
+        self.assertTrue(self.ssonline.stats)
+        self.assertTrue(self.peo.pe)
 
         if os.path.exists(self.ssonline.savedir):
             shutil.rmtree(self.ssonline.savedir)
