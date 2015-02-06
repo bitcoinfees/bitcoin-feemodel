@@ -11,6 +11,7 @@ from feemodel.estimate import TxRateEstimator
 
 tx_maxsamplesize = 10000
 default_update_period = 60.
+default_miniters = 1000
 default_maxiters = 10000
 default_maxtime = 60.
 default_predict_level = 0.9
@@ -21,12 +22,14 @@ logger = logging.getLogger(__name__)
 class TransientOnline(StoppableThread):
     def __init__(self, mempool, peo, window,
                  update_period=default_update_period,
-                 maxiters=default_maxiters, maxtime=default_maxtime):
+                 miniters=default_miniters, maxiters=default_maxiters,
+                 maxtime=default_maxtime):
         self.stats_lock = threading.Lock()
         self.mempool = mempool
         self.peo = peo
         self.window = window
         self.update_period = update_period
+        self.miniters = miniters
         self.maxiters = maxiters
         self.maxtime = maxtime
         self.tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
@@ -36,8 +39,10 @@ class TransientOnline(StoppableThread):
 
     def run(self):
         logger.info("Starting transient online sim.")
+        self.sleep(max(0, self.next_update-time()))
+        while not self.peo.pe:
+            self.sleep(10)
         try:
-            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
@@ -56,20 +61,18 @@ class TransientOnline(StoppableThread):
             logger.debug("No pools.")
             return
         pools.calc_blockrate()
+        # to-do: catch unstable error
         sim = Simul(pools, self.tx_source)
         feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
-        try:
-            self.simulate(sim, feeclasses)
-        except ValueError:
-            logger.exception('Exception in transient sim')
+        self.simulate(sim, feeclasses)
 
     def simulate(self, sim, feeclasses):
         stats = TransientStats()
         stats.timestamp = time()
-
         init_mempool = [SimTx.from_mementry(txid, entry)
                         for txid, entry in self.mempool.get_entries().items()]
-        mempoolsize = sum([tx.size for tx in init_mempool])
+        mempoolsize = sum([tx.size for tx in init_mempool
+                           if tx.feerate >= sim.stablefeerate])
 
         tstats = {feerate: DataSample() for feerate in feeclasses}
         simtime = 0.
@@ -77,7 +80,7 @@ class TransientOnline(StoppableThread):
         numiters = 0
         for block, realtime in sim.run(mempool=init_mempool,
                                        maxiters=float("inf"),
-                                       maxtime=self.maxtime):
+                                       maxtime=float("inf")):
             if self.is_stopped():
                 raise StopIteration
             simtime += block.interval
@@ -90,7 +93,8 @@ class TransientOnline(StoppableThread):
 
             if not stranded:
                 numiters += 1
-                if numiters >= self.maxiters:
+                if (numiters >= self.maxiters or
+                        numiters >= self.miniters and realtime > self.maxtime):
                     break
                 else:
                     simtime = 0.
@@ -151,11 +155,7 @@ class TransientStats(SimStats):
             return
         titems = sorted(tstats.items())
         for feerate, stat in titems:
-            try:
-                stat.calc_stats()
-            except ValueError:
-                # Not likely to happen
-                raise ValueError("Less than 2 iterations performed.")
+            stat.calc_stats()
         avgwaits = [stat.mean for feerate, stat in titems]
         errors = [stat.mean_interval[1]-stat.mean for f, stat in titems]
         feerates = [feerate for feerate, stat in titems]

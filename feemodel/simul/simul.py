@@ -4,7 +4,7 @@ from time import time
 from copy import copy
 from math import ceil
 
-from feemodel.util import DataSample
+from feemodel.util import DataSample, Table
 
 rate_ratio_thresh = 0.9
 
@@ -13,21 +13,27 @@ class Simul(object):
     def __init__(self, pools, tx_source):
         self.pools = pools
         self.tx_source = tx_source
-        self.cap = self.pools.calc_capacities(self.tx_source)
+        feerates, cap_lower, cap_upper = self.pools.get_capacity()
+        tx_byterates = tx_source.get_byterates(feerates)
+        self.cap = Capacity(feerates, tx_byterates, cap_lower, cap_upper)
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "
                              "processing for all feerates.")
         self.mempool = None
 
-    def run(self, mempool=None, maxiters=10000, maxtime=60):
+    def run(self, mempool=None, miniters=None, maxiters=10000, maxtime=60):
+        # miniters takes precedence over maxtime.
         if mempool is None:
             mempool = []
+        if miniters is None:
+            miniters = 0
         self.mempool = SimMempool(mempool)
         starttime = time()
         for simblock in self.pools.blockgen():
             elapsedrealtime = time() - starttime
-            if elapsedrealtime > maxtime:
+            if (simblock.height >= maxiters or
+                    simblock.height >= miniters and elapsedrealtime > maxtime):
                 break
             if simblock.height >= maxiters:
                 break
@@ -126,10 +132,40 @@ class SimMempool(object):
         return ("SimMempool{numbytes: %d, numtxs: %d}" % self.calc_size())
 
 
+class Capacity(object):
+    def __init__(self, feerates, tx_byterates, cap_lower, cap_upper):
+        self.feerates = feerates
+        self.tx_byterates = tx_byterates
+        self.cap_lower = cap_lower
+        self.cap_upper = cap_upper
+
+    def calc_stablefeerate(self, rate_ratio_thresh):
+        stablefeerate = None
+        for idx in range(len(self.feerates)):
+            if not self.cap_lower[idx]:
+                continue
+            rate_ratio = self.tx_byterates[idx] / self.cap_lower[idx]
+            if rate_ratio <= rate_ratio_thresh:
+                stablefeerate = self.feerates[idx]
+                break
+        return stablefeerate
+
+    def print_cap(self):
+        table = Table()
+        table.add_row(("Feerate", "TxByteRate", "Cap (lower)", "Cap (upper)"))
+        for idx in range(len(self.feerates)):
+            table.add_row((
+                self.feerates[idx],
+                '%.2f' % self.tx_byterates[idx],
+                '%.2f' % self.cap_lower[idx],
+                '%.2f' % self.cap_upper[idx]))
+        table.print_table()
+
+
 def get_feeclasses(cap, tx_source, stablefeerate):
     '''Choose suitable feerates at which to evaluate stats.'''
     feerates = cap.feerates[1:]
-    caps = cap.caps
+    caps = cap.cap_lower
     capsdiff = [caps[idx] - caps[idx-1]
                 for idx in range(1, len(feerates)+1)]
     feeDS = DataSample(feerates)
@@ -145,10 +181,11 @@ def get_feeclasses(cap, tx_source, stablefeerate):
     while new_feeclasses:
         byterates = tx_source.get_byterates(feeclasses)
         # The byterate in each feeclass should not exceed 0.1 of the total
-        byteratethresh = 0.1 * sum(byterates)
+        byteratethresh = 0.1 * byterates[0]
         new_feeclasses = []
-        for idx, byterate in enumerate(byterates[:-1]):
-            if byterate > byteratethresh:
+        for idx in range(len(byterates)-1):
+            byteratediff = byterates[idx] - byterates[idx+1]
+            if byteratediff > byteratethresh:
                 feegap = feeclasses[idx+1] - feeclasses[idx]
                 if feegap > 1:
                     new_feeclasses.append(feeclasses[idx] + int(feegap/2))

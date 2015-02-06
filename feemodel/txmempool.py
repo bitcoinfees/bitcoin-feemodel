@@ -174,6 +174,7 @@ class MemBlock(object):
         We record various block statistics, and for each MemEntry we label
         inblock and leadtime. See MemEntry for more info.
         '''
+        # to-do: add warning if measured time differs greatly from timestamp
         if blockheight and block and entries is not None:
             self.height = blockheight
             self.size = len(block.serialize())

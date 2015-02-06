@@ -1,7 +1,7 @@
 from math import sqrt, cos, exp, log, pi
-from bisect import bisect
 from random import random
 from copy import copy
+from bisect import bisect
 from feemodel.util import DataSample
 
 
@@ -45,14 +45,16 @@ class SimTxSource(object):
         return [self.txsample[int(random()*n)] for i in range(k)]
 
     def get_byterates(self, feerates):
-        '''Get byterates as a function of feerate.'''
+        '''Get reverse cumulative byterate as a function of feerate.'''
         # feerates assumed sorted.
         n = float(len(self.txsample))
-        byterates = [0.]*len(feerates)
+        binnedrates = [0.]*len(feerates)
         for tx in self.txsample:
-            fee_idx = bisect(feerates, tx.feerate)
-            if fee_idx > 0:
-                byterates[fee_idx-1] += self.txrate*tx.size/n
+            fidx = bisect(feerates, tx.feerate)
+            if fidx:
+                binnedrates[fidx-1] += tx.size
+        byterates = [sum(binnedrates[idx:])*self.txrate/n
+                     for idx in range(len(binnedrates))]
         return byterates
 
     def calc_mean_byterate(self):

@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 tx_maxsamplesize = 100000
 default_update_period = 86400
-default_maxiters = 100000
+default_miniters = 100000
+default_maxiters = float("inf")
 default_maxtime = 600
 
 
@@ -27,11 +28,13 @@ class SteadyStateOnline(StoppableThread):
     savedir = os.path.join(datadir, 'steadystate')
 
     def __init__(self, peo, window, update_period=default_update_period,
-                 maxiters=default_maxiters, maxtime=default_maxtime):
+                 miniters=default_miniters, maxiters=default_maxiters,
+                 maxtime=default_maxtime):
         self.stats_lock = threading.Lock()
         self.peo = peo
         self.window = window
         self.update_period = update_period
+        self.miniters = miniters
         self.maxiters = maxiters
         self.maxtime = maxtime
         try:
@@ -55,8 +58,10 @@ class SteadyStateOnline(StoppableThread):
 
     def run(self):
         logger.info("Starting steady-state online sim.")
+        self.sleep(max(0, self.next_update-time()))
+        while not self.peo.pe:
+            self.sleep(10)
         try:
-            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
@@ -79,6 +84,7 @@ class SteadyStateOnline(StoppableThread):
             return
         pools.calc_blockrate()
 
+        # to-do: catch unstable error
         sim = Simul(pools, tx_source)
         feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
         self.simulate(sim, feeclasses, stats)
@@ -101,7 +107,8 @@ class SteadyStateOnline(StoppableThread):
         shortstats = {feerate: DataSample() for feerate in feeclasses}
 
         logger.info("Beginning steady-state simulation..")
-        for block, realtime in sim.run(maxiters=self.maxiters,
+        for block, realtime in sim.run(miniters=self.miniters,
+                                       maxiters=self.maxiters,
                                        maxtime=self.maxtime):
             if self.is_stopped():
                 raise StopIteration

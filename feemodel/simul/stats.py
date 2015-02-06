@@ -1,4 +1,4 @@
-from feemodel.util import DataSample, interpolate, Table
+from feemodel.util import interpolate, Table
 
 
 class SimStats(object):
@@ -16,14 +16,14 @@ class SimStats(object):
             print("Num iters: %d" % self.numiters)
             print("Time spent: %.2f" % self.timespent)
             print("Stable feerate: %d" % self.stablefeerate)
-            self.cap.print_caps()
+            self.cap.print_cap()
 
     def __nonzero__(self):
         return bool(self.timestamp)
 
 
 class WaitFn(object):
-    '''Wait values as a function of feerate.'''
+    '''Wait times as a function of feerate.'''
 
     def __init__(self, feerates, waits, errors=None):
         self.feerates = feerates
@@ -60,16 +60,16 @@ class WaitFn(object):
         table.print_table()
 
 
-def _get_feeclasses(cap):
-    feerates = cap.feerates[1:]
-    caps = cap.caps
-    capsdiff = [caps[idx] - caps[idx-1]
-                for idx in range(1, len(feerates)+1)]
-    feeDS = DataSample(feerates)
-    feeclasses = [feeDS.get_percentile(p/100., weights=capsdiff)
-                  for p in range(5, 100, 5)]
-    feeclasses = sorted(set(feeclasses))
-    return feeclasses
+# #def _get_feeclasses(cap):
+# #    feerates = cap.feerates[1:]
+# #    caps = cap.caps
+# #    capsdiff = [caps[idx] - caps[idx-1]
+# #                for idx in range(1, len(feerates)+1)]
+# #    feeDS = DataSample(feerates)
+# #    feeclasses = [feeDS.get_percentile(p/100., weights=capsdiff)
+# #                  for p in range(5, 100, 5)]
+# #    feeclasses = sorted(set(feeclasses))
+# #    return feeclasses
 
 
 # #def transient(mempool, pools, tx_source,
