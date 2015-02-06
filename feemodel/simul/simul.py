@@ -22,21 +22,14 @@ class Simul(object):
                              "processing for all feerates.")
         self.mempool = None
 
-    def run(self, mempool=None, miniters=None, maxiters=10000, maxtime=60):
+    def run(self, mempool=None):
         # miniters takes precedence over maxtime.
         if mempool is None:
             mempool = []
-        if miniters is None:
-            miniters = 0
         self.mempool = SimMempool(mempool)
         starttime = time()
         for simblock in self.pools.blockgen():
             elapsedrealtime = time() - starttime
-            if (simblock.height >= maxiters or
-                    simblock.height >= miniters and elapsedrealtime > maxtime):
-                break
-            if simblock.height >= maxiters:
-                break
             newtxs = self.tx_source.generate_txs(simblock.interval)
             newtxs = filter(lambda tx: tx.feerate >= self.stablefeerate,
                             newtxs)

@@ -57,9 +57,7 @@ class TransientOnline(StoppableThread):
             self.tx_source.start(blockrangetuple,
                                  stopflag=self.get_stop_object())
         pools = deepcopy(self.peo.pe)
-        if not pools:
-            logger.debug("No pools.")
-            return
+        assert pools
         pools.calc_blockrate()
         # to-do: catch unstable error
         sim = Simul(pools, self.tx_source)
@@ -78,9 +76,7 @@ class TransientOnline(StoppableThread):
         simtime = 0.
         stranded = set(feeclasses)
         numiters = 0
-        for block, realtime in sim.run(mempool=init_mempool,
-                                       maxiters=float("inf"),
-                                       maxtime=float("inf")):
+        for block, realtime in sim.run(mempool=init_mempool):
             if self.is_stopped():
                 raise StopIteration
             simtime += block.interval

@@ -95,7 +95,9 @@ class BasicSimTest(unittest.TestCase):
 
     def test_basic(self):
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock, t in self.sim.run(maxiters=50):
+        for simblock, t in self.sim.run():
+            if simblock.height >= 50:
+                break
             mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
             print("%d\t%d\t%d\t%.0f\t%d" %
                   (simblock.height, len(simblock.txs),
@@ -110,8 +112,9 @@ class BasicSimTest(unittest.TestCase):
             tx.size = 10000
         print("With init mempool:")
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock, t in self.sim.run(mempool=self.init_mempool,
-                                        maxiters=50):
+        for simblock, t in self.sim.run(mempool=self.init_mempool):
+            if simblock.height >= 50:
+                break
             mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
             print("%d\t%d\t%d\t%.0f\t%d" %
                   (simblock.height, len(simblock.txs),
@@ -128,7 +131,9 @@ class BasicSimTest(unittest.TestCase):
         self.sim = Simul(SimPools(self.init_pools), self.tx_source)
         print("Degenerate pools:")
         print("Height\tNumtxs\tSize\tSFR")
-        for simblock, t in self.sim.run(maxiters=50):
+        for simblock, t in self.sim.run():
+            if simblock.height >= 50:
+                break
             print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
                                         simblock.size, simblock.sfr))
         self.sim.cap.print_cap()

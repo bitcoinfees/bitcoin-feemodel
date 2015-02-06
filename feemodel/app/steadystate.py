@@ -79,9 +79,7 @@ class SteadyStateOnline(StoppableThread):
         tx_source.start(blockrangetuple, stopflag=self.get_stop_object())
 
         pools = deepcopy(self.peo.pe)
-        if not pools:
-            logger.debug("No pools.")
-            return
+        assert pools
         pools.calc_blockrate()
 
         # to-do: catch unstable error
@@ -107,11 +105,13 @@ class SteadyStateOnline(StoppableThread):
         shortstats = {feerate: DataSample() for feerate in feeclasses}
 
         logger.info("Beginning steady-state simulation..")
-        for block, realtime in sim.run(miniters=self.miniters,
-                                       maxiters=self.maxiters,
-                                       maxtime=self.maxtime):
+        for block, realtime in sim.run():
             if self.is_stopped():
                 raise StopIteration
+            if block.height >= self.maxiters or (
+                    block.height >= self.miniters and
+                    realtime > self.maxtime):
+                break
             qstats.next_block(block.height, block.interval, block.sfr)
             qshortstats.next_block(block.height, block.interval, block.sfr)
             if not (block.height + 1) % self.window:
@@ -120,12 +120,12 @@ class SteadyStateOnline(StoppableThread):
                         [queueclass.avgwait])
                 qshortstats = QueueStats(feeclasses)
         logger.info("Finished steady-state simulation in %.2fs "
-                    "and %d iterations." % (realtime, block.height+1))
+                    "and %d iterations." % (realtime, block.height))
 
         stats.qstats = qstats
         stats.shortstats = shortstats
         stats.timespent = realtime
-        stats.numiters = block.height + 1
+        stats.numiters = block.height
         stats.cap = sim.cap
         stats.stablefeerate = sim.stablefeerate
 
