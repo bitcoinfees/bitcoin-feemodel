@@ -1,3 +1,5 @@
+from __future__ import division
+
 from collections import defaultdict
 from bisect import insort
 from time import time

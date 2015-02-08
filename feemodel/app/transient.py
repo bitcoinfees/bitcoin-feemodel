@@ -1,3 +1,5 @@
+from __future__ import division
+
 import threading
 import logging
 from time import time
@@ -59,7 +61,7 @@ class TransientOnline(StoppableThread):
         pools = deepcopy(self.peo.pe)
         assert pools
         pools.calc_blockrate()
-        # to-do: catch unstable error
+        # TODO: catch unstable error
         sim = Simul(pools, self.tx_source)
         feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
         self.simulate(sim, feeclasses)

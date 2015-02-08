@@ -1,3 +1,5 @@
+from __future__ import division
+
 import logging
 import threading
 import os
@@ -17,7 +19,7 @@ class PoolsEstimatorOnline(StoppableThread):
     savedir = os.path.join(datadir, 'pools/')
 
     def __init__(self, window, update_period=default_update_period):
-        # to-do: make sure IOError is caught by owner
+        # TODO: make sure IOError is caught by owner
         self.pools_lock = threading.Lock()
         self.window = window
         self.update_period = update_period
@@ -60,7 +62,7 @@ class PoolsEstimatorOnline(StoppableThread):
         try:
             pe.start(rangetuple, stopflag=self.get_stop_object())
         except ValueError:
-            # to-do: replace with custom error
+            # TODO: replace with custom error
             logger.exception("No pools estimated.")
         else:
             self.pe = pe

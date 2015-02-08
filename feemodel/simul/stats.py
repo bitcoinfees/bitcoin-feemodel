@@ -1,3 +1,5 @@
+from __future__ import division
+
 from feemodel.util import interpolate, Table
 
 

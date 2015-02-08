@@ -1,3 +1,5 @@
+from __future__ import division
+
 from math import sqrt, cos, exp, log, pi
 from random import random
 from copy import copy
@@ -47,7 +49,7 @@ class SimTxSource(object):
     def get_byterates(self, feerates):
         '''Get reverse cumulative byterate as a function of feerate.'''
         # feerates assumed sorted.
-        n = float(len(self.txsample))
+        n = len(self.txsample)
         binnedrates = [0.]*len(feerates)
         for tx in self.txsample:
             fidx = bisect(feerates, tx.feerate)
@@ -66,7 +68,7 @@ class SimTxSource(object):
         n = len(self.txsample)
 
         def _calc_single(txsample):
-            return sum([tx.size for tx in txsample])*self.txrate/float(n)
+            return sum([tx.size for tx in txsample])*self.txrate/n
 
         mean_byterate = _calc_single(self.txsample)
         bootstrap_ests = DataSample()

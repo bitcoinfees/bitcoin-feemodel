@@ -2,6 +2,7 @@
 
 This module contains functions for calculating the stranding fee rate.
 '''
+from __future__ import division
 
 from random import random, choice
 from feemodel.config import prioritythresh

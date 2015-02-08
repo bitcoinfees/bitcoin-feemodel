@@ -1,3 +1,5 @@
+from __future__ import division
+
 import logging
 import warnings
 import json
@@ -38,7 +40,7 @@ class PoolEstimate(SimPool):
                         if tx.inblock]
             if blocktxs:
                 block.avgtxsize = sum([
-                    tx.size for tx in blocktxs]) / float(len(blocktxs))
+                    tx.size for tx in blocktxs]) / len(blocktxs)
             else:
                 block.avgtxsize = 0.
 

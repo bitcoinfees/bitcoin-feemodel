@@ -10,6 +10,8 @@ The goal is to use the measured wait times as a baseline comparison for
 simulated wait times; any error that is small relative to the typical block
 interval of 10 min is acceptable.
 '''
+from __future__ import division
+
 import logging
 from bisect import bisect
 from time import time

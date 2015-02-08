@@ -1,3 +1,5 @@
+from __future__ import division
+
 import threading
 import logging
 from bisect import insort, bisect
@@ -25,6 +27,10 @@ class StoppableThread(threading.Thread):
     def __init__(self):
         super(StoppableThread, self).__init__(name=self.__class__.__name__)
         self.__stopflag = threading.Event()
+
+    def run(self):
+        '''The target function of the thread.'''
+        raise NotImplementedError
 
     def stop(self):
         '''Set the stop flag.'''
@@ -55,6 +61,32 @@ class StoppableThread(threading.Thread):
     def get_stop_object(self):
         '''Returns the stop flag.'''
         return self.__stopflag
+
+    @staticmethod
+    def auto_restart(interval):
+        '''Returns an auto-restart decorator for StoppableThread methods.
+
+        The decorator causes the target method to auto-restart, after
+        interval seconds, in the event of an unhandled exception.
+
+        The target method must belong to a StoppableThread instance.
+        The intention is for the decorator to be used on the run method.
+        '''
+        def decorator(fn):
+            @wraps(fn)
+            def looped_fn(self, *args, **kwargs):
+                while not self.is_stopped():
+                    try:
+                        fn(self, *args, **kwargs)
+                    except Exception:
+                        logger.exception(
+                            'Exception in {}, restarting in '
+                            '{} seconds.'.format(self.name, interval))
+                        self.sleep(interval)
+                    else:
+                        break
+            return looped_fn
+        return decorator
 
 
 class BlockingProxy(Proxy):
@@ -316,7 +348,7 @@ def interpolate(x0, x, y):
         y_f = y[idx]
         x_b = x[idx-1]
         y_b = y[idx-1]
-        y0 = y_b + float(x0-x_b)/(x_f-x_b)*(y_f-y_b)
+        y0 = y_b + (x0-x_b)/(x_f-x_b)*(y_f-y_b)
 
         return y0, idx
 

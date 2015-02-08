@@ -1,3 +1,5 @@
+from __future__ import division
+
 import logging
 from random import sample
 from time import time
@@ -51,7 +53,7 @@ class TxRateEstimator(SimTxSource):
                   for txid in newtxids]
         newtotaltxs = self.totaltxs + len(newtxs)
         if newtotaltxs:
-            oldprop = float(self.totaltxs) / newtotaltxs
+            oldprop = self.totaltxs / newtotaltxs
             combinedsize = min(self.maxsamplesize,
                                len(self.txsample)+len(newtxs))
             numkeepold = round_random(oldprop*combinedsize)

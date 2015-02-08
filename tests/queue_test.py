@@ -1,56 +1,37 @@
 import unittest
-import os
-import feemodel.txmempool as txmempool
-import feemodel.nonparam as nonparam
-from feemodel.model import ModelError
-from feemodel.util import logWrite
-from feemodel.queue import QEOnline
-from testconfig import dbFile, saveQueueFile
+from feemodel.queuestats import QueueStats
 
-maxMFR = 200000
 
-class QEstimatorTests(unittest.TestCase):
+class QueuestatsTest(unittest.TestCase):
     def setUp(self):
-        self.lh = txmempool.LoadHistory(dbFile=dbFile)
+        self.feerate = 1000
+        self.qstats = QueueStats([self.feerate])
 
-    # def test_consecutiveReadFromHistory(self):
-    #     qe = QEOnline(maxMFR, adaptive=2016)
-    #     qe2 = QEOnline(maxMFR, adaptive=2016)
-    #     qe3 = QEOnline(maxMFR, adaptive=2016)
+    def test_nonestranded(self):
+        interval = 100
+        for i in range(10):
+            self.qstats.next_block(i, interval, self.feerate)
+        self.assertEqual(self.qstats.stats[0].avgwait, interval/2.)
+        self.assertFalse(self.qstats.stats[0].strandedblocks)
 
-    #     lh.registerFn(lambda x: qe.pushBlocks(x,True), (333931,333954))
-    #     lh.registerFn(lambda x: qe.pu)
-        
+    def test_initstranded(self):
+        interval = 100
+        for i in range(2):
+            self.qstats.next_block(i, interval, self.feerate+1)
+        i += 1
+        self.qstats.next_block(i, interval, self.feerate-1)
+        avgwait = 4.5*interval/3
+        self.assertEqual(self.qstats.stats[0].totaltime, 3*interval)
+        self.assertEqual(self.qstats.stats[0].avgwait, avgwait)
+        self.assertFalse(self.qstats.stats[0].strandedblocks)
 
-    #     qe2 = QEstimator(maxMFR, adaptive=2016)
-    #     qe2.readFromHistory((333931, 333949),dbFile=dbFile)
-    #     qe2.readFromHistory((333949, 333953),dbFile=dbFile)
-    #     qe2.adaptiveCalc(currHeight=333953)
-        
+    def test_allstranded(self):
+        interval = 100
+        for i in range(10):
+            self.qstats.next_block(i, interval, self.feerate+1)
 
-    #     qe3 = QEstimator(maxMFR, adaptive=2016)
-    #     qe3.readFromHistory((333931, 333949),dbFile=dbFile)
-    #     qe3.readFromHistory((333931, 333953),dbFile=dbFile)
-    #     qe3.adaptiveCalc(currHeight=333953)
-        
-    #     self.assertEqual(qe, qe2)
-    #     self.assertEqual(qe2, qe3)
-    #     self.assertEqual(len(qe.blocks), 18)
-
-    def test_adaptiveDeletes(self):
-        qe = QEOnline(maxMFR, adaptive=10, loadFile=None)
-        self.lh.registerFn(lambda x: qe.pushBlocks(x,True), (333931, 333954))
-        self.lh.loadBlocks()
-        qe.adaptiveCalc()
-        self.assertEqual(len(qe.blockData), 11)
-        qe.saveBlockData(dbFile=saveQueueFile)
-        qe2 = QEOnline(maxMFR, adaptive=10, loadFile=None)
-        qe2.loadBlockData(dbFile=saveQueueFile)
-        qe2.adaptiveCalc()
-        self.assertEqual(qe,qe2)
-        os.remove(saveQueueFile)
+        self.assertFalse(self.qstats.stats[0])
 
 
 if __name__ == '__main__':
     unittest.main()
-

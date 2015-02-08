@@ -1,3 +1,5 @@
+from __future__ import division
+
 import logging
 import threading
 import os
@@ -82,7 +84,7 @@ class SteadyStateOnline(StoppableThread):
         assert pools
         pools.calc_blockrate()
 
-        # to-do: catch unstable error
+        # TODO: catch unstable error
         sim = Simul(pools, tx_source)
         feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
         self.simulate(sim, feeclasses, stats)

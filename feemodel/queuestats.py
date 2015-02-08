@@ -1,9 +1,11 @@
+from __future__ import division
+
 from feemodel.util import Table
 
 
 class QueueStats(object):
-    def __init__(self, feepoints):
-        self.stats = [QueueClass(feerate) for feerate in feepoints]
+    def __init__(self, feerates):
+        self.stats = [QueueClass(feerate) for feerate in feerates]
 
     def next_block(self, blockheight, blockinterval, stranding_feerate):
         if not blockinterval:
@@ -38,7 +40,7 @@ class QueueClass(object):
         self.strandedblocks = []
 
     def next_block(self, height, blockinterval, stranding_feerate):
-        if not self.prevheight or height > self.prevheight + 1:
+        if self.prevheight and height != self.prevheight + 1:
             self.strandedblocks = []
 
         self.prevheight = height
@@ -71,7 +73,7 @@ class QueueClass(object):
     def update_stranded_proportion(self, stranded):
         self.stranded_proportion = (
             self.stranded_proportion*self.totalblocks
-            + int(stranded)) / float(self.totalblocks+1)
+            + int(stranded)) / (self.totalblocks+1)
         self.totalblocks += 1
 
     def __repr__(self):
@@ -83,3 +85,6 @@ class QueueClass(object):
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    def __nonzero__(self):
+        return bool(self.totaltime)

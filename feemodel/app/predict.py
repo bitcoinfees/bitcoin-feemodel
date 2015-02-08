@@ -1,3 +1,6 @@
+from __future__ import division
+
+
 class BlockPredict(object):
     def __init__(self, feerates):
         self.feerates = feerates
@@ -13,7 +16,7 @@ class BlockPredict(object):
                     for self_n, other_n in zip(self.numtxs, other.numtxs)]
         totalin = [self_n + other_n
                    for self_n, other_n in zip(self.num_in, other.num_in)]
-        ratio = [n / float(d) if d else 0.
+        ratio = [n / d if d else 0.
                  for n, d in zip(totalin, totaltxs)]
         result = BlockPredict(self.feerates)
         result.numtxs = totaltxs

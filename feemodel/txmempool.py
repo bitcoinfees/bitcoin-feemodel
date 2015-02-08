@@ -1,3 +1,5 @@
+from __future__ import division
+
 import threading
 import sqlite3
 import os
@@ -63,7 +65,7 @@ class TxMempool(StoppableThread):
     must be tolerant of such errors, in addition to any other kinds of network
     errors.
     '''
-    # Have to handle RPC errors
+    # TODO: handle RPC errors. Also qualify all excepts.
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
         self.history_lock = threading.Lock()
@@ -144,7 +146,7 @@ class TxMempool(StoppableThread):
     def get_entries(self):
         '''Returns mempool entries.'''
         if self.rawmempool is None:
-            raise ValueError("Thread not started yet.")
+            raise ValueError("No mempool data.")
         with self.mempool_lock:
             entries = {txid: MemEntry(rawentry)
                        for txid, rawentry in self.rawmempool.iteritems()}
@@ -174,7 +176,7 @@ class MemBlock(object):
         We record various block statistics, and for each MemEntry we label
         inblock and leadtime. See MemEntry for more info.
         '''
-        # to-do: add warning if measured time differs greatly from timestamp
+        # TODO: add warning if measured time differs greatly from timestamp
         if blockheight and block and entries is not None:
             self.height = blockheight
             self.size = len(block.serialize())
@@ -199,7 +201,7 @@ class MemBlock(object):
                 len(entries_inblock), len(blocktxs)-1, blockheight)
             logger.info(incl_text)
             if len(blocktxs) > 1:
-                incl_ratio = len(entries_inblock) / float(len(blocktxs)-1)
+                incl_ratio = len(entries_inblock) / (len(blocktxs)-1)
                 if incl_ratio < 0.9:
                     logger.warning(incl_text)
 

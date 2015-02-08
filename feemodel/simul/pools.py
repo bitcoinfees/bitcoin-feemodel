@@ -1,3 +1,5 @@
+from __future__ import division
+
 from random import random, expovariate
 from math import log, exp
 from copy import deepcopy, copy
@@ -44,6 +46,21 @@ class SimBlock(object):
             self.height, len(self.txs), self.size, self.sfr)
 
 
+class SimPool(object):
+    def __init__(self, hashrate, maxblocksize, minfeerate):
+        self.hashrate = hashrate
+        self.maxblocksize = maxblocksize
+        self.minfeerate = minfeerate
+        self.proportion = None
+
+    def __cmp__(self, other):
+        return cmp(self.hashrate, other.hashrate)
+
+    def __repr__(self):
+        return ("SimPool{hashrate: %.2f, maxblocksize: %d, minfeerate: %.0f}" %
+                (self.hashrate, self.maxblocksize, self.minfeerate))
+
+
 class SimPools(object):
     def __init__(self, pools=None, blockrate=default_blockrate):
         self.blockrate = blockrate
@@ -82,7 +99,7 @@ class SimPools(object):
         totalhashrate = float(sum(
             [pool.hashrate for name, pool in poolitems]))
         if not totalhashrate:
-            # to-do: consider using custom error to make explicit
+            # TODO: consider using custom error to make explicit
             raise ValueError("No pools.")
 
         self.__poolsidx = []
@@ -180,21 +197,6 @@ class SimPools(object):
     # #            pool.update_capacities()
 
     # #    return Capacity(poolfeerates, tx_byterates, pool_caps)
-
-
-class SimPool(object):
-    def __init__(self, hashrate, maxblocksize, minfeerate):
-        self.hashrate = hashrate
-        self.maxblocksize = maxblocksize
-        self.minfeerate = minfeerate
-        self.proportion = None
-
-    def __cmp__(self, other):
-        return cmp(self.hashrate, other.hashrate)
-
-    def __repr__(self):
-        return ("SimPool{hashrate: %.2f, maxblocksize: %d, minfeerate: %.0f}" %
-                (self.hashrate, self.maxblocksize, self.minfeerate))
 
 
 # #class Capacity(object):

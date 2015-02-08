@@ -30,12 +30,13 @@ class TxRatesEstimatorTest(unittest.TestCase):
             *self.tr.calc_mean_byterate()))
 
     def test_limit_sample(self):
-        self.tr = TxRateEstimator(maxsamplesize=1000)
+        maxsamplesize = 1000
+        self.tr = TxRateEstimator(maxsamplesize=maxsamplesize)
         self.tr.start(blockrange, dbfile=dbfile)
         print(self.tr)
         num_uniquetxs = len(set(self.tr.txsample))
         self.assertEqual(num_uniquetxs, len(self.tr.txsample))
-        self.assertEqual(num_uniquetxs, 1000)
+        self.assertEqual(num_uniquetxs, maxsamplesize)
         byterates = self.tr.get_byterates(feerates)
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
