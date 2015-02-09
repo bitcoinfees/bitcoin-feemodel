@@ -65,7 +65,7 @@ class TxMempool(StoppableThread):
     must be tolerant of such errors, in addition to any other kinds of network
     errors.
     '''
-    # TODO: handle RPC errors. Also qualify all excepts.
+    # TODO: handle RPC errors.
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
         self.history_lock = threading.Lock()
@@ -77,20 +77,24 @@ class TxMempool(StoppableThread):
         self.keep_history = keep_history
         super(self.__class__, self).__init__()
 
+    @StoppableThread.auto_restart(60)
     def run(self):
         '''Target function of the thread.
         Polls mempool every poll_period seconds until stop flag is set.
         '''
-        logger.info("Starting TxMempool")
-        self.best_height, self.rawmempool = proxy.poll_mempool()
-        while not self.is_stopped():
-            self.update()
-            self.sleep(poll_period)
-        logger.info("Stopping TxMempool..")
-        for thread in threading.enumerate():
-            if thread.name.startswith('mempool'):
-                thread.join()
-        logger.info("TxMempool stopped.")
+        try:
+            logger.info("Starting TxMempool")
+            self.best_height, self.rawmempool = proxy.poll_mempool()
+            while not self.is_stopped():
+                self.update()
+                self.sleep(poll_period)
+            logger.info("Stopping TxMempool..")
+            for thread in threading.enumerate():
+                if thread.name.startswith('mempool'):
+                    thread.join()
+            logger.info("TxMempool stopped.")
+        finally:
+            self.rawmempool = None
 
     def update(self):
         '''Mempool polling function.'''

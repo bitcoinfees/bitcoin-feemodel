@@ -70,7 +70,6 @@ class StoppableThread(threading.Thread):
         interval seconds, in the event of an unhandled exception.
 
         The target method must belong to a StoppableThread instance.
-        The intention is for the decorator to be used on the run method.
         '''
         def decorator(fn):
             @wraps(fn)
@@ -78,10 +77,10 @@ class StoppableThread(threading.Thread):
                 while not self.is_stopped():
                     try:
                         fn(self, *args, **kwargs)
-                    except Exception:
+                    except Exception as e:
                         logger.exception(
-                            'Exception in {}, restarting in '
-                            '{} seconds.'.format(self.name, interval))
+                            '{} in {}, restarting in {} seconds.'.format(
+                                e.__class__.__name__, self.name, interval))
                         self.sleep(interval)
                     else:
                         break

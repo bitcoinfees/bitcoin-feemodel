@@ -17,7 +17,7 @@ from feemodel.app.transient import TransientOnline
 
 logging.basicConfig(level=logging.DEBUG)
 
-class SteadyStateTest(unittest.TestCase):
+class SimTest(unittest.TestCase):
     def setUp(self):
         self.mempool = TestMempool()
         self.peo = PEO(25)
@@ -104,7 +104,6 @@ class SteadyStateTest(unittest.TestCase):
             shutil.rmtree(self.peo.savedir)
         if os.path.exists(self.ssonline.savedir):
             shutil.rmtree(self.ssonline.savedir)
-
 
 if __name__ == '__main__':
         unittest.main()
