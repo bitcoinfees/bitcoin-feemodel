@@ -264,7 +264,9 @@ def get_coinbase_info(blockheight=None, block=None):
                     outputs. Returns None in place of an unrecognizable
                     scriptPubKey.
         tag - the UTF-8 decoded scriptSig.
-
+    Raises:
+        Exceptions originating from bitcoin.rpc.Proxy, if there is a problem
+        with JSON-RPC.
     '''
     if not block:
         block = proxy.getblock(proxy.getblockhash(blockheight))

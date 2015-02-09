@@ -42,8 +42,8 @@ class SteadyStateOnline(StoppableThread):
         try:
             self.load_stats()
             assert self.stats
-        except:
-            logger.warning("Unable to load saved stats.")
+        except Exception:
+            logger.info("Unable to load saved stats.")
             self.stats = SteadyStateStats()
         else:
             if time() - self.stats.timestamp > self.update_period:
@@ -98,7 +98,7 @@ class SteadyStateOnline(StoppableThread):
         self.next_update = stats.timestamp + self.update_period
         try:
             self.save_stats(currheight)
-        except:
+        except Exception:
             logger.exception("Unable to save steady-state stats.")
 
     def simulate(self, sim, feeclasses, stats):

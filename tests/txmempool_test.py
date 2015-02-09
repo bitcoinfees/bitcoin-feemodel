@@ -1,4 +1,5 @@
 import unittest
+import sqlite3
 import os
 import logging
 from copy import deepcopy
@@ -16,6 +17,7 @@ tmpdbfile = 'data/tmptest.db'
 class WriteReadTests(unittest.TestCase):
     def setUp(self):
         self.test_blockheight = 333931
+        self.db = None
         if os.path.exists(tmpdbfile):
             os.remove(tmpdbfile)
 
@@ -59,9 +61,23 @@ class WriteReadTests(unittest.TestCase):
         block_list = MemBlock.get_block_list(dbfile=tmpdbfile)
         self.assertEqual(len(block_list), keep_history)
 
+    def test_duplicate_writes(self):
+        block = MemBlock.read(333931, dbfile=dbfile)
+        block.write(tmpdbfile, 100)
+        self.assertRaises(Exception, block.write, tmpdbfile, 100)
+        self.db = sqlite3.connect(tmpdbfile)
+        txlist = self.db.execute('SELECT * FROM txs WHERE blockheight=?',
+                            (333931,))
+        txids = [tx[1] for tx in txlist]
+        self.assertEqual(sorted(set(txids)), sorted(txids))
+        block_read = MemBlock.read(333931, dbfile=tmpdbfile)
+        self.assertEqual(block, block_read)
+
     def tearDown(self):
         if os.path.exists(tmpdbfile):
             os.remove(tmpdbfile)
+        if self.db:
+            self.db.close()
 
 
 class ProcessBlocksTest(unittest.TestCase):

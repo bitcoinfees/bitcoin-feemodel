@@ -27,8 +27,9 @@ class PoolsEstimatorOnline(StoppableThread):
             self.load_pe()
             assert self.pe
             bestheight = max(self.pe.blockmap)
-        except:
-            logger.error("Unable to load saved pools.")
+        except Exception:
+            logger.info("Unable to load saved pools; "
+                           "starting from scratch.")
             self.pe = PoolsEstimator()
         else:
             if time() - self.pe.timestamp > self.update_period:
@@ -69,7 +70,7 @@ class PoolsEstimatorOnline(StoppableThread):
             self.next_update = pe.timestamp + self.update_period
             try:
                 self.save_pe(currheight)
-            except:
+            except Exception:
                 logger.exception("Unable to save pools.")
 
     @property

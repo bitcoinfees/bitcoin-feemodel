@@ -139,7 +139,10 @@ class TxMempool(StoppableThread):
 
             if self.write_history and self.is_alive():
                 for memblock in memblocks:
-                    memblock.write(self.dbfile, self.keep_history)
+                    try:
+                        memblock.write(self.dbfile, self.keep_history)
+                    except Exception:
+                        logger.exception("MemBlock write/del exception.")
 
             return memblocks
 
@@ -238,9 +241,6 @@ class MemBlock(object):
                                (history_limit,))
                     db.execute('DELETE FROM txs WHERE blockheight<=?',
                                (history_limit,))
-        except:
-            logger.error("MemBlock: Exception in writing/deleting history.")
-            logger.debug("sqlite error", exc_info=True)
         finally:
             if db:
                 db.close()
@@ -249,6 +249,8 @@ class MemBlock(object):
     def read(cls, blockheight, dbfile=history_file):
         '''Read MemBlock from disk.
         Returns the memblock with specified blockheight.
+        Returns None if no record exists for that block.
+        Raises one of the sqlite3 errors if there are other problems.
         '''
         db = None
         try:
@@ -268,9 +270,6 @@ class MemBlock(object):
             memblock.entries = {
                 tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
             return memblock
-        except:
-            logger.exception("MemBlock: Unable to read history.")
-            return None
         finally:
             if db:
                 db.close()

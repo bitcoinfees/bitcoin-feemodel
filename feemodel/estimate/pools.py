@@ -124,7 +124,7 @@ class PoolsEstimator(SimPools):
         try:
             with open(poolinfo_file, 'r') as f:
                 self.poolinfo = json.load(f)
-        except:
+        except Exception:
             raise IOError("Unable to load poolinfo file.")
         super(self.__class__, self).__init__()
 
