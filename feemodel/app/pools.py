@@ -77,6 +77,8 @@ class PoolsEstimatorOnline(StoppableThread):
             pe.start(rangetuple, stopflag=self.get_stop_object())
         except ValueError:
             # TODO: replace with custom error, or perhaps no need to catch
+            # TODO: have to insert some kind of delay, otherwise it will
+            #       just loop endlessly.
             logger.exception("No pools estimated.")
         else:
             self.pe = pe

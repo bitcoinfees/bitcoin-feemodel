@@ -45,7 +45,8 @@ class TransientOnline(StoppableThread):
             self._updating = False
             logger.info("Starting transient online sim.")
             self.sleep(max(0, self.next_update-time()))
-            while not self.peo.pe and not self.is_stopped():
+            while not self.is_stopped() and not (
+                    self.peo.pe and self.mempool):
                 self.sleep(10)
             while not self.is_stopped():
                 self.update()
@@ -54,6 +55,9 @@ class TransientOnline(StoppableThread):
             pass
         finally:
             logger.info("Stopped transient online sim.")
+            # Ensure that Prediction.update_predictions doesn't get outdated
+            # values, if this thread has bugged out
+            self.stats = TransientStats()
             self._updating = None
 
     def update(self):
@@ -108,6 +112,10 @@ class TransientOnline(StoppableThread):
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
                     (realtime, numiters, mempoolsize))
+        # Warn if we reached miniters
+        if numiters == self.miniters:
+            logger.warning("Transient sim took %.2fs to do %d iters." %
+                           (realtime, numiters))
 
         stats.tstats = tstats
         stats.numiters = numiters

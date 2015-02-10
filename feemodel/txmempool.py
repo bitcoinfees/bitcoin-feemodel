@@ -66,6 +66,7 @@ class TxMempool(StoppableThread):
     errors.
     '''
     # TODO: handle RPC errors.
+    # TODO: create new proxy object in each thread.
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
         self.history_lock = threading.Lock()
@@ -158,6 +159,9 @@ class TxMempool(StoppableThread):
             entries = {txid: MemEntry(rawentry)
                        for txid, rawentry in self.rawmempool.iteritems()}
             return entries
+
+    def __nonzero__(self):
+        return self.rawmempool is not None
 
 
 class MemBlock(object):

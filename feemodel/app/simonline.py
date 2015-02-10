@@ -12,10 +12,10 @@ from feemodel.app import SteadyStateOnline, TransientOnline
 from feemodel.app import PoolsEstimatorOnline, Prediction
 
 pools_window = 2016
-pools_update_period = 86400
+pools_update_period = 129600  # 1.5 days
 
 ss_window = 2016
-ss_update_period = 86400
+ss_update_period = 86400  # Daily
 ss_maxiters = 200000
 ss_miniters = 100000
 ss_maxtime = 3600
@@ -37,7 +37,7 @@ class SimOnline(TxMempool):
     predict_savefile = os.path.join(datadir, 'savepredicts.pickle')
 
     def __init__(self):
-        # TODO: Put minimum required history
+        # TODO: Put minimum required history. Done
         # TODO: Remember to catch TERM
 
         self.process_lock = threading.Lock()
@@ -58,29 +58,7 @@ class SimOnline(TxMempool):
             miniters=trans_miniters,
             maxiters=trans_maxiters,
             maxtime=trans_maxtime)
-
-        try:
-            self.prediction = load_obj(self.predict_savefile)
-            assert self.prediction
-        except Exception:
-            logger.info("Unable to load saved predicts; "
-                        "starting from scratch.")
-            self.prediction = Prediction(predict_feerates, predict_window)
-        else:
-            # TODO: change the window.
-            if self.prediction.feerates != predict_feerates:
-                logger.info("Predict feerates have changed; "
-                            "starting from scratch.")
-                self.prediction = Prediction(predict_feerates, predict_window)
-            else:
-                numpredicts = len(self.prediction.predicts)
-                blockscorerange = (min(self.prediction.blockscores),
-                                   max(self.prediction.blockscores))
-                logger.info("%d predicts loaded; "
-                            "block scores in range %s loaded." %
-                            (numpredicts, blockscorerange))
-                self.prediction.window = predict_window
-
+        self.load_predicts()
         self.starttime = time()
         super(SimOnline, self).__init__()
 
@@ -125,3 +103,26 @@ class SimOnline(TxMempool):
             'mempool': mempool_status}
 
         return status
+
+    def load_predicts(self):
+        try:
+            self.prediction = load_obj(self.predict_savefile)
+            assert self.prediction
+        except Exception:
+            logger.info("Unable to load saved predicts; "
+                        "starting from scratch.")
+            self.prediction = Prediction(predict_feerates, predict_window)
+        else:
+            # TODO: change the window.
+            if self.prediction.feerates != predict_feerates:
+                logger.info("Predict feerates have changed; "
+                            "starting from scratch.")
+                self.prediction = Prediction(predict_feerates, predict_window)
+            else:
+                numpredicts = len(self.prediction.predicts)
+                blockscorerange = (min(self.prediction.blockscores),
+                                   max(self.prediction.blockscores))
+                logger.info("%d predicts loaded; "
+                            "block scores in range %s loaded." %
+                            (numpredicts, blockscorerange))
+                self.prediction.window = predict_window

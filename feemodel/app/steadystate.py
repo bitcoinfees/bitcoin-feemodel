@@ -129,6 +129,10 @@ class SteadyStateOnline(StoppableThread):
                 qshortstats = QueueStats(feeclasses)
         logger.info("Finished steady-state simulation in %.2fs "
                     "and %d iterations." % (realtime, block.height))
+        # Warn if we reached miniters
+        if block.height == self.miniters:
+            logger.warning("Steadystate sim took %.2fs to do %d iters." %
+                           (realtime, block.height))
 
         stats.qstats = qstats
         stats.shortstats = shortstats
