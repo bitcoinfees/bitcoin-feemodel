@@ -50,8 +50,8 @@ class TransientOnline(StoppableThread):
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
-            logger.info("Stopped transient online sim.")
         except StopIteration:
+            logger.info("Stopped transient online sim.")
             pass
         finally:
             self._updating = None

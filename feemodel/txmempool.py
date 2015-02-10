@@ -304,6 +304,7 @@ class MemBlock(object):
             if db:
                 db.close()
 
+    # TODO: either check for no db, or catch sqlite3.OperationalError
     @staticmethod
     def get_block_list(dbfile=history_file):
         '''Get the list of heights of all MemBlocks stored on disk.'''
