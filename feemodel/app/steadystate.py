@@ -70,8 +70,9 @@ class SteadyStateOnline(StoppableThread):
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
         except StopIteration:
-            logger.info("Stopped steady-state online sim.")
+            pass
         finally:
+            logger.info("Stopped steady-state online sim.")
             self._updating = None
 
     def update(self):

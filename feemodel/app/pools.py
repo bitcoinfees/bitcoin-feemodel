@@ -63,8 +63,9 @@ class PoolsEstimatorOnline(StoppableThread):
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
         except StopIteration:
-            logger.info("Stopped pools online estimator.")
+            pass
         finally:
+            logger.info("Stopped pools online estimator.")
             self._updating = None
 
     def update(self):
