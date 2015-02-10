@@ -286,6 +286,8 @@ class MemBlock(object):
         Returns the number of MemBlocks on disk which are in
         range(currheight-window+1, currheight+1)
         '''
+        if not os.path.exists(dbfile):
+            return 0
         if currheight is None:
             currheight = proxy.getblockcount()
         if window is None:
