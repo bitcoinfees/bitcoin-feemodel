@@ -46,9 +46,10 @@ try:
             'Flask'
         ]
     )
-except Exception:
+except Exception as e:
     if not direxists:
         os.rmdir(datadir)
+    raise(e)
 else:
     if direxists:
         print("Warning: the data directory " + datadir + " already exists.")
