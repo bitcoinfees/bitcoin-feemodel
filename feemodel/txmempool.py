@@ -75,7 +75,7 @@ class TxMempool(StoppableThread):
         self.write_history = write_history
         self.dbfile = dbfile
         self.keep_history = keep_history
-        super(self.__class__, self).__init__()
+        super(TxMempool, self).__init__()
 
     @StoppableThread.auto_restart(60)
     def run(self):
@@ -252,6 +252,7 @@ class MemBlock(object):
     @classmethod
     def read(cls, blockheight, dbfile=history_file):
         '''Read MemBlock from disk.
+
         Returns the memblock with specified blockheight.
         Returns None if no record exists for that block.
         Raises one of the sqlite3 errors if there are other problems.
@@ -274,6 +275,29 @@ class MemBlock(object):
             memblock.entries = {
                 tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
             return memblock
+        finally:
+            if db:
+                db.close()
+
+    @staticmethod
+    def get_numhistory(window=None, currheight=None, dbfile=history_file):
+        '''Get number of MemBlocks on disk.
+
+        Returns the number of MemBlocks on disk which are in
+        range(currheight-window+1, currheight+1)
+        '''
+        if currheight is None:
+            currheight = proxy.getblockcount()
+        if window is None:
+            window = currheight + 1
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            heights = db.execute(
+                'SELECT height FROM blocks '
+                'where height>=? and height <?',
+                (currheight-window+1, currheight+1)).fetchall()
+            return len(heights)
         finally:
             if db:
                 db.close()

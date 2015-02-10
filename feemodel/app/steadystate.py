@@ -11,8 +11,7 @@ from feemodel.util import save_obj, load_obj, proxy
 from feemodel.util import StoppableThread, DataSample
 from feemodel.estimate.txrate import TxRateEstimator
 from feemodel.simul import Simul
-from feemodel.simul.simul import get_feeclasses
-from feemodel.simul.stats import SimStats
+from feemodel.simul.stats import SimStats, get_feeclasses
 from feemodel.waitmeasure import WaitMeasure
 from feemodel.queuestats import QueueStats
 
@@ -54,24 +53,30 @@ class SteadyStateOnline(StoppableThread):
                 logger.info("Steady-state stats loaded.")
 
         self.next_update = self.stats.timestamp + update_period
+        self._updating = None
         if not os.path.exists(self.savedir):
             os.mkdir(self.savedir)
-        super(self.__class__, self).__init__()
+        super(SteadyStateOnline, self).__init__()
 
+    @StoppableThread.auto_restart(60)
     def run(self):
-        logger.info("Starting steady-state online sim.")
-        self.sleep(max(0, self.next_update-time()))
-        while not self.peo.pe:
-            self.sleep(10)
         try:
+            self._updating = False
+            logger.info("Starting steady-state online sim.")
+            self.sleep(max(0, self.next_update-time()))
+            while not self.peo.pe:
+                self.sleep(10)
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
+            logger.info("Stopped steady-state online sim.")
         except StopIteration:
             pass
-        logger.info("Stopped steady-state online sim.")
+        finally:
+            self._updating = None
 
     def update(self):
+        self._updating = True
         stats = deepcopy(self.stats)
         stats.timestamp = time()
 
@@ -100,6 +105,7 @@ class SteadyStateOnline(StoppableThread):
             self.save_stats(currheight)
         except Exception:
             logger.exception("Unable to save steady-state stats.")
+        self._updating = False
 
     def simulate(self, sim, feeclasses, stats):
         qstats = QueueStats(feeclasses)
@@ -152,15 +158,24 @@ class SteadyStateOnline(StoppableThread):
         savefile = os.path.join(self.savedir, savefilename)
         save_obj(self.stats, savefile)
 
+    @property
+    def status(self):
+        if self._updating is None:
+            return 'stopped'
+        elif self._updating:
+            return 'running'
+        else:
+            return 'idle'
+
 
 class SteadyStateStats(SimStats):
     def __init__(self):
         self.qstats = None
         self.shortstats = None
         self.waitmeasure = WaitMeasure([])
-        super(self.__class__, self).__init__()
+        super(SteadyStateStats, self).__init__()
 
     def print_stats(self):
-        super(self.__class__, self).print_stats()
+        super(SteadyStateStats, self).print_stats()
         if self.qstats:
             self.qstats.print_stats()

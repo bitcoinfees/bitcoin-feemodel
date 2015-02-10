@@ -4,9 +4,8 @@ from collections import defaultdict
 from bisect import insort
 from time import time
 from copy import copy
-from math import ceil
 
-from feemodel.util import DataSample, Table
+from feemodel.simul.stats import Capacity
 
 rate_ratio_thresh = 0.9
 
@@ -125,68 +124,3 @@ class SimMempool(object):
 
     def __repr__(self):
         return ("SimMempool{numbytes: %d, numtxs: %d}" % self.calc_size())
-
-
-class Capacity(object):
-    def __init__(self, feerates, tx_byterates, cap_lower, cap_upper):
-        self.feerates = feerates
-        self.tx_byterates = tx_byterates
-        self.cap_lower = cap_lower
-        self.cap_upper = cap_upper
-
-    def calc_stablefeerate(self, rate_ratio_thresh):
-        stablefeerate = None
-        for idx in range(len(self.feerates)):
-            if not self.cap_lower[idx]:
-                continue
-            rate_ratio = self.tx_byterates[idx] / self.cap_lower[idx]
-            if rate_ratio <= rate_ratio_thresh:
-                stablefeerate = self.feerates[idx]
-                break
-        return stablefeerate
-
-    def print_cap(self):
-        table = Table()
-        table.add_row(("Feerate", "TxByteRate", "Cap (lower)", "Cap (upper)"))
-        for idx in range(len(self.feerates)):
-            table.add_row((
-                self.feerates[idx],
-                '%.2f' % self.tx_byterates[idx],
-                '%.2f' % self.cap_lower[idx],
-                '%.2f' % self.cap_upper[idx]))
-        table.print_table()
-
-
-def get_feeclasses(cap, tx_source, stablefeerate):
-    '''Choose suitable feerates at which to evaluate stats.'''
-    feerates = cap.feerates[1:]
-    caps = cap.cap_lower
-    capsdiff = [caps[idx] - caps[idx-1]
-                for idx in range(1, len(feerates)+1)]
-    feeDS = DataSample(feerates)
-    feeclasses = [feeDS.get_percentile(p/100., weights=capsdiff)
-                  for p in range(5, 100, 5)]
-    # Round up to nearest 200 satoshis
-    quantize = 200
-    feeclasses = [int(ceil(float(feerate) / quantize)*quantize)
-                  for feerate in feeclasses]
-    feeclasses = sorted(set(feeclasses))
-
-    new_feeclasses = [True]
-    while new_feeclasses:
-        byterates = tx_source.get_byterates(feeclasses)
-        # The byterate in each feeclass should not exceed 0.1 of the total
-        byteratethresh = 0.1 * byterates[0]
-        new_feeclasses = []
-        for idx in range(len(byterates)-1):
-            byteratediff = byterates[idx] - byterates[idx+1]
-            if byteratediff > byteratethresh:
-                feegap = feeclasses[idx+1] - feeclasses[idx]
-                if feegap > 1:
-                    new_feeclasses.append(feeclasses[idx] + int(feegap/2))
-        feeclasses.extend(new_feeclasses)
-        feeclasses.sort()
-
-    feeclasses = filter(lambda fee: fee >= stablefeerate, feeclasses)
-
-    return feeclasses

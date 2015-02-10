@@ -6,9 +6,8 @@ from time import time
 from copy import deepcopy
 
 from feemodel.util import StoppableThread, DataSample, proxy
-from feemodel.simul.simul import get_feeclasses
 from feemodel.simul import Simul, SimTx
-from feemodel.simul.stats import SimStats, WaitFn
+from feemodel.simul.stats import SimStats, WaitFn, get_feeclasses
 from feemodel.estimate import TxRateEstimator
 
 tx_maxsamplesize = 10000
@@ -37,22 +36,28 @@ class TransientOnline(StoppableThread):
         self.tx_source = TxRateEstimator(maxsamplesize=tx_maxsamplesize)
         self.stats = TransientStats()
         self.next_update = self.stats.timestamp + update_period
-        super(self.__class__, self).__init__()
+        self._updating = None
+        super(TransientOnline, self).__init__()
 
+    @StoppableThread.auto_restart(60)
     def run(self):
-        logger.info("Starting transient online sim.")
-        self.sleep(max(0, self.next_update-time()))
-        while not self.peo.pe:
-            self.sleep(10)
         try:
+            self._updating = False
+            logger.info("Starting transient online sim.")
+            self.sleep(max(0, self.next_update-time()))
+            while not self.peo.pe:
+                self.sleep(10)
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
+            logger.info("Stopped transient online sim.")
         except StopIteration:
             pass
-        logger.info("Stopped transient online sim.")
+        finally:
+            self._updating = None
 
     def update(self):
+        self._updating = True
         currheight = proxy.getblockcount()
         blockrangetuple = (currheight-self.window+1, currheight+1)
         if currheight > self.tx_source.height:
@@ -65,6 +70,7 @@ class TransientOnline(StoppableThread):
         sim = Simul(pools, self.tx_source)
         feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
         self.simulate(sim, feeclasses)
+        self._updating = False
 
     def simulate(self, sim, feeclasses):
         stats = TransientStats()
@@ -122,12 +128,21 @@ class TransientOnline(StoppableThread):
         with self.stats_lock:
             self._stats = val
 
+    @property
+    def status(self):
+        if self._updating is None:
+            return 'stopped'
+        elif self._updating:
+            return 'running'
+        else:
+            return 'idle'
+
 
 class TransientStats(SimStats):
     def __init__(self, predict_level=default_predict_level):
         self.predict_level = predict_level
         self.tstats = None
-        super(self.__class__, self).__init__()
+        super(TransientStats, self).__init__()
 
     def predict(self, feerate):
         '''Predict the wait time of a transaction with specified feerate.
@@ -164,7 +179,7 @@ class TransientStats(SimStats):
         self.predictwaits = WaitFn(feerates, predictwaits)
 
     def print_stats(self):
-        super(self.__class__, self).print_stats()
+        super(TransientStats, self).print_stats()
         if self:
             self.avgwaits.print_fn()
 

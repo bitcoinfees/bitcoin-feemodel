@@ -59,7 +59,7 @@ class StoppableThread(threading.Thread):
             self.join()
 
     def get_stop_object(self):
-        '''Returns the stop flag.'''
+        '''Returns the stop flag object.'''
         return self.__stopflag
 
     @staticmethod
@@ -82,8 +82,6 @@ class StoppableThread(threading.Thread):
                             '{} in {}, restarting in {} seconds.'.format(
                                 e.__class__.__name__, self.name, interval))
                         self.sleep(interval)
-                    else:
-                        break
             return looped_fn
         return decorator
 

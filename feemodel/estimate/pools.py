@@ -22,7 +22,7 @@ class PoolEstimate(SimPool):
         self.sizelimitedblocks = None
         self.stats = None
         self._estimate_hashrate(blockrangetuple)
-        super(self.__class__, self).__init__(self.hashrate, 0, float("inf"))
+        super(PoolEstimate, self).__init__(self.hashrate, 0, float("inf"))
 
     def estimate_params(self, stopflag=None, dbfile=history_file):
         txs = []
@@ -126,10 +126,10 @@ class PoolsEstimator(SimPools):
                 self.poolinfo = json.load(f)
         except Exception:
             raise IOError("Unable to load poolinfo file.")
-        super(self.__class__, self).__init__()
+        super(PoolsEstimator, self).__init__()
 
     def update(self):
-        super(self.__class__, self).update(self.pools)
+        super(PoolsEstimator, self).update(self.pools)
 
     def start(self, blockrangetuple, stopflag=None, dbfile=history_file):
         logger.info("Beginning pool estimation "
