@@ -55,7 +55,8 @@ class PoolsEstimatorOnline(StoppableThread):
         try:
             self._updating = False
             logger.info("Starting pools online estimator.")
-            while MemBlock.get_numhistory(window=self.window) < minblocks:
+            while not self.is_stopped() and (
+                    MemBlock.get_numhistory(window=self.window) < minblocks):
                 self.sleep(10)
             self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():

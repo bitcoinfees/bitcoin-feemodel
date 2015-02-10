@@ -64,7 +64,7 @@ class SteadyStateOnline(StoppableThread):
             self._updating = False
             logger.info("Starting steady-state online sim.")
             self.sleep(max(0, self.next_update-time()))
-            while not self.peo.pe:
+            while not self.peo.pe and not self.is_stopped():
                 self.sleep(10)
             while not self.is_stopped():
                 self.update()
