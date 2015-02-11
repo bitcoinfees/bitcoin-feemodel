@@ -24,6 +24,12 @@ class SimStats(object):
     def get_stats(self):
         if not self:
             return None
+        return {
+            'time': self.timestamp,
+            'timespent': self.timespent,
+            'numiters': self.numiters,
+            'cap': self.cap.__dict__,
+            'stablefeerate': self.stablefeerate}
 
     def __nonzero__(self):
         return bool(self.timestamp)
@@ -124,6 +130,8 @@ def get_feeclasses(cap, tx_source, stablefeerate):
                 feegap = feeclasses[idx+1] - feeclasses[idx]
                 if feegap > 1:
                     new_feeclasses.append(feeclasses[idx] + int(feegap/2))
+        if byterates[-1] > byteratethresh:
+            new_feeclasses.append(feeclasses[-1]*2)
         feeclasses.extend(new_feeclasses)
         feeclasses.sort()
 

@@ -103,5 +103,8 @@ class Prediction(object):
                 numtxs[idx]))
         table.print_table()
 
+    def get_stats(self):
+        pass
+
     def __nonzero__(self):
         return bool(self.blockscores)

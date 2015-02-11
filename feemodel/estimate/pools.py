@@ -224,7 +224,7 @@ class PoolsEstimator(SimPools):
         for name, pool in poolitems:
             table.add_row((
                 name,
-                '%.2f' % pool.proportion,
+                '%.3f' % pool.proportion,
                 pool.maxblocksize,
                 pool.minfeerate,
                 pool.stats['abovekn'],
@@ -234,6 +234,25 @@ class PoolsEstimator(SimPools):
                 '%.2f' % pool.stats['bias']))
         table.print_table()
         print("Avg block interval is %.2f" % (1./self.blockrate,))
+
+    def get_stats(self):
+        if not self:
+            return None
+        stats = {
+            name: {
+                'hashrate': pool.hashrate,
+                'proportion': pool.proportion,
+                'maxblocksize': pool.maxblocksize,
+                'minfeerate': pool.minfeerate,
+                'abovekn': pool.stats['abovekn'],
+                'belowkn': pool.stats['belowkn'],
+                'mean': pool.stats['mean'],
+                'std': pool.stats['std'],
+                'bias': pool.stats['bias']
+            }
+            for name, pool in self._SimPools__pools
+        }
+        return stats
 
 
 def estimate_block_interval(blockrangetuple):

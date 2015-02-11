@@ -87,7 +87,11 @@ class StoppableThread(threading.Thread):
 
 
 class BlockingProxy(Proxy):
-    '''Thread-safe version of bitcoin.rpc.Proxy.'''
+    '''Thread-safe version of bitcoin.rpc.Proxy.
+
+    In addition, if there was a connection related exception, close the
+    connection before re-raising.
+    '''
 
     def __init__(self):
         super(BlockingProxy, self).__init__()
@@ -95,7 +99,15 @@ class BlockingProxy(Proxy):
 
     def _call(self, *args):
         with self.rlock:
-            return super(BlockingProxy, self)._call(*args)
+            try:
+                return super(BlockingProxy, self)._call(*args)
+            except Exception as e:
+                self.close()
+                raise e
+
+    def close(self):
+        with self.rlock:
+            self._RawProxy__conn.close()
 
 
 class BatchProxy(BlockingProxy):

@@ -191,5 +191,19 @@ class TransientStats(SimStats):
         if self:
             self.avgwaits.print_fn()
 
+    def get_stats(self):
+        if not self:
+            return None
+        basestats = super(TransientStats, self).get_stats()
+        stats = {
+            'feerates': self.avgwaits.feerates,
+            'avgwaits': self.avgwaits.waits,
+            'avgwaits_errors': self.avgwaits.errors,
+            'predictwaits': self.predictwaits.waits,
+            'predictlevel': self.predict_level
+        }
+        basestats.update(stats)
+        return stats
+
     def __nonzero__(self):
         return bool(self.tstats)

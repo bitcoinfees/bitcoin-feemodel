@@ -11,7 +11,7 @@ from feemodel.util import save_obj, load_obj, proxy
 from feemodel.util import StoppableThread, DataSample
 from feemodel.estimate.txrate import TxRateEstimator
 from feemodel.simul import Simul
-from feemodel.simul.stats import SimStats, get_feeclasses
+from feemodel.simul.stats import SimStats, get_feeclasses, WaitFn
 from feemodel.waitmeasure import WaitMeasure
 from feemodel.queuestats import QueueStats
 
@@ -77,8 +77,8 @@ class SteadyStateOnline(StoppableThread):
 
     def update(self):
         self._updating = True
-        stats = deepcopy(self.stats)
-        stats.timestamp = time()
+        waitmeasure = deepcopy(self.stats.waitmeasure)
+        starttime = time()
 
         currheight = proxy.getblockcount()
         blockrangetuple = (currheight-self.window+1, currheight+1)
@@ -92,22 +92,23 @@ class SteadyStateOnline(StoppableThread):
         # TODO: catch unstable error
         sim = Simul(pools, tx_source)
         feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
-        self.simulate(sim, feeclasses, stats)
+        stats = self.simulate(sim, feeclasses)
 
-        if feeclasses != stats.waitmeasure.feerates:
-            stats.waitmeasure = WaitMeasure(feeclasses)
-        stats.waitmeasure.calcwaits(blockrangetuple,
-                                    stopflag=self.get_stop_object())
+        if feeclasses != waitmeasure.feerates:
+            waitmeasure = WaitMeasure(feeclasses)
+        waitmeasure.calcwaits(blockrangetuple, stopflag=self.get_stop_object())
+        stats.waitmeasure = waitmeasure
+        stats.timestamp = starttime
 
         self.stats = stats
-        self.next_update = stats.timestamp + self.update_period
+        self.next_update = starttime + self.update_period
         try:
             self.save_stats(currheight)
         except Exception:
             logger.exception("Unable to save steady-state stats.")
         self._updating = False
 
-    def simulate(self, sim, feeclasses, stats):
+    def simulate(self, sim, feeclasses):
         qstats = QueueStats(feeclasses)
         qshortstats = QueueStats(feeclasses)
         shortstats = {feerate: DataSample() for feerate in feeclasses}
@@ -134,12 +135,14 @@ class SteadyStateOnline(StoppableThread):
             logger.warning("Steadystate sim took %.2fs to do %d iters." %
                            (realtime, block.height))
 
+        stats = SteadyStateStats()
         stats.qstats = qstats
         stats.shortstats = shortstats
         stats.timespent = realtime
         stats.numiters = block.height
         stats.cap = sim.cap
         stats.stablefeerate = sim.stablefeerate
+        return stats
 
     @property
     def stats(self):
@@ -180,6 +183,84 @@ class SteadyStateStats(SimStats):
         super(SteadyStateStats, self).__init__()
 
     def print_stats(self):
+        if not self:
+            return
         super(SteadyStateStats, self).print_stats()
-        if self.qstats:
-            self.qstats.print_stats()
+        # TODO: modify to print more details
+        self.avgwaits.print_fn()
+        self.m_avgwaits.print_fn()
+
+    @property
+    def qstats(self):
+        return self._qstats
+
+    @qstats.setter
+    def qstats(self, qstats):
+        self._qstats = qstats
+        if qstats:
+            feerates = [stat.feerate for stat in qstats.stats]
+            avgwaits = [stat.avgwait for stat in qstats.stats]
+            self.avgwaits = WaitFn(feerates, avgwaits)
+            self.strandedprop = [stat.stranded_proportion
+                                 for stat in qstats.stats]
+            self.avg_strandedblocks = [stat.avg_strandedblocks
+                                       for stat in qstats.stats]
+        else:
+            self.avgwaits = None
+            self.strandedprop = None
+            self.avg_strandedblocks = None
+
+    @property
+    def shortstats(self):
+        return self._shortstats
+
+    @shortstats.setter
+    def shortstats(self, shortstats):
+        self._shortstats = shortstats
+        if shortstats:
+            sitems = sorted(shortstats.items())
+
+            self.m_errors = []
+            for feerate, stat in sitems:
+                try:
+                    stat.calc_stats()
+                except ValueError:
+                    # This shouldn't happen.
+                    self.m_errors.append(float("inf"))
+                else:
+                    self.m_errors.append(1.96*stat.std)
+        else:
+            self.m_errors = None
+
+    @property
+    def waitmeasure(self):
+        return self._waitmeasure
+
+    @waitmeasure.setter
+    def waitmeasure(self, waitmeasure):
+        self._waitmeasure = waitmeasure
+        if not waitmeasure:
+            self.m_avgwaits = None
+            return
+        if not self.m_errors:
+            raise ValueError("shortstats needs to be set first.")
+        avgwaits = zip(waitmeasure.feerates, waitmeasure.waitstat.avgwaits,
+                       self.m_errors, waitmeasure.waitstat.numtxs)
+        avgwaits = filter(lambda a: a[3] > 0, avgwaits)
+        feerates, waits, errors, self.m_numtxs = zip(*avgwaits)
+        self.m_avgwaits = WaitFn(feerates, waits, errors)
+
+    def get_stats(self):
+        if not self:
+            return None
+        basestats = super(SteadyStateStats, self).get_stats()
+        stats = {
+            'feerates': self.avgwaits.feerates,
+            'avgwaits': self.avgwaits.waits,
+            'strandedprop': self.strandedprop,
+            'avg_strandedblocks': self.avg_strandedblocks,
+            'm_avgwaits': self.m_avgwaits.waits,
+            'm_errors': self.m_avgwaits.errors,
+            'm_numtxs': self.m_numtxs}
+        basestats.update(stats)
+        return basestats

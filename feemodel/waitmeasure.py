@@ -80,6 +80,7 @@ class WaitBlock(object):
 class WaitMeasure(object):
     def __init__(self, feerates):
         self.feerates = feerates
+        self.waitstat = None
         self._blacklist = set()
         self._waitblocks = {}
 
@@ -116,7 +117,8 @@ class WaitMeasure(object):
 
         logger.info("Completed wait times measure in %.2f seconds." %
                     (time() - starttime))
-        return sum(self._waitblocks.values(), WaitBlock(self.feerates))
+        self.waitstat = sum(self._waitblocks.values(),
+                            WaitBlock(self.feerates))
 
     @staticmethod
     def _counttx(entry):
@@ -132,3 +134,6 @@ class WaitMeasure(object):
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    def __nonzero__(self):
+        return bool(self.waitstat)

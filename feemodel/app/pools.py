@@ -56,7 +56,7 @@ class PoolsEstimatorOnline(StoppableThread):
             self._updating = False
             logger.info("Starting pools online estimator.")
             while not self.is_stopped() and (
-                    MemBlock.get_numhistory(window=self.window) < minblocks):
+                    MemBlock.get_numhistory(window=minblocks) < minblocks):
                 self.sleep(10)
             self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
@@ -72,21 +72,15 @@ class PoolsEstimatorOnline(StoppableThread):
         self._updating = True
         currheight = proxy.getblockcount()
         pe = deepcopy(self.pe)
-        rangetuple = (currheight-self.window+1, currheight+1)
+        window = min(self.window, MemBlock.get_numhistory())
+        rangetuple = (currheight-window+1, currheight+1)
+        pe.start(rangetuple, stopflag=self.get_stop_object())
+        self.pe = pe
+        self.next_update = pe.timestamp + self.update_period
         try:
-            pe.start(rangetuple, stopflag=self.get_stop_object())
-        except ValueError:
-            # TODO: replace with custom error, or perhaps no need to catch
-            # TODO: have to insert some kind of delay, otherwise it will
-            #       just loop endlessly.
-            logger.exception("No pools estimated.")
-        else:
-            self.pe = pe
-            self.next_update = pe.timestamp + self.update_period
-            try:
-                self.save_pe(currheight)
-            except Exception:
-                logger.exception("Unable to save pools.")
+            self.save_pe(currheight)
+        except Exception:
+            logger.exception("Unable to save pools.")
         self._updating = False
 
     @property
