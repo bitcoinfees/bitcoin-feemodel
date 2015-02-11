@@ -15,7 +15,7 @@ from __future__ import division
 import logging
 from bisect import bisect
 from time import time
-from feemodel import MemBlock
+from feemodel.txmempool import MemBlock
 from feemodel.util import Table
 from feemodel.config import prioritythresh
 from feemodel.config import history_file

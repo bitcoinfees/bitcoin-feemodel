@@ -4,11 +4,11 @@ import os
 import logging
 from time import sleep
 
-from testproxy import proxy, TestMempool
 
 import feemodel.config
 feemodel.config.history_file = 'data/test.db'
 feemodel.config.datadir = 'data/'
+from testproxy import proxy, TestMempool
 import feemodel.util
 feemodel.util.proxy = proxy
 import feemodel.app.pools
@@ -16,6 +16,7 @@ feemodel.app.pools.minblocks = 5
 from feemodel.app.pools import PoolsEstimatorOnline as PEO
 from feemodel.app.steadystate import SteadyStateOnline
 from feemodel.app.transient import TransientOnline
+
 
 logging.basicConfig(level=logging.DEBUG)
 

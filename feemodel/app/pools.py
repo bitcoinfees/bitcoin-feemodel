@@ -56,7 +56,7 @@ class PoolsEstimatorOnline(StoppableThread):
             self._updating = False
             logger.info("Starting pools online estimator.")
             while not self.is_stopped() and (
-                    MemBlock.get_numhistory(window=minblocks) < minblocks):
+                    MemBlock.get_numhistory(window=self.window) < minblocks):
                 self.sleep(10)
             self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
@@ -72,8 +72,9 @@ class PoolsEstimatorOnline(StoppableThread):
         self._updating = True
         currheight = proxy.getblockcount()
         pe = deepcopy(self.pe)
-        window = min(self.window, MemBlock.get_numhistory())
-        rangetuple = (currheight-window+1, currheight+1)
+        historylist = MemBlock.get_history_list()
+        rangestart = max(min(historylist), currheight-self.window+1)
+        rangetuple = (rangestart, currheight+1)
         pe.start(rangetuple, stopflag=self.get_stop_object())
         self.pe = pe
         self.next_update = pe.timestamp + self.update_period

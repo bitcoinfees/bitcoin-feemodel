@@ -58,7 +58,7 @@ class WriteReadTests(unittest.TestCase):
             if memblock:
                 memblock.write(dbfile=tmpdbfile, keep_history=keep_history)
 
-        block_list = MemBlock.get_block_list(dbfile=tmpdbfile)
+        block_list = MemBlock.get_history_list(dbfile=tmpdbfile)
         self.assertEqual(len(block_list), keep_history)
 
     def test_duplicate_writes(self):
