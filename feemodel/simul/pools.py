@@ -2,7 +2,7 @@ from __future__ import division
 
 from random import random, expovariate
 from math import log, exp
-from copy import deepcopy, copy
+from copy import deepcopy
 from bisect import bisect_left
 from feemodel.util import Table
 
@@ -19,27 +19,7 @@ class SimBlock(object):
         self.poolinfo = poolinfo
         self.sfr = float("inf")
         self.is_sizeltd = None
-
-        self._txs = []
-        self._txs_copied = False
-
-    @property
-    def txs(self):
-        # Only make a copy of the txs if it is accessed, for efficiency.
-        # If the attribute was not accessed in the current sim iteration,
-        # then the tx object might change (specifically the _depends attr).
-        if not self._txs_copied:
-            self._txs_copied = True
-            self._txs = [copy(tx) for tx in self._txs]
-        return self._txs
-
-    @txs.setter
-    def txs(self, val):
-        # The block txs are set in SimMempool._process_blocks.
-        # We defer making copies of the SimTx objects until they are
-        # accessed.
-        self._txs_copied = False
-        self._txs = val
+        self.txs = None
 
     def __repr__(self):
         return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (

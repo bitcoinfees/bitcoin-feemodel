@@ -1,12 +1,11 @@
 import unittest
 from collections import Counter
 from copy import copy, deepcopy
-from bisect import bisect
 
-from feemodel.util import proxy, Table
-from feemodel.txmempool import MemEntry, get_mempool
+from feemodel.txmempool import get_mempool
 from feemodel.simul import SimPool, SimPools, Simul, SimTx, SimTxSource
-from feemodel.simul.txsources import TxSourceCopy
+from feemodel.simul.txsources import SimEntry
+from feemodel.simul.pools import SimBlock
 
 init_pools = {
     'pool0': SimPool(0.2, 500000, 20000),
@@ -14,22 +13,22 @@ init_pools = {
     'pool2': SimPool(0.5, 1000000, 1000)
 }
 
-txsample = [
+simtxsample = [
     SimTx(640, 11000),
     SimTx(250, 40000),
     SimTx(500, 2000)]
 txrate = 1.1
-avgtxbyterate = sum([tx.size for tx in txsample])/float(len(txsample))*txrate
+avgtxbyterate = sum([
+    tx.size for tx in simtxsample])/float(len(simtxsample))*txrate
 blockrate = 1./600
 
 pools = SimPools(pools=init_pools)
-tx_source = SimTxSource(txsample, txrate)
-tx_source_copy = TxSourceCopy(txsample, txrate)
+tx_source = SimTxSource(simtxsample, txrate)
 
-init_mempool = [SimTx.from_mementry(txid, entry)
+init_mempool = [SimEntry.from_mementry(txid, entry)
                 for txid, entry in get_mempool().items()]
 print("Mempool size is %d" %
-      sum([tx.size for tx in init_mempool]))
+      sum([entry.tx.size for entry in init_mempool]))
 
 
 class PoolSimTests(unittest.TestCase):
@@ -68,13 +67,15 @@ class TxSourceTests(unittest.TestCase):
 
     def test_basic(self):
         byterates_binned = [0, 500*txrate/3., 640*txrate/3., 250*txrate/3.]
-        byterates_target = [sum(byterates_binned[idx:]) for idx in range(len(byterates_binned))]
+        byterates_target = [sum(byterates_binned[idx:])
+                            for idx in range(len(byterates_binned))]
         for actual, target in zip(self.tx_byterates, byterates_target):
             self.assertAlmostEqual(actual, target)
 
     def test_generate(self):
         t = 10000.
-        tx_gen = self.tx_source.generate_txs(t)
+        entry_gen = self.tx_source.generate_txs(t)
+        tx_gen = [entry.tx for entry in entry_gen]
         self.txrate = len(tx_gen) / t
         diff = abs(self.txrate - txrate)
         self.assertLess(diff, 0.05)
@@ -98,7 +99,8 @@ class BasicSimTest(unittest.TestCase):
         for simblock, t in self.sim.run():
             if simblock.height >= 50:
                 break
-            mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
+            mempoolsize = sum([entry.tx.size
+                               for entry in self.sim.mempool.entries])
             print("%d\t%d\t%d\t%.0f\t%d" %
                   (simblock.height, len(simblock.txs),
                    simblock.size, simblock.sfr, mempoolsize))
@@ -106,16 +108,19 @@ class BasicSimTest(unittest.TestCase):
         self.sim.cap.print_cap()
 
     def test_mempool(self):
-        for tx in self.init_mempool:
-            tx.depends = []
-            tx.feerate = 100000
-            tx.size = 10000
+        for entry in self.init_mempool:
+            # tx.depends = []
+            entry.tx.feerate = 100000
+            # entry.tx.size = 10000
         print("With init mempool:")
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock, t in self.sim.run(mempooltxs=self.init_mempool):
+        for simblock, t in self.sim.run(init_entries=self.init_mempool):
             if simblock.height >= 50:
                 break
-            mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])
+            mempoolsize = sum([entry.tx.size
+                               for entry in self.sim.mempool.entries])
+            self.assertEqual(simblock.size,
+                             sum([tx.size for tx in simblock.txs]))
             print("%d\t%d\t%d\t%.0f\t%d" %
                   (simblock.height, len(simblock.txs),
                    simblock.size, simblock.sfr, mempoolsize))
@@ -139,95 +144,72 @@ class BasicSimTest(unittest.TestCase):
         self.sim.cap.print_cap()
 
 
-# #class SimCapsTest(unittest.TestCase):
-# #    def setUp(self):
-# #        self.tx_source = copy(tx_source)
-# #        self.tx_source.txrate = 3.
-# #        self.pools = pools
-# #        self.sim = Simul(self.pools, self.tx_source)
-# #
-# #    def test_A(self):
-# #        cap = self.sim.cap
-# #        pool_empcaps = {name: PoolEmpiricalCap(poolcap)
-# #                        for name, poolcap in cap.pool_caps.items()}
-# #        for simblock, t in self.sim.run(maxtime=600., maxiters=100000):
-# #            for poolec in pool_empcaps.values():
-# #                poolec.totaltime += simblock.interval
-# #            pool_empcaps[simblock.poolinfo[0]].addblock(simblock)
-# #        print("Completed in %.2fs with %d iters." % (t, simblock.height+1))
-# #        print("Stable feerate is %d" % self.sim.stablefeerate)
-# #        cap.print_cap()
-# #        for name, poolec in pool_empcaps.items():
-# #            print("%s:\n=================" % name)
-# #            poolec.calc_simproc()
-# #            poolec.print_procs()
-# #
-# #
-# #class PoolEmpiricalCap(object):
-# #    def __init__(self, poolcap):
-# #        self.feerates = poolcap.feerates
-# #        self.procrates_theory = poolcap.procrates
-# #        self.procrates_sim = [0.]*len(self.feerates)
-# #        self.caps = poolcap.caps
-# #        self.totaltime = 0.
-# #
-# #    def addblock(self, simblock):
-# #        for tx in simblock.txs:
-# #            fidx = bisect(self.feerates, tx.feerate)
-# #            self.procrates_sim[fidx-1] += tx.size
-# #
-# #    def calc_simproc(self):
-# #        self.procrates_sim = [r / self.totaltime for r in self.procrates_sim]
-# #
-# #    def print_procs(self):
-# #        table = Table()
-# #        table.add_row(("Feerate", "Theory", "Sim", "Caps"))
-# #        for idx in range(len(self.feerates)):
-# #            table.add_row((
-# #                self.feerates[idx],
-# #                '%.2f' % self.procrates_theory[idx],
-# #                '%.2f' % self.procrates_sim[idx],
-# #                '%.2f' % self.caps[idx],
-# #            ))
-# #        table.print_table()
+class CustomMempoolTests(unittest.TestCase):
+    def setUp(self):
+        pools = FakePools()
+        self.tx_source = copy(tx_source)
+        self.tx_source.txrate = 0.
+        self.sim = Simul(pools, self.tx_source)
 
-# #class SteadyStateTest(unittest.TestCase):
-# #    def test_steadystate(self):
-# #        self.tx_source = copy(tx_source)
-# #        self.tx_source.txrate = 1.1
-# #        stats = steadystate(pools, self.tx_source, maxtime=10)
-# #        stats.print_stats()
-# #
-# #
-# #class TransientTest(unittest.TestCase):
-# #    def setUp(self):
-# #        self.tx_source = copy(tx_source)
-# #        self.tx_source.txrate = 1.1
-# #        self.init_mempool = deepcopy(init_mempool)
-# #
-# #    def test_normal(self):
-# #        print("Normal mempool")
-# #        stats = transient(self.init_mempool, pools, self.tx_source, maxtime=10)
-# #        stats.print_stats()
-# #
-# #    def test_no_mp(self):
-# #        print("No mempool")
-# #        stats = transient([], pools, self.tx_source, maxtime=10)
-# #        stats.print_stats()
-# #
-# #    def test_aug_mp(self):
-# #        print("Augmented mempool")
-# #        for simtx in self.init_mempool:
-# #            simtx.depends = []
-# #            simtx.feerate = 100000
-# #            simtx.size = 10000
-# #        stats = transient(self.init_mempool, pools, self.tx_source, maxtime=10)
-# #        stats.print_stats()
-# #
-# #    def test_stopflag(self):
-# #        print("Stop test with normal mempool")
-# #        stats = transient(self.init_mempool, pools, self.tx_source, maxiters=500)
-# #        stats.print_stats()
+    def test_A(self):
+        init_mempool = [SimEntry(str(i), SimTx(250, 100000), ['0'])
+                        for i in range(1, 1000)]
+        init_mempool.append(SimEntry('0', SimTx(1000000, 100000)))
+        for simblock, t in self.sim.run(init_entries=init_mempool):
+            print('MBS: %d, MFR: %d' %
+                  (simblock.poolinfo[1].maxblocksize,
+                  simblock.poolinfo[1].minfeerate))
+            self.assertEqual(len(simblock.txs), 1)
+            self.assertEqual(simblock.sfr, 100000)
+            self.assertEqual(len(self.sim.mempool.entries), 999)
+            break
+
+    def test_B(self):
+        init_mempool = [SimEntry(str(i), SimTx(250, 100000), ['0'])
+                        for i in range(1, 1000)]
+        init_mempool.append(SimEntry('0', SimTx(250, 999)))
+        for simblock, t in self.sim.run(init_entries=init_mempool):
+            print('MBS: %d, MFR: %d' %
+                  (simblock.poolinfo[1].maxblocksize,
+                  simblock.poolinfo[1].minfeerate))
+            self.assertEqual(len(simblock.txs), 0)
+            self.assertEqual(simblock.sfr, 1000)
+            self.assertEqual(len(self.sim.mempool.entries), 1000)
+            break
+
+    def test_C(self):
+        init_mempool = [SimEntry(str(i), SimTx(250, 100000), ['0'])
+                        for i in range(1, 1000)]
+        init_mempool.append(SimEntry('0', SimTx(900000, 1000)))
+        for simblock, t in self.sim.run(init_entries=init_mempool):
+            print('MBS: %d, MFR: %d' %
+                  (simblock.poolinfo[1].maxblocksize,
+                  simblock.poolinfo[1].minfeerate))
+            self.assertEqual(len(simblock.txs), 401)
+            self.assertEqual(simblock.sfr, 1000)
+            self.assertEqual(len(self.sim.mempool.entries), 599)
+            break
+
+
+
+class FakePools(SimPools):
+    def __init__(self):
+        super(FakePools, self).__init__(pools=init_pools)
+
+    def blockgen(self):
+        def blockgenfn():
+            simtime = 0.
+            blockheight = 0
+            numpools = len(self._SimPools__pools)
+            while True:
+                poolinfo = self._SimPools__pools[blockheight % numpools]
+                blockinterval = 600
+                simtime += blockinterval
+                simblock = SimBlock(blockheight, simtime,
+                                    blockinterval, poolinfo)
+                blockheight += 1
+                yield simblock
+        return blockgenfn()
 
 
 if __name__ == '__main__':

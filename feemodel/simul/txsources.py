@@ -2,45 +2,48 @@ from __future__ import division
 
 from math import sqrt, cos, exp, log, pi
 from random import random
-from copy import copy
 from bisect import bisect
 from feemodel.util import DataSample
 
 
 class SimTx(object):
-    def __init__(self, size, feerate, _id='', _depends=None):
+    def __init__(self, size, feerate):
         self.size = size
         self.feerate = feerate
-        if _depends is None:
-            _depends = []
-        self._depends = _depends
-        self._id = _id
-        if not _id:
-            assert not _depends
-
-    @classmethod
-    def from_mementry(cls, txid, entry):
-        return cls(entry.size, entry.feerate, _id=txid, _depends=entry.depends)
-
-    def __copy__(self):
-        return SimTx(self.size, self.feerate, self._id, self._depends[:])
-
-    def __cmp__(self, other):
-        return cmp(self.feerate, other.feerate)
 
     def __repr__(self):
         return "SimTx{size: %d, feerate: %d}" % (
             self.size, self.feerate)
 
 
+class SimEntry(object):
+    def __init__(self, txid, simtx, depends=None):
+        self._id = txid
+        self.tx = simtx
+        self.depends = depends if depends else []
+        self._depends_bak = self.depends[:]
+
+    @classmethod
+    def from_mementry(cls, txid, mementry):
+        simtx = SimTx(mementry.size, mementry.feerate)
+        return cls(txid, simtx, depends=mementry.depends)
+
+    def _reset_deps(self):
+        self.depends = self._depends_bak[:]
+
+    def __cmp__(self, other):
+        # This is used by bisect.insort in SimMempool._process_block
+        return cmp(self.tx.feerate, other.tx.feerate)
+
+
 class SimTxSource(object):
     def __init__(self, txsample, txrate):
-        self.txsample = txsample
+        self.txsample = [SimEntry('', simtx) for simtx in txsample]
         self.txrate = txrate
 
     def generate_txs(self, time_interval):
         if not self.txsample:
-            raise ValueError("Empty txsample.")
+            raise ValueError("No txs.")
         k = poisson_sample(self.txrate*time_interval)
         n = len(self.txsample)
 
@@ -51,10 +54,10 @@ class SimTxSource(object):
         # feerates assumed sorted.
         n = len(self.txsample)
         binnedrates = [0.]*len(feerates)
-        for tx in self.txsample:
-            fidx = bisect(feerates, tx.feerate)
+        for entry in self.txsample:
+            fidx = bisect(feerates, entry.tx.feerate)
             if fidx:
-                binnedrates[fidx-1] += tx.size
+                binnedrates[fidx-1] += entry.tx.size
         byterates = [sum(binnedrates[idx:])*self.txrate/n
                      for idx in range(len(binnedrates))]
         return byterates
@@ -68,7 +71,7 @@ class SimTxSource(object):
         n = len(self.txsample)
 
         def _calc_single(txsample):
-            return sum([tx.size for tx in txsample])*self.txrate/n
+            return sum([entry.tx.size for entry in txsample])*self.txrate/n
 
         mean_byterate = _calc_single(self.txsample)
         bootstrap_ests = DataSample()
@@ -84,15 +87,6 @@ class SimTxSource(object):
     def __repr__(self):
         return "SimTxSource{{samplesize: {}, txrate: {}}}".format(
             len(self.txsample), self.txrate)
-
-
-class TxSourceCopy(SimTxSource):
-    # This is so slow :(
-    def generate_txs(self, time_interval):
-        k = poisson_sample(self.txrate*time_interval)
-        n = len(self.txsample)
-
-        return [copy(self.txsample[int(random()*n)]) for i in range(k)]
 
 
 def poisson_sample(l):

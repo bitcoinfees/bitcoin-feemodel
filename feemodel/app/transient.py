@@ -6,7 +6,7 @@ from time import time
 from copy import deepcopy
 
 from feemodel.util import StoppableThread, DataSample, proxy
-from feemodel.simul import Simul, SimTx
+from feemodel.simul import Simul, SimEntry
 from feemodel.simul.stats import SimStats, WaitFn, get_feeclasses
 from feemodel.estimate import TxRateEstimator
 
@@ -79,16 +79,16 @@ class TransientOnline(StoppableThread):
     def simulate(self, sim, feeclasses):
         stats = TransientStats()
         stats.timestamp = time()
-        mempooltxs = [SimTx.from_mementry(txid, entry)
-                      for txid, entry in self.mempool.get_entries().items()]
-        mempoolsize = sum([tx.size for tx in mempooltxs
-                           if tx.feerate >= sim.stablefeerate])
+        init_entries = [SimEntry.from_mementry(txid, entry)
+                        for txid, entry in self.mempool.get_entries().items()]
+        mempoolsize = sum([entry.tx.size for entry in init_entries
+                           if entry.tx.feerate >= sim.stablefeerate])
 
         tstats = {feerate: DataSample() for feerate in feeclasses}
         simtime = 0.
         stranded = set(feeclasses)
         numiters = 0
-        for block, realtime in sim.run(mempooltxs=mempooltxs):
+        for block, realtime in sim.run(init_entries=init_entries):
             if self.is_stopped():
                 raise StopIteration
             simtime += block.interval

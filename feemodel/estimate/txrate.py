@@ -6,7 +6,8 @@ from time import time
 from feemodel.util import round_random
 from feemodel.config import history_file
 from feemodel.txmempool import MemBlock
-from feemodel.simul import SimTxSource, SimTx
+from feemodel.simul import SimTxSource
+from feemodel.simul.txsources import SimEntry
 
 default_maxsamplesize = 10000
 logger = logging.getLogger(__name__)
@@ -42,14 +43,14 @@ class TxRateEstimator(SimTxSource):
         self.txrate = self.totaltxs / self.totaltime
         for tx in self.txsample:
             tx._id = ''
+            tx.depends = []
         self.height = blockrangetuple[1] - 1
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
 
     def _addblock(self, block, prevblock):
         newtxids = set(block.entries) - set(prevblock.entries)
-        newtxs = [SimTx(block.entries[txid].size,
-                        block.entries[txid].feerate, _id=txid)
+        newtxs = [SimEntry.from_mementry(txid, block.entries[txid])
                   for txid in newtxids]
         newtotaltxs = self.totaltxs + len(newtxs)
         if newtotaltxs:
