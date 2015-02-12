@@ -28,6 +28,7 @@ except Exception as e:
 poll_period = config.getint('txmempool', 'poll_period')
 keep_history = config.getint('txmempool', 'keep_history')
 prioritythresh = config.getfloat('general', 'prioritythresh')
+windowfillthresh = config.getfloat('app', 'windowfillthresh')
 
 history_file = os.path.join(datadir, config.get('txmempool', 'history_file'))
 poolinfo_file = os.path.join(datadir, 'pools.json')

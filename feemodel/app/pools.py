@@ -5,7 +5,7 @@ import threading
 import os
 from time import time
 from copy import deepcopy
-from feemodel.config import datadir
+from feemodel.config import datadir, windowfillthresh
 from feemodel.util import save_obj, load_obj, StoppableThread, proxy
 from feemodel.txmempool import MemBlock
 from feemodel.estimate.pools import PoolsEstimator
@@ -21,7 +21,6 @@ class PoolsEstimatorOnline(StoppableThread):
     savedir = os.path.join(datadir, 'pools/')
 
     def __init__(self, window, update_period=default_update_period):
-        # TODO: make sure IOError is caught by owner
         self.pools_lock = threading.Lock()
         if window < minblocks:
             raise ValueError("Window cannot be smaller than minblocks.")
@@ -53,11 +52,13 @@ class PoolsEstimatorOnline(StoppableThread):
     @StoppableThread.auto_restart(60)
     def run(self):
         try:
-            self._updating = False
             logger.info("Starting pools online estimator.")
+            # Wait for sufficient blocks within the window.
             while not self.is_stopped() and (
-                    MemBlock.get_numhistory(window=self.window) < minblocks):
+                    self._calc_windowfill() < windowfillthresh):
                 self.sleep(10)
+            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            self._updating = False
             self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
@@ -72,9 +73,7 @@ class PoolsEstimatorOnline(StoppableThread):
         self._updating = True
         currheight = proxy.getblockcount()
         pe = deepcopy(self.pe)
-        historylist = MemBlock.get_history_list()
-        rangestart = max(min(historylist), currheight-self.window+1)
-        rangetuple = (rangestart, currheight+1)
+        rangetuple = (currheight-self.window+1, currheight+1)
         pe.start(rangetuple, stopflag=self.get_stop_object())
         self.pe = pe
         self.next_update = pe.timestamp + self.update_period
@@ -112,3 +111,12 @@ class PoolsEstimatorOnline(StoppableThread):
             return 'running'
         else:
             return 'idle'
+
+    def _calc_windowfill(self):
+        '''Calculate window fill ratio.
+
+        Returns the ratio of the number of available memblocks within
+        the window, to the window size.
+        '''
+        numblocks = len(MemBlock.get_heights(window=self.window))
+        return numblocks / self.window

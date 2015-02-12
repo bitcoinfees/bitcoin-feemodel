@@ -5,10 +5,12 @@ import logging
 from time import time
 from copy import deepcopy
 
+from feemodel.config import windowfillthresh
 from feemodel.util import StoppableThread, DataSample, proxy
 from feemodel.simul import Simul, SimEntry
 from feemodel.simul.stats import SimStats, WaitFn, get_feeclasses
 from feemodel.estimate import TxRateEstimator
+from feemodel.txmempool import MemBlock
 
 tx_maxsamplesize = 10000
 default_update_period = 60.
@@ -42,12 +44,14 @@ class TransientOnline(StoppableThread):
     @StoppableThread.auto_restart(60)
     def run(self):
         try:
-            self._updating = False
             logger.info("Starting transient online sim.")
-            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped() and not (
-                    self.peo.pe and self.mempool):
+                    self.peo.pe and self.mempool and
+                    self._calc_windowfill() >= windowfillthresh):
                 self.sleep(10)
+            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            self._updating = False
+            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
@@ -144,6 +148,15 @@ class TransientOnline(StoppableThread):
             return 'running'
         else:
             return 'idle'
+
+    def _calc_windowfill(self):
+        '''Calculate window fill ratio.
+
+        Returns the ratio of the number of available memblocks within
+        the window, to the window size.
+        '''
+        numblocks = len(MemBlock.get_heights(window=self.window))
+        return numblocks / self.window
 
 
 class TransientStats(SimStats):

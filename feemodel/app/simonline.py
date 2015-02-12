@@ -84,7 +84,7 @@ class SimOnline(TxMempool):
     def get_status(self):
         runtime = time() - self.starttime
         currheight = proxy.getblockcount()
-        numhistory = MemBlock.get_numhistory()
+        numhistory = len(MemBlock.get_heights())
         peo_status = self.peo.status
         ss_status = self.ss.status
         trans_status = self.trans.status

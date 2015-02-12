@@ -284,10 +284,10 @@ class MemBlock(object):
                 db.close()
 
     @staticmethod
-    def get_numhistory(window=None, currheight=None, dbfile=history_file):
-        '''Get number of MemBlocks on disk.
+    def get_heights(window=None, currheight=None, dbfile=history_file):
+        '''Get the list of MemBlocks stored on disk.
 
-        Returns the number of MemBlocks on disk which are in
+        Returns a list of heights of all MemBlocks on disk within
         range(currheight-window+1, currheight+1)
         '''
         if not os.path.exists(dbfile):
@@ -303,22 +303,7 @@ class MemBlock(object):
                 'SELECT height FROM blocks '
                 'where height>=? and height <?',
                 (currheight-window+1, currheight+1)).fetchall()
-            return len(heights)
-        finally:
-            if db:
-                db.close()
-
-    # TODO: either check for no db, or catch sqlite3.OperationalError
-    # TODO: Merge this with get_numhistory
-    @staticmethod
-    def get_history_list(dbfile=history_file):
-        '''Get the list of heights of all MemBlocks stored on disk.'''
-        db = None
-        try:
-            db = sqlite3.connect(dbfile)
-            memblock_heights = db.execute(
-                'SELECT height FROM blocks').fetchall()
-            return [b[0] for b in memblock_heights]
+            return [r[0] for r in heights]
         finally:
             if db:
                 db.close()

@@ -6,7 +6,7 @@ import os
 from copy import deepcopy
 from time import time
 
-from feemodel.config import datadir
+from feemodel.config import datadir, windowfillthresh
 from feemodel.util import save_obj, load_obj, proxy
 from feemodel.util import StoppableThread, DataSample
 from feemodel.estimate.txrate import TxRateEstimator
@@ -14,6 +14,7 @@ from feemodel.simul import Simul
 from feemodel.simul.stats import SimStats, get_feeclasses, WaitFn
 from feemodel.waitmeasure import WaitMeasure
 from feemodel.queuestats import QueueStats
+from feemodel.txmempool import MemBlock
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,14 @@ class SteadyStateOnline(StoppableThread):
     @StoppableThread.auto_restart(60)
     def run(self):
         try:
-            self._updating = False
             logger.info("Starting steady-state online sim.")
-            self.sleep(max(0, self.next_update-time()))
-            while not self.peo.pe and not self.is_stopped():
+            while not self.is_stopped() and not (
+                    self.peo.pe and
+                    self._calc_windowfill() >= windowfillthresh):
                 self.sleep(10)
+            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            self._updating = False
+            self.sleep(max(0, self.next_update-time()))
             while not self.is_stopped():
                 self.update()
                 self.sleep(max(0, self.next_update-time()))
@@ -173,6 +177,15 @@ class SteadyStateOnline(StoppableThread):
             return 'running'
         else:
             return 'idle'
+
+    def _calc_windowfill(self):
+        '''Calculate window fill ratio.
+
+        Returns the ratio of the number of available memblocks within
+        the window, to the window size.
+        '''
+        numblocks = len(MemBlock.get_heights(window=self.window))
+        return numblocks / self.window
 
 
 class SteadyStateStats(SimStats):
