@@ -112,7 +112,7 @@ class BasicSimTest(unittest.TestCase):
             tx.size = 10000
         print("With init mempool:")
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock, t in self.sim.run(mempool=self.init_mempool):
+        for simblock, t in self.sim.run(mempooltxs=self.init_mempool):
             if simblock.height >= 50:
                 break
             mempoolsize = sum([tx.size for tx in self.sim.mempool.txs])

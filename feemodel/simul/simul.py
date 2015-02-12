@@ -23,11 +23,11 @@ class Simul(object):
                              "processing for all feerates.")
         self.mempool = None
 
-    def run(self, mempool=None):
+    def run(self, mempooltxs=None):
         # miniters takes precedence over maxtime.
-        if mempool is None:
-            mempool = []
-        self.mempool = SimMempool(mempool)
+        if mempooltxs is None:
+            mempooltxs = []
+        self.mempool = SimMempool(mempooltxs)
         starttime = time()
         for simblock in self.pools.blockgen():
             elapsedrealtime = time() - starttime
@@ -42,17 +42,19 @@ class Simul(object):
 
 
 class SimMempool(object):
-    def __init__(self, mempool):
+    def __init__(self, mempooltxs):
         self._tx_nodeps = []
         self._tx_havedeps = {}
         self._depmap = defaultdict(list)
 
-        for simtx in mempool:
+        idlist = [tx._id for tx in mempooltxs]
+        for simtx in mempooltxs:
             if not simtx._depends:
                 self._tx_nodeps.append(simtx)
             else:
                 for dep in simtx._depends:
                     self._depmap[dep].append(simtx._id)
+                    assert dep in idlist
                 self._tx_havedeps[simtx._id] = simtx
 
         self._tx_nodeps_bak = self._tx_nodeps[:]

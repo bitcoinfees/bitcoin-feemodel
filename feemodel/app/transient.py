@@ -79,16 +79,16 @@ class TransientOnline(StoppableThread):
     def simulate(self, sim, feeclasses):
         stats = TransientStats()
         stats.timestamp = time()
-        init_mempool = [SimTx.from_mementry(txid, entry)
-                        for txid, entry in self.mempool.get_entries().items()]
-        mempoolsize = sum([tx.size for tx in init_mempool
+        mempooltxs = [SimTx.from_mementry(txid, entry)
+                      for txid, entry in self.mempool.get_entries().items()]
+        mempoolsize = sum([tx.size for tx in mempooltxs
                            if tx.feerate >= sim.stablefeerate])
 
         tstats = {feerate: DataSample() for feerate in feeclasses}
         simtime = 0.
         stranded = set(feeclasses)
         numiters = 0
-        for block, realtime in sim.run(mempool=init_mempool):
+        for block, realtime in sim.run(mempooltxs=mempooltxs):
             if self.is_stopped():
                 raise StopIteration
             simtime += block.interval
