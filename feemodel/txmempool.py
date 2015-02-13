@@ -47,7 +47,7 @@ class TxMempool(StoppableThread):
         1. The current block count, via getblockcount().
         2. The transactions in the mempool, via getrawmempool(verbose=True)
 
-    If the block count has increased, we record:
+    If the block count has increased in between polls, we record:
         1. Transactions in the mempool just prior to block discovery
         2. For each transaction, whether or not it was included in the block.
 
@@ -65,8 +65,7 @@ class TxMempool(StoppableThread):
     must be tolerant of such errors, in addition to any other kinds of network
     errors.
     '''
-    # TODO: handle RPC errors.
-    # TODO: create new proxy object in each thread.
+
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
         self.history_lock = threading.Lock()
@@ -121,6 +120,8 @@ class TxMempool(StoppableThread):
 
         Records the mempool entries in a MemBlock instance and writes to disk.
         entries is a dict that maps txids to MemEntry objects.
+        new_entries_ids is the set of txids in the mempool immediately after
+        the block(s).
         '''
         with self.history_lock:
             memblocks = []
@@ -178,7 +179,7 @@ class MemBlock(object):
     Methods:
         write - Write to disk.
         read - Read from disk.
-        get_block_list - Get the list of heights of stored blocks.
+        get_heights - Get the list of heights of stored blocks.
     '''
 
     def __init__(self, blockheight=None, block=None, entries=None):
@@ -204,13 +205,13 @@ class MemBlock(object):
                 self.entries[txid].inblock = True
                 del entries[txid]
 
-            # As a measure of our node's connectivity, we want to note the
-            # size of the intersection of set(blocktxs) and
-            # set(entries_prev). If it is low, it means that our node is
-            # not being informed of many transactions.
             incl_text = 'MemBlock: %d of %d in block %d' % (
                 len(entries_inblock), len(blocktxs)-1, blockheight)
             logger.info(incl_text)
+
+            # As a measure of our node's connectivity, we want to note the
+            # ratio below. If it is low, it means that our node is not being
+            # informed of many transactions.
             if len(blocktxs) > 1:
                 incl_ratio = len(entries_inblock) / (len(blocktxs)-1)
                 if incl_ratio < 0.9:
@@ -350,6 +351,9 @@ class MemEntry(object):
             self.inblock = None
 
     def _get_attr_tuple(self):
+        '''Get tuple of attributes.
+        Used when writing MemBlock to disk.
+        '''
         for attr in ['leadtime', 'isconflict', 'inblock']:
             if getattr(self, attr) is None:
                 raise ValueError("MemEntry not yet processed with MemBlock.")
@@ -370,6 +374,9 @@ class MemEntry(object):
 
     @classmethod
     def _from_attr_tuple(cls, tup):
+        '''Form MemEntry from attribute tuple.
+        Used when reading MemBlock from disk.
+        '''
         m = cls()
 
         (m.size, m.fee, m.startingpriority, m.currentpriority,
@@ -392,16 +399,6 @@ class MemEntry(object):
         return self.__dict__ == other.__dict__
 
 
-def check_missed_blocks(start, end):
-    '''Check for MemBlocks missing from the db in range(start, end).'''
-    missed_blocks = [height for height in range(start, end)
-                     if not MemBlock.read(height)]
-    print("%d missed blocks out of %d." %
-          (len(missed_blocks), end-start))
-
-    return missed_blocks
-
-
 def get_mempool_size(minfeerate):
     '''Get size of mempool.
 
@@ -416,26 +413,3 @@ def get_mempool_size(minfeerate):
 def get_mempool():
     rawmempool = proxy.getrawmempool(verbose=True)
     return {txid: MemEntry(entry) for txid, entry in rawmempool.items()}
-
-
-# class LoadHistory(object):
-#     def __init__(self, dbfile=historyFile):
-#         self.fns = []
-#         self.dbfile = dbfile
-#
-#     def registerFn(self, fn, blockHeightRange):
-#         # blockHeightRange tuple (start,end) includes start but not end,
-#         # to adhere to range() convention
-#         self.fns.append((fn, blockHeightRange))
-#
-#     def loadBlocks(self):
-#         startHeight = min([f[1][0] for f in self.fns])
-#         endHeight = max([f[1][1] for f in self.fns])
-#
-#         for height in range(startHeight, endHeight):
-#             block = Block.blockFromHistory(height, self.dbfile)
-#             for fn, blockHeightRange in self.fns:
-#                 if height >= blockHeightRange[0] and (
-#                         height < blockHeightRange[1]):
-#                     fn([block])
-#
