@@ -15,7 +15,6 @@ with open('feemodel/installinfo.py', 'w') as f:
         'datadir = \'{}\'\n'.format(appname, appversion, datadir))
 
 direxists = False
-# TODO: Remove the datadir if installation failed.
 if not os.path.exists(datadir):
     try:
         os.makedirs(datadir)
@@ -25,17 +24,10 @@ else:
     direxists = True
 
 try:
-    # We must run git submodule init and update
-    shutil.copyfile('knownpools/pools.json',
-                    os.path.join(datadir, 'pools.json'))
-    shutil.copyfile('./config.ini', os.path.join(datadir, 'config.ini'))
-
-    # We must require plotly and also specify plotly account
     setup(
         name=appname,
         version=appversion,
         packages=find_packages(),
-        # scripts=['feemodel-cli', 'feemodel-txmempool'],
         description='Bitcoin transaction fee modeling/simulation/estimation',
         author='Ian Chen',
         author_email='bitcoinfees@gmail.com',
@@ -43,9 +35,21 @@ try:
         url='https://bitcoinfees.github.com/',
         install_requires=[
             'python-bitcoinlib',
-            'Flask'
-        ]
+            'Flask',
+            'click',
+            'requests',
+            'tabulate'
+        ],
+        entry_points='''
+            [console_scripts]
+            feemodel-cli = feemodel.cli:cli
+        '''
     )
+
+    # We must run git submodule init and update
+    shutil.copyfile('knownpools/pools.json',
+                    os.path.join(datadir, 'pools.json'))
+    shutil.copyfile('./config.ini', os.path.join(datadir, 'config.ini'))
 except Exception as e:
     if not direxists:
         os.rmdir(datadir)

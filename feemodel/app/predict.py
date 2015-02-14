@@ -104,7 +104,21 @@ class Prediction(object):
         table.print_table()
 
     def get_stats(self):
-        pass
+        if not self:
+            return None
+        feerates = self.scores.feerates
+        num_in = self.scores.num_in
+        numtxs = self.scores.numtxs
+        ratios = [n / d if d else -1 for n, d in zip(num_in, numtxs)]
+
+        stats = {
+            'blockrange': [min(self.blockscores), max(self.blockscores)],
+            'feerates': feerates,
+            'num_in': num_in,
+            'num_txs': numtxs,
+            'ratios': ratios
+        }
+        return stats
 
     def __nonzero__(self):
         return bool(self.blockscores)

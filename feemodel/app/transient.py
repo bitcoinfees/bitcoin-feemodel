@@ -216,7 +216,7 @@ class TransientStats(SimStats):
             'predictlevel': self.predict_level
         }
         basestats.update(stats)
-        return stats
+        return basestats
 
     def __nonzero__(self):
         return bool(self.tstats)

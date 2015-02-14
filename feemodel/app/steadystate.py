@@ -272,6 +272,7 @@ class SteadyStateStats(SimStats):
             'avgwaits': self.avgwaits.waits,
             'strandedprop': self.strandedprop,
             'avg_strandedblocks': self.avg_strandedblocks,
+            'm_feerates': self.m_avgwaits.feerates,
             'm_avgwaits': self.m_avgwaits.waits,
             'm_errors': self.m_avgwaits.errors,
             'm_numtxs': self.m_numtxs}

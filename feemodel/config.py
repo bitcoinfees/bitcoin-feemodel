@@ -1,6 +1,6 @@
+import logging
 import os
 import ConfigParser as configparser
-
 try:
     from installinfo import datadir
 except ImportError as e:
@@ -9,11 +9,65 @@ except ImportError as e:
 
 config = configparser.ConfigParser()
 config_file = os.path.join(datadir, 'config.ini')
-try:
-    config.read(config_file)
-except Exception as e:
-    print("Unable to load config.ini.")
-    raise(e)
+config.read(config_file)
+
+defaults = {
+    'general': {
+        # The priority threshold used by Bitcoin Core to determine if a
+        # transaction is classified as 'high priority' (with equality).
+        'prioritythresh': 57600000,
+    },
+    'txmempool': {
+        'poll_period': 5,
+        'keep_history': 2400,
+        'history_file': 'history.db',
+    },
+    'app': {
+        # ratio of (number of memblocks in window) to (window length)
+        # must be at least this number.
+        'windowfillthresh': 0.9,
+        'applog': 'debug.log',
+        'loglevel': 'DEBUG',
+        'port': 8350
+    }
+}
+
+
+def write_default_config(filename):
+    with open(filename, 'w') as f:
+        for section, opts in defaults.items():
+            f.write('[{}]\n'.format(section))
+            for opt, val in opts.items():
+                f.write('{} = {}\n'.format(opt, str(val)))
+            f.write('\n')
+
+
+def load_config(section, option, opt_type=''):
+    '''Return <option> from <section>.
+    opt_type is "int" or "float", or the empty string (for strings).
+    '''
+    getfn = getattr(config, 'get' + opt_type)
+    try:
+        return getfn(section, option)
+    except Exception:
+        defaultval = defaults[section][option]
+        print("Unable to load %s/%s config; using default value of %s" %
+              (option, section, str(defaultval)))
+        return defaultval
+
+
+poll_period = load_config('txmempool', 'poll_period', opt_type='int')
+keep_history = load_config('txmempool', 'keep_history', opt_type='int')
+prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
+windowfillthresh = load_config('app', 'windowfillthresh', opt_type='float')
+history_file = os.path.join(datadir, load_config('txmempool', 'history_file'))
+applogfile = os.path.join(datadir, load_config('app', 'applog'))
+loglevel = getattr(logging, load_config('app', 'loglevel').upper())
+app_port = load_config('app', 'port', opt_type='int')
+
+poolinfo_file = os.path.join(datadir, 'pools.json')
+
+# apilogfile = os.path.join(datadir, load_config('app', 'apilog'))
 
 # statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
 # saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
@@ -24,11 +78,3 @@ except Exception as e:
 # savePredictFile = os.path.join(datadir, config['simul']['savePredict'])
 # historyFile = os.path.join(datadir, config['historyDb'])
 # logFile = os.path.join(datadir, 'debug.log')
-
-poll_period = config.getint('txmempool', 'poll_period')
-keep_history = config.getint('txmempool', 'keep_history')
-prioritythresh = config.getfloat('general', 'prioritythresh')
-windowfillthresh = config.getfloat('app', 'windowfillthresh')
-
-history_file = os.path.join(datadir, config.get('txmempool', 'history_file'))
-poolinfo_file = os.path.join(datadir, 'pools.json')

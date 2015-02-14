@@ -8,6 +8,7 @@ from time import sleep
 import feemodel.config
 feemodel.config.history_file = 'data/test.db'
 feemodel.config.datadir = 'data/'
+feemodel.config.windowfillthresh = 0.5
 from testproxy import proxy, TestMempool
 import feemodel.util
 feemodel.util.proxy = proxy

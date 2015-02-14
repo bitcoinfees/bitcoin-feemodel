@@ -3,11 +3,10 @@ from __future__ import division
 import logging
 import threading
 import os
-from time import time
 
 from feemodel.config import datadir
-from feemodel.util import save_obj, load_obj, proxy
-from feemodel.txmempool import TxMempool, MemBlock
+from feemodel.util import save_obj, load_obj
+from feemodel.txmempool import TxMempool
 from feemodel.app import SteadyStateOnline, TransientOnline
 from feemodel.app import PoolsEstimatorOnline, Prediction
 
@@ -59,7 +58,6 @@ class SimOnline(TxMempool):
             maxiters=trans_maxiters,
             maxtime=trans_maxtime)
         self.load_predicts()
-        self.starttime = time()
         super(SimOnline, self).__init__()
 
     def run(self):
@@ -82,26 +80,17 @@ class SimOnline(TxMempool):
                 logger.exception("Unable to save predicts.")
 
     def get_status(self):
-        runtime = time() - self.starttime
-        currheight = proxy.getblockcount()
-        numhistory = len(MemBlock.get_heights())
+        base_status = super(SimOnline, self).get_status()
+
         peo_status = self.peo.status
         ss_status = self.ss.status
         trans_status = self.trans.status
-        if self.rawmempool:
-            mempool_status = 'running'
-        else:
-            mempool_status = 'stopped'
 
         status = {
-            'runtime': runtime,
-            'height': currheight,
-            'numhistory': numhistory,
-            'poolestimator': peo_status,
             'steadystate': ss_status,
             'transient': trans_status,
-            'mempool': mempool_status}
-
+            'poolestimator': peo_status}
+        status.update(base_status)
         return status
 
     def load_predicts(self):

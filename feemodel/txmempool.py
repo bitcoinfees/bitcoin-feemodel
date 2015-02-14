@@ -75,6 +75,7 @@ class TxMempool(StoppableThread):
         self.write_history = write_history
         self.dbfile = dbfile
         self.keep_history = keep_history
+        self.starttime = time()
         super(TxMempool, self).__init__()
 
     @StoppableThread.auto_restart(60)
@@ -160,6 +161,21 @@ class TxMempool(StoppableThread):
             entries = {txid: MemEntry(rawentry)
                        for txid, rawentry in self.rawmempool.iteritems()}
             return entries
+
+    def get_status(self):
+        runtime = int(time() - self.starttime)
+        currheight = proxy.getblockcount()
+        numhistory = len(MemBlock.get_heights())
+        if self.rawmempool:
+            mempool_status = 'running'
+        else:
+            mempool_status = 'stopped'
+        status = {
+            'runtime': runtime,
+            'height': currheight,
+            'numhistory': numhistory,
+            'mempool': mempool_status}
+        return status
 
     def __nonzero__(self):
         return self.rawmempool is not None
@@ -292,7 +308,7 @@ class MemBlock(object):
         range(currheight-window+1, currheight+1)
         '''
         if not os.path.exists(dbfile):
-            return 0
+            return []
         if currheight is None:
             currheight = proxy.getblockcount()
         if window is None:

@@ -1,9 +1,9 @@
 from __future__ import division
 
 import logging
-import warnings
 import json
 from time import time
+from random import random
 from feemodel.config import poolinfo_file, history_file
 from feemodel.util import get_coinbase_info, Table, get_block_timestamp
 from feemodel.util import get_pph
@@ -160,7 +160,7 @@ class PoolsEstimator(SimPools):
                 if paddr in baddrs:
                     if height in self.blockmap:
                         if pattrs['name'] != self.blockmap[height]:
-                            warnings.warn(
+                            logger.warning(
                                 "PoolsEstimator: "
                                 "> 1 pools mapped to block %d" % height)
                     else:
@@ -170,21 +170,26 @@ class PoolsEstimator(SimPools):
                 if ptag in btag:
                     if height in self.blockmap:
                         if pattrs['name'] != self.blockmap[height]:
-                            warnings.warn(
+                            logger.warning(
                                 "PoolsEstimator: "
                                 "> 1 pools mapped to block %d" % height)
                     else:
                         self.blockmap[height] = pattrs['name']
 
             if height not in self.blockmap:
-                if baddrs:
-                    # Underscore indicates that the pool is unknown.
-                    # We use the first valid coinbase addr as the name.
-                    name = baddrs[0][:12] + '_'
-                    self.blockmap[height] = name
-                else:
-                    warnings.warn(
-                        "Unable to identify pool of block %d" % height)
+                name = None
+                for addr in baddrs:
+                    if addr is not None:
+                        # Underscore indicates that the pool is not in the
+                        # list of known pools. We use the first valid
+                        # coinbase addr as the name.
+                        name = addr[:12] + '_'
+                        break
+                if name is None:
+                    logger.warning(
+                        "Unable to identify pool of block %d." % height)
+                    name = 'U' + str(int(random()*1000)) + '_'
+                self.blockmap[height] = name
 
         for height in self.blockmap.keys():
             if height < blockrangetuple[0] or height >= blockrangetuple[1]:
@@ -238,7 +243,11 @@ class PoolsEstimator(SimPools):
     def get_stats(self):
         if not self:
             return None
-        stats = {
+        basestats = {
+            'timestamp': self.timestamp,
+            'blockinterval': 1/self.blockrate,
+        }
+        poolstats = {
             name: {
                 'hashrate': pool.hashrate,
                 'proportion': pool.proportion,
@@ -252,7 +261,8 @@ class PoolsEstimator(SimPools):
             }
             for name, pool in self._SimPools__pools
         }
-        return stats
+        basestats.update({'pools': poolstats})
+        return basestats
 
 
 def estimate_block_interval(blockrangetuple):

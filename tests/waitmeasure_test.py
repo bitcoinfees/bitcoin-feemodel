@@ -22,10 +22,10 @@ def delayed_stop(stopflag, delay):
 class WaitMeasureTest(unittest.TestCase):
     def setUp(self):
         self.wm = WaitMeasure(feerates)
-        self.waits = self.wm.calcwaits(blockrange, dbfile=dbfile)
+        self.wm.calcwaits(blockrange, dbfile=dbfile)
 
     def test_basic(self):
-        self.waits.print_waits()
+        self.wm.waitstat.print_waits()
 
     def test_saveload(self):
         save_obj(self.wm, savefile)
