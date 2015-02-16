@@ -25,7 +25,7 @@ class SimStats(object):
         if not self:
             return None
         return {
-            'time': self.timestamp,
+            'timestamp': self.timestamp,
             'timespent': self.timespent,
             'numiters': self.numiters,
             'cap': self.cap.__dict__,
@@ -55,6 +55,7 @@ class WaitFn(object):
 
     def inv(self, wait):
         '''Inverse of self.__call__.
+
         If wait is smaller than all available wait datapoints, returns None.
         If larger, return the boundary value of the function.
         '''

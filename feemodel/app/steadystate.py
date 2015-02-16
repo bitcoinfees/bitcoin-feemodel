@@ -261,20 +261,26 @@ class SteadyStateStats(SimStats):
                        self.m_errors, waitmeasure.waitstat.numtxs)
         avgwaits = filter(lambda a: a[3] > 0, avgwaits)
         feerates, waits, errors, self.m_numtxs = zip(*avgwaits)
-        self.m_avgwaits = WaitFn(feerates, waits, errors)
+        feerates_binctr = [
+            (feerates[idx] + feerates[idx-1]) / 2
+            for idx in range(1, len(feerates))]
+        self.m_avgwaits = WaitFn(feerates_binctr, waits[:-1], errors[:-1])
 
     def get_stats(self):
         if not self:
             return None
         basestats = super(SteadyStateStats, self).get_stats()
         stats = {
-            'feerates': self.avgwaits.feerates,
-            'avgwaits': self.avgwaits.waits,
-            'strandedprop': self.strandedprop,
-            'avg_strandedblocks': self.avg_strandedblocks,
-            'm_feerates': self.m_avgwaits.feerates,
-            'm_avgwaits': self.m_avgwaits.waits,
-            'm_errors': self.m_avgwaits.errors,
-            'm_numtxs': self.m_numtxs}
+            'sim': {
+                'feerates': self.avgwaits.feerates,
+                'avgwaits': self.avgwaits.waits,
+                'strandedprop': self.strandedprop,
+                'avg_strandedblocks': self.avg_strandedblocks},
+            'measured': {
+                'feerates': self.m_avgwaits.feerates,
+                'avgwaits': self.m_avgwaits.waits,
+                'errors': self.m_avgwaits.errors,
+                'numtxs': self.m_numtxs}
+        }
         basestats.update(stats)
         return basestats
