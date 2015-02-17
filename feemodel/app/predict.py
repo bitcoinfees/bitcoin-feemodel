@@ -50,7 +50,7 @@ class Prediction(object):
         currtime = time()
         for txid in new_txids:
             entry = entries[txid]
-            if not entry.depends and entry.currentpriority < prioritythresh:
+            if not entry.depends and entry.currentpriority <= prioritythresh:
                 waittime = transientstats.predict(entry.feerate)
                 if waittime is not None:
                     self.predicts[txid] = waittime + currtime

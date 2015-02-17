@@ -125,7 +125,7 @@ class WaitMeasure(object):
         return (
             entry.inblock and
             not entry.depends and
-            entry.currentpriority < prioritythresh
+            entry.currentpriority <= prioritythresh
         )
 
     @staticmethod

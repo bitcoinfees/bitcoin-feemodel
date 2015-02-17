@@ -20,7 +20,7 @@ def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
     Arguments:
         memblock - A MemBlock object
         remove_high_priority - remove all transactions whose currentpriority
-                               is >= prioritythresh
+                               is > prioritythresh
                                (the threshold defined by Bitcoin Core)
         remove_depped - remove all transactions which depend on other txs
                         in the mempool.
@@ -41,7 +41,7 @@ def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
         entry.leadtime >= min_leadtime and
         not entry.isconflict and
         (entry.feerate if remove_zero_fee else True) and
-        (entry.currentpriority < prioritythresh
+        (entry.currentpriority <= prioritythresh
          if remove_high_priority else True)]
 
     return txs

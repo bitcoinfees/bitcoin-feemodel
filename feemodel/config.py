@@ -13,8 +13,8 @@ config.read(config_file)
 
 defaults = {
     'general': {
-        # The priority threshold used by Bitcoin Core to determine if a
-        # transaction is classified as 'high priority' (with equality).
+        # Transaction must have priority strictly greater than this to be
+        # considered 'high priority' by Bitcoin Core.
         'prioritythresh': 57600000,
     },
     'txmempool': {
