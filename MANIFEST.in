@@ -1,0 +1,4 @@
+include appdirs.py
+include feemodel/defaultconfig.ini
+include feemodel/knownpools/pools.json
+exclude feemodel/installinfo.json

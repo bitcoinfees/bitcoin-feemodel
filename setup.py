@@ -1,32 +1,33 @@
 import os
-import sys
+import json
 import shutil
 from setuptools import setup, find_packages
 from appdirs import user_data_dir
 
-appname = 'bitcoin-feemodel'
-appversion = '0.1.0'
-datadir = user_data_dir(appname)
+installinfo = {
+    'name': 'bitcoin-feemodel',
+    'version': '0.0.1',
+}
+datadir = user_data_dir(installinfo['name'])
+installinfo.update({'datadir': datadir})
 
-with open('feemodel/installinfo.py', 'w') as f:
-    f.write(
-        'appname = \'{}\'\n'
-        'appversion = \'{}\'\n'
-        'datadir = \'{}\'\n'.format(appname, appversion, datadir))
+with open('feemodel/installinfo.json', 'w') as f:
+    json.dump(installinfo, f)
 
-direxists = False
+datadirexists = False
 if not os.path.exists(datadir):
     try:
         os.makedirs(datadir)
-    except OSError:
-        sys.exit("Error: Unable to create data directory " + datadir)
+    except Exception as e:
+        print("Error: Unable to create data directory " + datadir)
+        raise e
 else:
-    direxists = True
+    datadirexists = True
 
 try:
     setup(
-        name=appname,
-        version=appversion,
+        name=installinfo['name'],
+        version=installinfo['version'],
         packages=find_packages(),
         description='Bitcoin transaction fee modeling/simulation/estimation',
         author='Ian Chen',
@@ -40,20 +41,22 @@ try:
             'requests',
             'tabulate'
         ],
-        entry_points='''
-            [console_scripts]
-            feemodel-cli = feemodel.cli:cli
-        '''
+        entry_points={
+            'console_scripts': ['feemodel-cli = feemodel.cli:cli']
+        },
+        package_data={
+            'feemodel': ['knownpools/pools.json',
+                         'installinfo.json',
+                         'defaultconfig.ini']
+        }
     )
 
-    # We must run git submodule init and update
-    shutil.copyfile('knownpools/pools.json',
-                    os.path.join(datadir, 'pools.json'))
-    shutil.copyfile('./config.ini', os.path.join(datadir, 'config.ini'))
+    shutil.copyfile('feemodel/defaultconfig.ini',
+                    os.path.join(datadir, 'config.ini'))
 except Exception as e:
-    if not direxists:
+    if not datadirexists:
         os.rmdir(datadir)
     raise(e)
 else:
-    if direxists:
+    if datadirexists:
         print("Warning: the data directory " + datadir + " already exists.")
