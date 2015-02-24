@@ -45,7 +45,7 @@ class StoppableThread(threading.Thread):
         self.__stopflag.wait(timeout=secs)
 
     @contextmanager
-    def thread_start(self):
+    def context_start(self):
         '''Context manager for starting/closing the thread.
 
         Starts the thread and terminates it cleanly at the end of the

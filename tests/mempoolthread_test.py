@@ -23,7 +23,7 @@ class TxMempoolTest(unittest.TestCase):
         b = MemBlock.read(333931, dbfile=dbfile)
         proxy.rawmempool = get_rawmempool(b)
         mempool = TxMempool(dbfile=tmpdbfile)
-        with mempool.thread_start():
+        with mempool.context_start():
             sleep(50)
             proxy.on = True
             sleep(20)

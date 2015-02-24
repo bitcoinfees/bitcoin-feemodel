@@ -10,7 +10,8 @@ from copy import deepcopy
 
 from bitcoin.core import b2lx
 
-from feemodel.config import history_file, poll_period, keep_history
+from feemodel.config import (history_file, poll_period, keep_history,
+                             minrelaytxfee, prioritythresh)
 from feemodel.util import proxy, StoppableThread, get_feerate
 
 logger = logging.getLogger(__name__)
@@ -365,6 +366,45 @@ class MemEntry(object):
             self.leadtime = None
             self.isconflict = None
             self.inblock = None
+
+    def is_high_priority(self):
+        '''Check if entry is high priority.
+
+        Returns True if entry is considered high priority by Bitcoin Core
+        with regard to priority inclusion in the next block.
+
+        Ideally this should simply return
+        (entry.currentpriority > prioritythresh), however, currentpriority,
+        as obtained by RPC, uses the current height, whereas miners in forming
+        a new block use the current height + 1, i.e. the height of the new
+        block. So currentpriority underestimates the 'true' mining priority.
+        (There are other complications, in that currentpriority doesn't take
+        into account cases where the entry has mempool dependencies, but
+        that's a different problem, which we live with for now.)
+
+        This difference is important because, for the purposes of minfeerate
+        policy estimation, we need to properly exclude all high priority
+        transactions. Previously in v0.9 of Bitcoin Core, this wasn't such a
+        big problem, because low priority transactions below minrelaytxfee
+        are still relayed / enter the mempool; there are thus sufficient
+        low-fee, low-priority transactions so that the minfeerate threshold
+        is still estimatable in a consistent manner.
+
+        With v0.10, however, only high (miners') priority transactions are
+        allowed into the mempool if the tx has low fee. If one relies on the
+        criteria (entry.currentpriority > prioritythresh), there will be false
+        negatives; however because there aren't any more truly low-priority
+        transactions with similar feerate, the minfeerate estimation can
+        become inconsistent.
+
+        It's not possible, however, to adjust entry.currentpriority to become
+        the miners' priority, solely from the information obtained from
+        getrawmempool. Therefore, we resort to this hack: the entry is classed
+        as high priority if (entry.currentpriority > prioritythresh) or
+        (entry.feerate < minrelaytxfee).
+        '''
+        return (self.currentpriority > prioritythresh or
+                self.feerate < minrelaytxfee)
 
     def _get_attr_tuple(self):
         '''Get tuple of attributes.

@@ -17,7 +17,6 @@ from bisect import bisect
 from time import time
 from feemodel.txmempool import MemBlock
 from feemodel.util import Table
-from feemodel.config import prioritythresh
 from feemodel.config import history_file
 
 logger = logging.getLogger(__name__)
@@ -125,7 +124,7 @@ class WaitMeasure(object):
         return (
             entry.inblock and
             not entry.depends and
-            entry.currentpriority <= prioritythresh
+            not entry.is_high_priority()
         )
 
     @staticmethod

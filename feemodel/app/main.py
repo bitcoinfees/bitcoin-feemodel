@@ -52,7 +52,7 @@ def main(mempool_only=False, port=app_port):
             stats = stats if stats else {}
             return jsonify(stats)
 
-        @app.route('/feemodel/predicts', methods=['GET'])
+        @app.route('/feemodel/predictscores', methods=['GET'])
         def get_predicts():
             stats = sim.prediction.get_stats()
             stats = stats if stats else {}
@@ -74,7 +74,7 @@ def main(mempool_only=False, port=app_port):
     def not_found(err):
         return make_response(jsonify({'error': 'Not found'}), 404)
 
-    with sim.thread_start():
+    with sim.context_start():
         # app.run(port=port, debug=True, use_reloader=False)
         app.run(port=port)
 

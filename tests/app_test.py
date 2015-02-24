@@ -30,8 +30,8 @@ class SimTest(unittest.TestCase):
         maxtime = 10
         self.ssonline = SteadyStateOnline(self.peo, 25, miniters=0, maxtime=maxtime)
         self.trans = TransientOnline(self.mempool, self.peo, 25, miniters=0, maxtime=maxtime)
-        with self.peo.thread_start():
-            with self.ssonline.thread_start(), self.trans.thread_start():
+        with self.peo.context_start():
+            with self.ssonline.context_start(), self.trans.context_start():
                 while not (self.ssonline.stats and self.trans.stats):
                     sleep(1)
                 print("Finished stats calc.")
@@ -78,8 +78,8 @@ class SimTest(unittest.TestCase):
         self.ssonline = SteadyStateOnline(self.peo, 25, miniters=miniters, maxtime=0)
         self.trans = TransientOnline(self.mempool, self.peo, 25, miniters=miniters, maxtime=0)
 
-        with self.peo.thread_start():
-            with self.ssonline.thread_start(), self.trans.thread_start():
+        with self.peo.context_start():
+            with self.ssonline.context_start(), self.trans.context_start():
                 while not (self.ssonline.stats and self.trans.stats):
                     sleep(1)
                 ss_stats = self.ssonline.stats
@@ -95,8 +95,8 @@ class SimTest(unittest.TestCase):
         self.ssonline = SteadyStateOnline(self.peo, 25, miniters=0, maxiters=maxiters)
         self.trans = TransientOnline(self.mempool, self.peo, 25, miniters=0, maxiters=maxiters)
 
-        with self.peo.thread_start():
-            with self.ssonline.thread_start(), self.trans.thread_start():
+        with self.peo.context_start():
+            with self.ssonline.context_start(), self.trans.context_start():
                 while not (self.ssonline.stats and self.trans.stats):
                     sleep(1)
                 ss_stats = self.ssonline.stats

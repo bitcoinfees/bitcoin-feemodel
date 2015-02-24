@@ -18,6 +18,7 @@ from feemodel.txmempool import MemBlock
 
 logger = logging.getLogger(__name__)
 
+# TODO: move maxsamplesize to config
 tx_maxsamplesize = 100000
 default_update_period = 86400
 default_miniters = 100000

@@ -50,6 +50,7 @@ class PoolsEstimatorOnline(StoppableThread):
     def run(self):
         try:
             logger.info("Starting pools online estimator.")
+            # TODO: move the windowfill checks into the main loop.
             # Wait for sufficient blocks within the window.
             while not self.is_stopped() and (
                     self._calc_windowfill() < windowfillthresh):

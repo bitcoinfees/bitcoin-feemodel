@@ -36,10 +36,8 @@ class SimOnline(TxMempool):
     predict_savefile = os.path.join(datadir, 'savepredicts.pickle')
 
     def __init__(self):
-        # TODO: Put minimum required history. Done
-        # TODO: Remember to catch TERM
-
         self.process_lock = threading.Lock()
+        self.predict_lock = threading.Lock()
         self.peo = PoolsEstimatorOnline(
             pools_config['window'],
             update_period=pools_config['update_period'])
@@ -62,37 +60,36 @@ class SimOnline(TxMempool):
         super(SimOnline, self).__init__()
 
     def run(self):
-        with self.peo.thread_start(), self.ss.thread_start(), \
-                self.trans.thread_start():
+        with self.peo.context_start(), self.ss.context_start(), \
+                self.trans.context_start():
             super(SimOnline, self).run()
+        for thread in threading.enumerate():
+            if thread.name.startswith('simonline'):
+                thread.join()
 
     def update(self):
         super(SimOnline, self).update()
-        self.prediction.update_predictions(self.get_entries(),
-                                           self.trans.stats)
+        threading.Thread(target=self.update_predictions,
+                         name='simonline-updatepredict').start()
+
+    def update_predictions(self):
+        with self.predict_lock:
+            self.prediction.update_predictions(self.get_entries(),
+                                               self.trans.stats)
 
     def process_blocks(self, *args, **kwargs):
         with self.process_lock:
             blocks = super(SimOnline, self).process_blocks(*args, **kwargs)
-            self.prediction.process_block(blocks)
-            try:
-                save_obj(self.prediction, self.predict_savefile)
-            except Exception:
-                logger.exception("Unable to save predicts.")
+            with self.predict_lock:
+                self.prediction.process_block(blocks)
+                try:
+                    save_obj(self.prediction, self.predict_savefile)
+                except Exception:
+                    logger.exception("Unable to save predicts.")
 
-    def get_status(self):
-        base_status = super(SimOnline, self).get_status()
-
-        peo_status = self.peo.status
-        ss_status = self.ss.status
-        trans_status = self.trans.status
-
-        status = {
-            'steadystate': ss_status,
-            'transient': trans_status,
-            'poolestimator': peo_status}
-        status.update(base_status)
-        return status
+    def get_predictscores(self):
+        with self.predict_lock:
+            return self.prediction.get_stats()
 
     def load_predicts(self):
         try:
@@ -116,3 +113,17 @@ class SimOnline(TxMempool):
                             "block scores in range %s loaded." %
                             (numpredicts, blockscorerange))
                 self.prediction.window = predict_window
+
+    def get_status(self):
+        base_status = super(SimOnline, self).get_status()
+
+        peo_status = self.peo.status
+        ss_status = self.ss.status
+        trans_status = self.trans.status
+
+        status = {
+            'steadystate': ss_status,
+            'transient': trans_status,
+            'poolestimator': peo_status}
+        status.update(base_status)
+        return status

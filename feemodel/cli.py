@@ -89,13 +89,21 @@ def status():
     click.echo('')
 
 
+# #@cli.command()
+# #def predictscores():
+# #    from tabulate import tabulate
+# #    scores = get_resource("predictscores")
+# #    headers = [
+# #        'Feerate',
+# #        '']
+# #
+# #
 @cli.command()
 def transient():
     '''Get transient simulation statistics.'''
     import time
     from tabulate import tabulate
     stats = get_resource('transient')
-    click.echo('\nTransient statistics\n=======================')
     headers = [
         'Feerate',
         'Avgwait',
@@ -106,9 +114,9 @@ def transient():
         stats['avgwaits'],
         stats['avgwaits_errors'],
         stats['predictwaits'],)
+    click.echo('\nTransient statistics\n=======================')
     click.echo(tabulate(table, headers=headers))
 
-    click.echo('\nCapacity\n========')
     headers = [
         'Feerate',
         'Tx byterate',
@@ -119,6 +127,7 @@ def transient():
         stats['cap']['tx_byterates'],
         stats['cap']['cap_lower'],
         stats['cap']['cap_upper'],)
+    click.echo('\nCapacity\n========')
     click.echo(tabulate(table, headers=headers))
 
     click.echo('\nMisc Stats\n==========')
@@ -135,7 +144,6 @@ def steadystate():
     import time
     from tabulate import tabulate
     stats = get_resource('steadystate')
-    click.echo('\nSteady-state statistics\n=======================')
     headers = [
         'Feerate',
         'Avgwait',
@@ -146,9 +154,9 @@ def steadystate():
         stats['sim']['avgwaits'],
         stats['sim']['strandedprop'],
         stats['sim']['avg_strandedblocks'],)
+    click.echo('\nSteady-state statistics\n=======================')
     click.echo(tabulate(table, headers=headers))
 
-    click.echo('\nMeasured statistics\n===================')
     headers = [
         'Feerate',
         'Avgwait',
@@ -157,9 +165,9 @@ def steadystate():
         stats['measured']['feerates'],
         stats['measured']['avgwaits'],
         stats['measured']['errors'],)
+    click.echo('\nMeasured statistics\n===================')
     click.echo(tabulate(table, headers=headers))
 
-    click.echo('\nCapacity\n========')
     headers = [
         'Feerate',
         'Tx byterate',
@@ -170,6 +178,7 @@ def steadystate():
         stats['cap']['tx_byterates'],
         stats['cap']['cap_lower'],
         stats['cap']['cap_upper'],)
+    click.echo('\nCapacity\n========')
     click.echo(tabulate(table, headers=headers))
 
     click.echo('\nMisc Stats\n==========')

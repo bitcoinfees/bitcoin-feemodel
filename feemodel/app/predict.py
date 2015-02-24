@@ -5,12 +5,10 @@ from time import time
 from bisect import bisect
 
 from feemodel.util import Table
-from feemodel.config import prioritythresh
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: change this to BlockScore
 class BlockScore(object):
     def __init__(self, feerates):
         self.feerates = feerates
@@ -50,7 +48,7 @@ class Prediction(object):
         currtime = time()
         for txid in new_txids:
             entry = entries[txid]
-            if not entry.depends and entry.currentpriority <= prioritythresh:
+            if not entry.depends and not entry.is_high_priority():
                 waittime = transientstats.predict(entry.feerate)
                 if waittime is not None:
                     self.predicts[txid] = waittime + currtime
