@@ -121,32 +121,36 @@ class BatchProxy(BlockingProxy):
             mempool - output of proxy.getrawmempool(verbose=True)
         '''
         with self.rlock:
-            self._RawProxy__id_count += 1
-            rpc_call_list = [
-                {
-                    'version': '1.1',
-                    'method': 'getblockcount',
-                    'params': [],
-                    'id': self._RawProxy__id_count
-                },
-                {
-                    'version': '1.1',
-                    'method': 'getrawmempool',
-                    'params': [True],
-                    'id': self._RawProxy__id_count
-                }
-            ]
+            try:
+                self._RawProxy__id_count += 1
+                rpc_call_list = [
+                    {
+                        'version': '1.1',
+                        'method': 'getblockcount',
+                        'params': [],
+                        'id': self._RawProxy__id_count
+                    },
+                    {
+                        'version': '1.1',
+                        'method': 'getrawmempool',
+                        'params': [True],
+                        'id': self._RawProxy__id_count
+                    }
+                ]
 
-            responses = self._batch(rpc_call_list)
-            for response in responses:
-                if response['error']:
-                    raise JSONRPCException(response['error'])
-                if 'result' not in response:
-                    raise JSONRPCException({
-                        'code': -343, 'message': 'missing JSON-RPC result'
-                    })
+                responses = self._batch(rpc_call_list)
+                for response in responses:
+                    if response['error']:
+                        raise JSONRPCException(response['error'])
+                    if 'result' not in response:
+                        raise JSONRPCException({
+                            'code': -343, 'message': 'missing JSON-RPC result'
+                        })
 
-            return responses[0]['result'], responses[1]['result']
+                return responses[0]['result'], responses[1]['result']
+            except Exception as e:
+                self.close()
+                raise e
 
 
 class DataSample(object):
