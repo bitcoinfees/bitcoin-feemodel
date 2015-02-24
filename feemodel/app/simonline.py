@@ -4,26 +4,26 @@ import logging
 import threading
 import os
 
-from feemodel.config import datadir
+from feemodel.config import datadir, pools_config, ss_config, trans_config
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import TxMempool
 from feemodel.app import SteadyStateOnline, TransientOnline
 from feemodel.app import PoolsEstimatorOnline, Prediction
 
-pools_window = 2016
-pools_update_period = 129600  # 1.5 days
-
-ss_window = 2016
-ss_update_period = 86400  # Daily
-ss_maxiters = 200000
-ss_miniters = 100000
-ss_maxtime = 3600
-
-trans_window = 18
-trans_update_period = 60
-trans_maxiters = 10000
-trans_miniters = 1000
-trans_maxtime = 60
+# #pools_window = 2016
+# #pools_update_period = 129600  # 1.5 days
+# #
+# #ss_window = 2016
+# #ss_update_period = 86400  # Daily
+# #ss_maxiters = 200000
+# #ss_miniters = 100000
+# #ss_maxtime = 3600
+# #
+# #trans_window = 18
+# #trans_update_period = 60
+# #trans_maxiters = 10000
+# #trans_miniters = 1000
+# #trans_maxtime = 60
 
 predict_feerates = range(0, 60000, 10000)
 predict_window = 2016
@@ -40,23 +40,24 @@ class SimOnline(TxMempool):
         # TODO: Remember to catch TERM
 
         self.process_lock = threading.Lock()
-        self.peo = PoolsEstimatorOnline(pools_window,
-                                        update_period=pools_update_period)
+        self.peo = PoolsEstimatorOnline(
+            pools_config['window'],
+            update_period=pools_config['update_period'])
         self.ss = SteadyStateOnline(
             self.peo,
-            ss_window,
-            update_period=ss_update_period,
-            miniters=ss_miniters,
-            maxiters=ss_maxiters,
-            maxtime=ss_maxtime)
+            ss_config['window'],
+            update_period=ss_config['update_period'],
+            miniters=ss_config['miniters'],
+            maxiters=ss_config['maxiters'],
+            maxtime=ss_config['maxtime'])
         self.trans = TransientOnline(
             self,
             self.peo,
-            trans_window,
-            update_period=trans_update_period,
-            miniters=trans_miniters,
-            maxiters=trans_maxiters,
-            maxtime=trans_maxtime)
+            trans_config['window'],
+            update_period=trans_config['update_period'],
+            miniters=trans_config['miniters'],
+            maxiters=trans_config['maxiters'],
+            maxtime=trans_config['maxtime'])
         self.load_predicts()
         super(SimOnline, self).__init__()
 

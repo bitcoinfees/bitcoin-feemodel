@@ -13,7 +13,6 @@ from feemodel.estimate.pools import PoolsEstimator
 logger = logging.getLogger(__name__)
 
 default_update_period = 86400
-minblocks = 144
 
 
 class PoolsEstimatorOnline(StoppableThread):
@@ -22,8 +21,6 @@ class PoolsEstimatorOnline(StoppableThread):
 
     def __init__(self, window, update_period=default_update_period):
         self.pools_lock = threading.Lock()
-        if window < minblocks:
-            raise ValueError("Window cannot be smaller than minblocks.")
         self.window = window
         self.update_period = update_period
         try:

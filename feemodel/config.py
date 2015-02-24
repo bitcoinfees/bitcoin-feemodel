@@ -40,23 +40,35 @@ def load_config(section, option, opt_type=''):
         return defaultval
 
 
+prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
+minrelaytxfee = load_config('general', 'minrelaytxfee', opt_type='int')
+
+history_file = os.path.join(datadir, load_config('txmempool', 'history_file'))
 poll_period = load_config('txmempool', 'poll_period', opt_type='int')
 keep_history = load_config('txmempool', 'keep_history', opt_type='int')
-prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
+
 windowfillthresh = load_config('app', 'windowfillthresh', opt_type='float')
-history_file = os.path.join(datadir, load_config('txmempool', 'history_file'))
 applogfile = os.path.join(datadir, load_config('app', 'applogfile'))
 loglevel = getattr(logging, load_config('app', 'loglevel').upper())
 app_port = load_config('app', 'port', opt_type='int')
 
-# poolinfo_file = os.path.join(datadir, 'pools.json')
-# apilogfile = os.path.join(datadir, load_config('app', 'apilog'))
-# statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
-# saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
-# saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])
-# saveRatesFile = os.path.join(datadir, config['measurement']['saveRates'])
-# savePoolsFile = os.path.join(datadir, config['simul']['savePools'])
-# saveSSFile = os.path.join(datadir, config['simul']['saveSS'])
-# savePredictFile = os.path.join(datadir, config['simul']['savePredict'])
-# historyFile = os.path.join(datadir, config['historyDb'])
-# logFile = os.path.join(datadir, 'debug.log')
+pools_config = {
+    'window': load_config('app', 'pools_window', opt_type='int'),
+    'update_period': load_config('app', 'pools_update_period', opt_type='int')
+}
+
+ss_config = {
+    'window': load_config('app', 'ss_window', opt_type='int'),
+    'update_period': load_config('app', 'ss_update_period', opt_type='int'),
+    'maxiters': load_config('app', 'ss_maxiters', opt_type='int'),
+    'miniters': load_config('app', 'ss_miniters', opt_type='int'),
+    'maxtime': load_config('app', 'ss_maxtime', opt_type='int')
+}
+
+trans_config = {
+    'window': load_config('app', 'trans_window', opt_type='int'),
+    'update_period': load_config('app', 'trans_update_period', opt_type='int'),
+    'maxiters': load_config('app', 'trans_maxiters', opt_type='int'),
+    'miniters': load_config('app', 'trans_miniters', opt_type='int'),
+    'maxtime': load_config('app', 'trans_maxtime', opt_type='int')
+}
