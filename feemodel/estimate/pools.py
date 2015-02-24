@@ -1,10 +1,9 @@
 from __future__ import division
 
 import logging
-import json
 from time import time
 from random import random
-from feemodel.config import poolinfo_file, history_file
+from feemodel.config import knownpools, history_file
 from feemodel.util import get_coinbase_info, Table, get_block_timestamp
 from feemodel.util import get_pph
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
@@ -121,11 +120,7 @@ class PoolsEstimator(SimPools):
         self.blockmap = {}
         self.pools = {}
         self.timestamp = 0.
-        try:
-            with open(poolinfo_file, 'r') as f:
-                self.poolinfo = json.load(f)
-        except Exception:
-            raise IOError("Unable to load poolinfo file.")
+        self.poolinfo = knownpools
         super(PoolsEstimator, self).__init__()
 
     def update(self):

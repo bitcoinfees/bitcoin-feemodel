@@ -55,8 +55,8 @@ class QueueClass(object):
                 for strandblockinterval in reversed(self.strandedblocks):
                     cumwait = self.update_avgwait(strandblockinterval, cumwait)
                 self.avg_strandedblocks = (
-                    self.avg_strandedblocks*self.total_stranded_periods
-                    + num_stranded) / (self.total_stranded_periods+1)
+                    self.avg_strandedblocks*self.total_stranded_periods +
+                    num_stranded) / (self.total_stranded_periods+1)
                 self.total_stranded_periods += 1
                 self.strandedblocks = []
         else:
@@ -72,8 +72,8 @@ class QueueClass(object):
 
     def update_stranded_proportion(self, stranded):
         self.stranded_proportion = (
-            self.stranded_proportion*self.totalblocks
-            + int(stranded)) / (self.totalblocks+1)
+            self.stranded_proportion*self.totalblocks +
+            int(stranded)) / (self.totalblocks+1)
         self.totalblocks += 1
 
     def __repr__(self):

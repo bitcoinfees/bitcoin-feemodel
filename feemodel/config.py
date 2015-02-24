@@ -1,56 +1,40 @@
 import logging
 import os
+import json
 import ConfigParser as configparser
+from pkg_resources import resource_stream
+
 try:
-    from installinfo import datadir
-except ImportError as e:
+    defaultconfigfile = resource_stream(__name__, 'defaultconfig.ini')
+    installinfo = json.load(resource_stream(__name__, 'installinfo.json'))
+    knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
+except Exception as e:
     print("Package has not been installed.")
-    raise(e)
+    raise e
+
+datadir = installinfo['datadir']
 
 config = configparser.ConfigParser()
 config_file = os.path.join(datadir, 'config.ini')
-config.read(config_file)
+try:
+    config.read(config_file)
+except Exception:
+    print("Error reading config file at %s" % config_file)
 
-defaults = {
-    'general': {
-        # Transaction must have priority strictly greater than this to be
-        # considered 'high priority' by Bitcoin Core.
-        'prioritythresh': 57600000,
-    },
-    'txmempool': {
-        'poll_period': 5,
-        'keep_history': 2400,
-        'history_file': 'history.db',
-    },
-    'app': {
-        # ratio of (number of memblocks in window) to (window length)
-        # must be at least this number.
-        'windowfillthresh': 0.9,
-        'applog': 'debug.log',
-        'loglevel': 'DEBUG',
-        'port': 8350
-    }
-}
-
-
-def write_default_config(filename):
-    with open(filename, 'w') as f:
-        for section, opts in defaults.items():
-            f.write('[{}]\n'.format(section))
-            for opt, val in opts.items():
-                f.write('{} = {}\n'.format(opt, str(val)))
-            f.write('\n')
+defaultconfig = configparser.ConfigParser()
+config.readfp(defaultconfigfile)
 
 
 def load_config(section, option, opt_type=''):
     '''Return <option> from <section>.
     opt_type is "int" or "float", or the empty string (for strings).
     '''
-    getfn = getattr(config, 'get' + opt_type)
     try:
+        getfn = getattr(config, 'get' + opt_type)
         return getfn(section, option)
     except Exception:
-        defaultval = defaults[section][option]
+        getfn = getattr(defaultconfig, 'get' + opt_type)
+        defaultval = getfn(section, option)
         print("Unable to load %s/%s config; using default value of %s" %
               (option, section, str(defaultval)))
         return defaultval
@@ -61,14 +45,12 @@ keep_history = load_config('txmempool', 'keep_history', opt_type='int')
 prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
 windowfillthresh = load_config('app', 'windowfillthresh', opt_type='float')
 history_file = os.path.join(datadir, load_config('txmempool', 'history_file'))
-applogfile = os.path.join(datadir, load_config('app', 'applog'))
+applogfile = os.path.join(datadir, load_config('app', 'applogfile'))
 loglevel = getattr(logging, load_config('app', 'loglevel').upper())
 app_port = load_config('app', 'port', opt_type='int')
 
-poolinfo_file = os.path.join(datadir, 'pools.json')
-
+# poolinfo_file = os.path.join(datadir, 'pools.json')
 # apilogfile = os.path.join(datadir, load_config('app', 'apilog'))
-
 # statsFile = os.path.join(datadir, config['nonparam']['statsDb'])
 # saveQueueFile = os.path.join(datadir, config['queue']['saveQueue'])
 # saveWaitFile = os.path.join(datadir, config['measurement']['saveWait'])

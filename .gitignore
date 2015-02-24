@@ -5,8 +5,9 @@ _*
 *.log
 *-info
 *.swp
-feemodel/installinfo.py
+feemodel/installinfo.json
 feemodel/archive
 tests/data/archive
 tests/archive
+dist
 venv
