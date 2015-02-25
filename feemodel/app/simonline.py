@@ -36,7 +36,8 @@ class SimOnline(TxMempool):
     predict_savefile = os.path.join(datadir, 'savepredicts.pickle')
 
     def __init__(self):
-        self.process_lock = threading.Lock()
+        super(SimOnline, self).__init__()
+        self.process_lock = threading.RLock()
         self.predict_lock = threading.Lock()
         self.peo = PoolsEstimatorOnline(
             pools_config['window'],
@@ -57,7 +58,6 @@ class SimOnline(TxMempool):
             maxiters=trans_config['maxiters'],
             maxtime=trans_config['maxtime'])
         self.load_predicts()
-        super(SimOnline, self).__init__()
 
     def run(self):
         with self.peo.context_start(), self.ss.context_start(), \

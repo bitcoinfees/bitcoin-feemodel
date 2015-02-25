@@ -2,7 +2,6 @@ from __future__ import division
 
 import threading
 import sqlite3
-import os
 import decimal
 import logging
 from time import time
@@ -39,6 +38,9 @@ MEMBLOCK_TABLE_SCHEMA = {
     ]
 }
 
+# We're having db concurrency problems, so add our own lock for now
+db_lock = threading.Lock()
+
 
 class TxMempool(StoppableThread):
     '''Thread that tracks the mempool state at points of block discovery.
@@ -69,7 +71,7 @@ class TxMempool(StoppableThread):
 
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
-        self.history_lock = threading.Lock()
+        self.process_lock = threading.Lock()
         self.mempool_lock = threading.Lock()
         self.best_height = None
         self.rawmempool = None
@@ -125,7 +127,7 @@ class TxMempool(StoppableThread):
         new_entries_ids is the set of txids in the mempool immediately after
         the block(s).
         '''
-        with self.history_lock:
+        with self.process_lock:
             memblocks = []
             for height in blockheight_range:
                 block = proxy.getblock(proxy.getblockhash(height))
@@ -242,33 +244,30 @@ class MemBlock(object):
         keep_history will be deleted.
         '''
         db = None
-        db_exists = os.path.exists(dbfile)
         try:
             db = sqlite3.connect(dbfile)
-            if not db_exists:
-                with db:
-                    for key, val in MEMBLOCK_TABLE_SCHEMA.items():
-                        db.execute('CREATE TABLE %s (%s)' %
-                                   (key, ','.join(val)))
-
+            for key, val in MEMBLOCK_TABLE_SCHEMA.items():
+                db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
+                           (key, ','.join(val)))
             db.execute('CREATE INDEX IF NOT EXISTS heightidx '
                        'ON txs (blockheight)')
-            with db:
-                db.execute('INSERT INTO blocks VALUES (?,?,?)',
-                           (self.height, self.size, self.time))
-                db.executemany(
-                    'INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                    [(self.height, txid) + entry._get_attr_tuple()
-                     for txid, entry in self.entries.iteritems()])
-            if keep_history > 0:
-                history_limit = self.height - keep_history
+            with db_lock:
                 with db:
-                    db.execute('DELETE FROM blocks WHERE height<=?',
-                               (history_limit,))
-                    db.execute('DELETE FROM txs WHERE blockheight<=?',
-                               (history_limit,))
+                    db.execute('INSERT INTO blocks VALUES (?,?,?)',
+                               (self.height, self.size, self.time))
+                    db.executemany(
+                        'INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                        [(self.height, txid) + entry._get_attr_tuple()
+                         for txid, entry in self.entries.iteritems()])
+                if keep_history > 0:
+                    history_limit = self.height - keep_history
+                    with db:
+                        db.execute('DELETE FROM blocks WHERE height<=?',
+                                   (history_limit,))
+                        db.execute('DELETE FROM txs WHERE blockheight<=?',
+                                   (history_limit,))
         finally:
-            if db:
+            if db is not None:
                 db.close()
 
     @classmethod
@@ -282,14 +281,16 @@ class MemBlock(object):
         db = None
         try:
             db = sqlite3.connect(dbfile)
-            block = db.execute('SELECT size, time FROM blocks WHERE height=?',
-                               (blockheight,)).fetchall()
+            with db_lock:
+                block = db.execute('SELECT size, time FROM blocks '
+                                   'WHERE height=?',
+                                   (blockheight,)).fetchall()
+                txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
+                                    (blockheight,)).fetchall()
             if block:
                 blocksize, blocktime = block[0]
             else:
                 return None
-            txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
-                                (blockheight,))
             memblock = cls()
             memblock.height = blockheight
             memblock.size = blocksize
@@ -297,8 +298,13 @@ class MemBlock(object):
             memblock.entries = {
                 tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
             return memblock
+        except sqlite3.OperationalError as e:
+            if e.message.startswith('no such table'):
+                return None
+            else:
+                raise e
         finally:
-            if db:
+            if db is not None:
                 db.close()
 
     @staticmethod
@@ -308,8 +314,6 @@ class MemBlock(object):
         Returns a list of heights of all MemBlocks on disk within
         range(currheight-window+1, currheight+1)
         '''
-        if not os.path.exists(dbfile):
-            return []
         if currheight is None:
             currheight = proxy.getblockcount()
         if window is None:
@@ -317,13 +321,19 @@ class MemBlock(object):
         db = None
         try:
             db = sqlite3.connect(dbfile)
-            heights = db.execute(
-                'SELECT height FROM blocks '
-                'where height>=? and height <?',
-                (currheight-window+1, currheight+1)).fetchall()
+            with db_lock:
+                heights = db.execute(
+                    'SELECT height FROM blocks '
+                    'where height>=? and height <?',
+                    (currheight-window+1, currheight+1)).fetchall()
             return [r[0] for r in heights]
+        except sqlite3.OperationalError as e:
+            if e.message.startswith('no such table'):
+                return []
+            else:
+                raise e
         finally:
-            if db:
+            if db is not None:
                 db.close()
 
     def __repr__(self):

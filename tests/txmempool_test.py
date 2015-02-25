@@ -67,11 +67,18 @@ class WriteReadTests(unittest.TestCase):
         self.assertRaises(Exception, block.write, tmpdbfile, 100)
         self.db = sqlite3.connect(tmpdbfile)
         txlist = self.db.execute('SELECT * FROM txs WHERE blockheight=?',
-                            (333931,))
+                                 (333931,))
         txids = [tx[1] for tx in txlist]
         self.assertEqual(sorted(set(txids)), sorted(txids))
         block_read = MemBlock.read(333931, dbfile=tmpdbfile)
         self.assertEqual(block, block_read)
+
+    def read_uninitialized(self):
+        '''Read from a db that has not been initialized.'''
+        block = MemBlock.read(333931, dbfile='nonsense.db')
+        self.assertIsNone(block)
+        heights = MemBlock.get_heights(dbfile='nonsense.db')
+        self.assertEqual([], heights)
 
     def tearDown(self):
         if os.path.exists(tmpdbfile):
