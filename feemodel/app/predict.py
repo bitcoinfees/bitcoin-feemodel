@@ -83,8 +83,7 @@ class Prediction(object):
         self.calc_score()
 
     def calc_score(self):
-        self.scores = sum(self.blockscores.values(),
-                          BlockScore(self.feerates))
+        self.scores = sum(self.blockscores.values(), BlockScore(self.feerates))
 
     def print_scores(self):
         feerates = self.scores.feerates
