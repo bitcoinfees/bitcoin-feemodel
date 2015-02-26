@@ -67,7 +67,7 @@ def main(mempool_only=False, port=app_port):
                 feerate = sim.trans.stats.avgwaits.inv(waitminutes*60)
                 if feerate is None:
                     feerate = -1
-                response = {'feerate': feerate}
+                response = {'feerate': feerate, 'avgwait': waitminutes}
             return jsonify(response)
 
     @app.errorhandler(404)

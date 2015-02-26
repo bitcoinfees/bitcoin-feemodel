@@ -106,14 +106,14 @@ class Prediction(object):
         feerates = self.scores.feerates
         num_in = self.scores.num_in
         numtxs = self.scores.numtxs
-        ratios = [n / d if d else -1 for n, d in zip(num_in, numtxs)]
+        ratioscores = [n / d if d else -1 for n, d in zip(num_in, numtxs)]
 
         stats = {
             'blockrange': [min(self.blockscores), max(self.blockscores)],
             'feerates': feerates,
             'num_in': num_in,
             'num_txs': numtxs,
-            'ratios': ratios
+            'scores': ratioscores
         }
         return stats
 

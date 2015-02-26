@@ -89,15 +89,33 @@ def status():
     click.echo('')
 
 
-# #@cli.command()
-# #def predictscores():
-# #    from tabulate import tabulate
-# #    scores = get_resource("predictscores")
-# #    headers = [
-# #        'Feerate',
-# #        '']
-# #
-# #
+@cli.command()
+def predictscores():
+    '''Get prediction scores.'''
+    from tabulate import tabulate
+    scores = get_resource("predictscores")
+    headers = [
+        'Feerate',
+        'Numtxs',
+        'Score']
+    table = zip(
+        scores['feerates'],
+        scores['num_txs'],
+        scores['scores'])
+    click.echo('\nPredict Scores\n==============')
+    click.echo(tabulate(table, headers=headers))
+
+
+@cli.command()
+@click.argument('conftime', type=click.FLOAT, required=True)
+def estimatefee(conftime):
+    '''Estimate feerate for a given average confirmation time, CONFTIME,
+    in minutes.
+    '''
+    res = get_resource("estimatefee/" + str(int(conftime)))
+    click.echo(res['feerate'])
+
+
 @cli.command()
 def transient():
     '''Get transient simulation statistics.'''
@@ -113,7 +131,7 @@ def transient():
         stats['feerates'],
         stats['avgwaits'],
         stats['avgwaits_errors'],
-        stats['predictwaits'],)
+        stats['predictwaits'])
     click.echo('\nTransient statistics\n=======================')
     click.echo(tabulate(table, headers=headers))
 
@@ -126,11 +144,12 @@ def transient():
         stats['cap']['feerates'],
         stats['cap']['tx_byterates'],
         stats['cap']['cap_lower'],
-        stats['cap']['cap_upper'],)
+        stats['cap']['cap_upper'])
     click.echo('\nCapacity\n========')
     click.echo(tabulate(table, headers=headers))
 
     click.echo('\nMisc Stats\n==========')
+    click.echo('Mempool size: %d' % stats['mempoolsize'])
     click.echo('Stable feerate: %d' % stats['stablefeerate'])
     click.echo('Timestamp: %s' % time.ctime(stats['timestamp']))
     click.echo('Time spent: %s\n' % int(stats['timespent']))
@@ -153,7 +172,7 @@ def steadystate():
         stats['sim']['feerates'],
         stats['sim']['avgwaits'],
         stats['sim']['strandedprop'],
-        stats['sim']['avg_strandedblocks'],)
+        stats['sim']['avg_strandedblocks'])
     click.echo('\nSteady-state statistics\n=======================')
     click.echo(tabulate(table, headers=headers))
 
@@ -164,7 +183,7 @@ def steadystate():
     table = zip(
         stats['measured']['feerates'],
         stats['measured']['avgwaits'],
-        stats['measured']['errors'],)
+        stats['measured']['errors'])
     click.echo('\nMeasured statistics\n===================')
     click.echo(tabulate(table, headers=headers))
 
@@ -177,7 +196,7 @@ def steadystate():
         stats['cap']['feerates'],
         stats['cap']['tx_byterates'],
         stats['cap']['cap_lower'],
-        stats['cap']['cap_upper'],)
+        stats['cap']['cap_upper'])
     click.echo('\nCapacity\n========')
     click.echo(tabulate(table, headers=headers))
 
@@ -281,7 +300,7 @@ def pools():
             pool[1]['belowkn'],
             '%.2f' % pool[1]['mean'],
             '%.2f' % pool[1]['std'],
-            '%.2f' % pool[1]['bias'],
+            '%.2f' % pool[1]['bias']
         ]
         table.append(row)
 

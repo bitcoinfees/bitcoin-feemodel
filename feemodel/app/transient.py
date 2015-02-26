@@ -213,7 +213,8 @@ class TransientStats(SimStats):
             'avgwaits': self.avgwaits.waits,
             'avgwaits_errors': self.avgwaits.errors,
             'predictwaits': self.predictwaits.waits,
-            'predictlevel': self.predict_level
+            'predictlevel': self.predict_level,
+            'mempoolsize': self.mempoolsize
         }
         basestats.update(stats)
         return basestats

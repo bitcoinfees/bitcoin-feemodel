@@ -13,6 +13,7 @@ class Simul(object):
     def __init__(self, pools, tx_source):
         self.pools = pools
         self.tx_source = tx_source
+        # TODO: check edge conditions for feerates
         feerates, cap_lower, cap_upper = self.pools.get_capacity()
         tx_byterates = tx_source.get_byterates(feerates)
         self.cap = Capacity(feerates, tx_byterates, cap_lower, cap_upper)
