@@ -2,27 +2,37 @@ import logging
 import os
 import json
 import ConfigParser as configparser
-from pkg_resources import resource_stream
+from pkg_resources import resource_stream, resource_string
+from feemodel.appdirs import user_data_dir
 
-try:
-    defaultconfigfile = resource_stream(__name__, 'defaultconfig.ini')
-    installinfo = json.load(resource_stream(__name__, 'installinfo.json'))
-    knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
-except Exception as e:
-    print("Package has not been installed.")
-    raise e
 
-datadir = installinfo['datadir']
+knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
+defaultconfigfile = resource_stream(__name__, 'defaultconfig.ini')
+defaultconfig = configparser.ConfigParser()
+defaultconfig.readfp(defaultconfigfile)
+
+datadir = user_data_dir('bitcoin-feemodel')
+if not os.path.exists(datadir):
+    try:
+        os.makedirs(datadir)
+    except Exception as e:
+        print("Error: unable to create data directory %s." % datadir)
+        raise e
+
+configfilename = os.path.join(datadir, 'config.ini')
+if not os.path.exists(configfilename):
+    defaultconfigstr = resource_string(__name__, 'defaultconfig.ini')
+    try:
+        with open(configfilename, 'w') as f:
+            f.write(defaultconfigstr)
+    except Exception as e:
+        print("Error: unable to write to data directory %s." % datadir)
 
 config = configparser.ConfigParser()
-config_file = os.path.join(datadir, 'config.ini')
 try:
-    config.read(config_file)
+    config.read(configfilename)
 except Exception:
-    print("Error reading config file at %s" % config_file)
-
-defaultconfig = configparser.ConfigParser()
-config.readfp(defaultconfigfile)
+    print("Error: unable to read config file %s." % configfilename)
 
 
 def load_config(section, option, opt_type=''):

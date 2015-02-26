@@ -5,8 +5,7 @@ _*
 *.log
 *-info
 *.swp
-feemodel/installinfo.json
-feemodel/archive
+archive
 tests/data/archive
 tests/archive
 dist

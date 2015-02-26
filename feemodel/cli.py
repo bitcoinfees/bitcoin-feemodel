@@ -152,8 +152,8 @@ def transient():
     click.echo('Mempool size: %d' % stats['mempoolsize'])
     click.echo('Stable feerate: %d' % stats['stablefeerate'])
     click.echo('Timestamp: %s' % time.ctime(stats['timestamp']))
-    click.echo('Time spent: %s\n' % int(stats['timespent']))
-    click.echo('Predict level: %.2f' % stats['predictlevel'])
+    click.echo('Time spent: %s' % int(stats['timespent']))
+    click.echo('Predict level: %.2f\n' % stats['predictlevel'])
 
 
 @cli.command()
