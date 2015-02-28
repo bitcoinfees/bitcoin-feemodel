@@ -68,6 +68,8 @@ class TransientOnline(StoppableThread):
         self._updating = True
         currheight = proxy.getblockcount()
         blockrangetuple = (currheight-self.window+1, currheight+1)
+        # TODO: Check the history db instead of Core. Otherwise the latest
+        #       MemBlock might not have been written yet.
         if currheight > self.tx_source.height:
             self.tx_source.start(blockrangetuple,
                                  stopflag=self.get_stop_object())
