@@ -157,7 +157,9 @@ class TransientOnline(StoppableThread):
         Returns the ratio of the number of available memblocks within
         the window, to the window size.
         '''
-        numblocks = len(MemBlock.get_heights(window=self.window))
+        currheight = proxy.getblockcount()
+        windowrange = (currheight-self.window+1, currheight+1)
+        numblocks = len(MemBlock.get_heights(windowrange))
         return numblocks / self.window
 
 

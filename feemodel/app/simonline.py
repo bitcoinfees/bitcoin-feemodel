@@ -10,21 +10,6 @@ from feemodel.txmempool import TxMempool
 from feemodel.app import SteadyStateOnline, TransientOnline
 from feemodel.app import PoolsEstimatorOnline, Prediction
 
-# #pools_window = 2016
-# #pools_update_period = 129600  # 1.5 days
-# #
-# #ss_window = 2016
-# #ss_update_period = 86400  # Daily
-# #ss_maxiters = 200000
-# #ss_miniters = 100000
-# #ss_maxtime = 3600
-# #
-# #trans_window = 18
-# #trans_update_period = 60
-# #trans_maxiters = 10000
-# #trans_miniters = 1000
-# #trans_maxtime = 60
-
 predict_feerates = range(0, 60000, 10000)
 predict_window = 2016
 

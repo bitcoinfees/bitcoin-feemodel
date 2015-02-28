@@ -308,16 +308,14 @@ class MemBlock(object):
                 db.close()
 
     @staticmethod
-    def get_heights(window=None, currheight=None, dbfile=history_file):
+    def get_heights(blockrangetuple=None, dbfile=history_file):
         '''Get the list of MemBlocks stored on disk.
 
         Returns a list of heights of all MemBlocks on disk within
-        range(currheight-window+1, currheight+1)
+        range(*blockrangetuple)
         '''
-        if currheight is None:
-            currheight = proxy.getblockcount()
-        if window is None:
-            window = currheight + 1
+        if blockrangetuple is None:
+            blockrangetuple = (0, float("inf"))
         db = None
         try:
             db = sqlite3.connect(dbfile)
@@ -325,7 +323,7 @@ class MemBlock(object):
                 heights = db.execute(
                     'SELECT height FROM blocks '
                     'where height>=? and height <?',
-                    (currheight-window+1, currheight+1)).fetchall()
+                    blockrangetuple).fetchall()
             return [r[0] for r in heights]
         except sqlite3.OperationalError as e:
             if e.message.startswith('no such table'):
