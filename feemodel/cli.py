@@ -109,8 +109,8 @@ def predictscores():
 @cli.command()
 @click.argument('conftime', type=click.FLOAT, required=True)
 def estimatefee(conftime):
-    '''Estimate feerate for a given average confirmation time, CONFTIME,
-    in minutes.
+    '''Estimate feerate (satoshis) to have an average wait / confirmation
+    time of CONFTIME minutes.
     '''
     res = get_resource("estimatefee/" + str(int(conftime)))
     click.echo(res['feerate'])

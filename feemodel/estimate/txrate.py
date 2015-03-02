@@ -37,6 +37,7 @@ class TxRateEstimator(SimTxSource):
             block = MemBlock.read(height, dbfile=dbfile)
             if block and prevblock and prevblock.height == height - 1:
                 self._addblock(block, prevblock)
+                self.height = height
             prevblock = block
         if self.totaltxs < 0 or self.totaltime <= 0:
             raise ValueError("Insufficient number of blocks.")
@@ -44,7 +45,6 @@ class TxRateEstimator(SimTxSource):
         for tx in self.txsample:
             tx._id = ''
             tx.depends = []
-        self.height = blockrangetuple[1] - 1
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
 

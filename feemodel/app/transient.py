@@ -45,31 +45,37 @@ class TransientOnline(StoppableThread):
     def run(self):
         try:
             logger.info("Starting transient online sim.")
-            while not self.is_stopped() and not (
-                    self.peo.pe and self.mempool and
-                    self._calc_windowfill() >= windowfillthresh):
-                self.sleep(10)
-            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            logger.info("Windowfill is %.2f." % self._calc_windowfill())
+            self.wait_for_resources()
             self._updating = False
-            self.sleep(max(0, self.next_update-time()))
+            self.sleep_till_next()
             while not self.is_stopped():
                 self.update()
-                self.sleep(max(0, self.next_update-time()))
+                self.sleep_till_next()
         except StopIteration:
             pass
         finally:
             logger.info("Stopped transient online sim.")
-            # Ensure that Prediction.update_predictions doesn't get outdated
+            # Ensures that Prediction.update_predictions doesn't get outdated
             # values, if this thread has bugged out
             self.stats = TransientStats()
             self._updating = None
+
+    def wait_for_resources(self):
+        '''Check and wait for all required resources to be ready.'''
+        while not self.is_stopped() and not (
+                self.peo.pe and self.mempool and
+                self._calc_windowfill() >= windowfillthresh):
+            self.sleep(10)
+
+    def sleep_till_next(self):
+        '''Sleep till the next update.'''
+        self.sleep(max(0, self.next_update-time()))
 
     def update(self):
         self._updating = True
         currheight = proxy.getblockcount()
         blockrangetuple = (currheight-self.window+1, currheight+1)
-        # TODO: Check the history db instead of Core. Otherwise the latest
-        #       MemBlock might not have been written yet.
         if currheight > self.tx_source.height:
             self.tx_source.start(blockrangetuple,
                                  stopflag=self.get_stop_object())
@@ -87,8 +93,7 @@ class TransientOnline(StoppableThread):
         stats.timestamp = time()
         init_entries = [SimEntry.from_mementry(txid, entry)
                         for txid, entry in self.mempool.get_entries().items()]
-        mempoolsize = sum([entry.tx.size for entry in init_entries
-                           if entry.tx.feerate >= sim.stablefeerate])
+        mempoolsize = sum([entry.tx.size for entry in init_entries])
 
         tstats = {feerate: DataSample() for feerate in feeclasses}
         simtime = 0.

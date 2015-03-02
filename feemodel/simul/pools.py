@@ -123,6 +123,10 @@ class SimPools(object):
 
         return poolfeerates, cap_lower, cap_upper
 
+    def clear_pools(self):
+        self.__pools = []
+        self.__poolsidx = []
+
     def print_pools(self):
         table = Table()
         table.add_row(("Name", "Prop", "MBS", "MFR"))

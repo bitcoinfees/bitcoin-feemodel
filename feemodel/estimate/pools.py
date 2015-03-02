@@ -258,15 +258,3 @@ class PoolsEstimator(SimPools):
         }
         basestats.update({'pools': poolstats})
         return basestats
-
-
-def estimate_block_interval(blockrangetuple):
-    start = blockrangetuple[0]
-    end = blockrangetuple[1] - 1
-    numintervals = end - start
-    if numintervals < 1:
-        raise ValueError("Number of intervals must be > 1.")
-    timeinterval = get_block_timestamp(end) - get_block_timestamp(start)
-    if not timeinterval:
-        raise ValueError("Time interval is zero.")
-    return timeinterval / float(numintervals)

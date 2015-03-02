@@ -85,7 +85,6 @@ class SimOnline(TxMempool):
                         "starting from scratch.")
             self.prediction = Prediction(predict_feerates, predict_window)
         else:
-            # TODO: change the window.
             if self.prediction.feerates != predict_feerates:
                 logger.info("Predict feerates have changed; "
                             "starting from scratch.")

@@ -64,21 +64,29 @@ class SteadyStateOnline(StoppableThread):
     def run(self):
         try:
             logger.info("Starting steady-state online sim.")
-            while not self.is_stopped() and not (
-                    self.peo.pe and
-                    self._calc_windowfill() >= windowfillthresh):
-                self.sleep(10)
-            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            logger.info("Windowfill is %.2f." % self._calc_windowfill())
+            self.wait_for_resources()
             self._updating = False
-            self.sleep(max(0, self.next_update-time()))
+            self.sleep_till_next()
             while not self.is_stopped():
                 self.update()
-                self.sleep(max(0, self.next_update-time()))
+                self.sleep_till_next()
         except StopIteration:
             pass
         finally:
             logger.info("Stopped steady-state online sim.")
             self._updating = None
+
+    def wait_for_resources(self):
+        '''Check and wait for all required resources to be ready.'''
+        while not self.is_stopped() and not (
+                self.peo.pe and
+                self._calc_windowfill() >= windowfillthresh):
+            self.sleep(10)
+
+    def sleep_till_next(self):
+        '''Sleep till the next update.'''
+        self.sleep(max(0, self.next_update-time()))
 
     def update(self):
         self._updating = True

@@ -35,7 +35,7 @@ class PoolsEstimatorOnline(StoppableThread):
             if time() - self.pe.timestamp > self.update_period:
                 logger.info("Loaded pool estimates are outdated; "
                             "starting from scratch.")
-                self.pe = PoolsEstimator()
+                self.pe.clear_pools()
             else:
                 logger.info("Pools Estimator loaded with best height %d." %
                             bestheight)
@@ -50,22 +50,29 @@ class PoolsEstimatorOnline(StoppableThread):
     def run(self):
         try:
             logger.info("Starting pools online estimator.")
-            # TODO: move the windowfill checks into the main loop.
-            # Wait for sufficient blocks within the window.
-            while not self.is_stopped() and (
-                    self._calc_windowfill() < windowfillthresh):
-                self.sleep(10)
-            logger.info("windowfill is %.2f." % self._calc_windowfill())
+            logger.info("Windowfill is %.2f." % self._calc_windowfill())
+            self.wait_for_resources()
             self._updating = False
-            self.sleep(max(0, self.next_update-time()))
+            self.sleep_till_next()
             while not self.is_stopped():
                 self.update()
-                self.sleep(max(0, self.next_update-time()))
+                self.sleep_till_next()
         except StopIteration:
             pass
         finally:
             logger.info("Stopped pools online estimator.")
             self._updating = None
+
+    def wait_for_resources(self):
+        '''Check and wait for all required resources to be ready.'''
+        # TODO: move the windowfill checks into the main loop.
+        while not self.is_stopped() and (
+                self._calc_windowfill() < windowfillthresh):
+            self.sleep(10)
+
+    def sleep_till_next(self):
+        '''Sleep till the next update.'''
+        self.sleep(max(0, self.next_update-time()))
 
     def update(self):
         self._updating = True
