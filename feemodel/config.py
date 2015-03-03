@@ -2,16 +2,18 @@ import logging
 import os
 import json
 import ConfigParser as configparser
-from pkg_resources import resource_stream, resource_string
+from pkg_resources import resource_stream, resource_string, get_distribution
 from feemodel.appdirs import user_data_dir
 
+pkgname = 'bitcoin-feemodel'
+__version__ = get_distribution(pkgname).version
 
 knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
 defaultconfigfile = resource_stream(__name__, 'defaultconfig.ini')
 defaultconfig = configparser.ConfigParser()
 defaultconfig.readfp(defaultconfigfile)
 
-datadir = user_data_dir('bitcoin-feemodel')
+datadir = user_data_dir(pkgname)
 if not os.path.exists(datadir):
     try:
         os.makedirs(datadir)

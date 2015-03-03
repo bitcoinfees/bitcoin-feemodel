@@ -18,7 +18,8 @@ def start(mempool):
     Use --mempool for mempool data collection only (no simulation).
     '''
     from feemodel.app.main import main
-    from feemodel.config import applogfile
+    from feemodel.config import applogfile, __version__, pkgname
+    click.echo("{} {}".format(pkgname, __version__))
     if mempool:
         click.echo("Starting mempool data collection; logging to %s"
                    % applogfile)
