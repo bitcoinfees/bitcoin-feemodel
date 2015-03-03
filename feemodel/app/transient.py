@@ -5,7 +5,7 @@ import logging
 from time import time
 from copy import deepcopy
 
-from feemodel.config import windowfillthresh
+from feemodel.config import windowfillthresh, minrelaytxfee
 from feemodel.util import StoppableThread, DataSample, proxy
 from feemodel.simul import Simul, SimEntry
 from feemodel.simul.stats import SimStats, WaitFn, get_feeclasses
@@ -93,7 +93,8 @@ class TransientOnline(StoppableThread):
         stats.timestamp = time()
         init_entries = [SimEntry.from_mementry(txid, entry)
                         for txid, entry in self.mempool.get_entries().items()]
-        mempoolsize = sum([entry.tx.size for entry in init_entries])
+        mempoolsize = sum([entry.tx.size for entry in init_entries
+                           if entry.tx.feerate >= minrelaytxfee])
 
         tstats = {feerate: DataSample() for feerate in feeclasses}
         simtime = 0.

@@ -1,2 +1,3 @@
 include feemodel/defaultconfig.ini
 include feemodel/knownpools/pools.json
+include LICENSE

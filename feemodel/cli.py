@@ -1,25 +1,8 @@
 import click
-from feemodel.config import app_port
+from feemodel.apiclient import (APIClient, NotReadyException,
+                                InvalidCommandException)
 
-base_url = 'http://localhost:' + str(app_port) + '/feemodel/'
-
-
-def get_resource(path):
-    import requests
-    try:
-        r = requests.get(base_url + path)
-        stat = r.json()
-    except Exception as e:
-        click.echo("Error connecting to the app.")
-        raise e
-    else:
-        if not r:
-            click.echo("Invalid command.")
-        elif not stat:
-            click.echo("Stat not available at this time.")
-        else:
-            return stat
-        raise SystemExit
+client = APIClient()
 
 
 @click.group()
@@ -74,8 +57,12 @@ def status():
         configured to auto-restart, though), or it's waiting for data
         (more blocks, or e.g. sim waiting on pool estimates).
     '''
+    try:
+        status = client.get_status()
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
     click.echo('')
-    status = get_resource('status')
     baseorder = ['mempool', 'height', 'runtime', 'numhistory']
     for key in baseorder:
         click.echo("%s: %s" % (key, status[key]))
@@ -93,7 +80,14 @@ def status():
 def predictscores():
     '''Get prediction scores.'''
     from tabulate import tabulate
-    scores = get_resource("predictscores")
+    try:
+        scores = client.get_predictscores()
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
+    except InvalidCommandException:
+        click.echo("Invalid command; app must be started without --mempool.")
+        raise SystemExit
     headers = [
         'Feerate',
         'Numtxs',
@@ -112,7 +106,14 @@ def estimatefee(conftime):
     '''Estimate feerate (satoshis) to have an average wait / confirmation
     time of CONFTIME minutes.
     '''
-    res = get_resource("estimatefee/" + str(int(conftime)))
+    try:
+        res = client.estimatefee(conftime)
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
+    except InvalidCommandException:
+        click.echo("Invalid command; app must be started without --mempool.")
+        raise SystemExit
     click.echo(res['feerate'])
 
 
@@ -121,7 +122,14 @@ def transient():
     '''Get transient simulation statistics.'''
     import time
     from tabulate import tabulate
-    stats = get_resource('transient')
+    try:
+        stats = client.get_transient()
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
+    except InvalidCommandException:
+        click.echo("Invalid command; app must be started without --mempool.")
+        raise SystemExit
     headers = [
         'Feerate',
         'Avgwait',
@@ -162,7 +170,14 @@ def steadystate():
     # TODO: fill in the rest of the docstring/help
     import time
     from tabulate import tabulate
-    stats = get_resource('steadystate')
+    try:
+        stats = client.get_steadystate()
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
+    except InvalidCommandException:
+        click.echo("Invalid command; app must be started without --mempool.")
+        raise SystemExit
     headers = [
         'Feerate',
         'Avgwait',
@@ -272,7 +287,14 @@ def pools():
     '''
     import time
     from tabulate import tabulate
-    stats = get_resource('pools')
+    try:
+        stats = client.get_pools()
+    except NotReadyException:
+        click.echo("Stat not available at this time.")
+        raise SystemExit
+    except InvalidCommandException:
+        click.echo("Invalid command; app must be started without --mempool.")
+        raise SystemExit
     pools = stats['pools']
     headers = [
         'Name',

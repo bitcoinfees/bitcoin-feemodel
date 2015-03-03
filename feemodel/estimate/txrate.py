@@ -77,5 +77,6 @@ class TxRateEstimator(SimTxSource):
         self.txsample = filter(lambda tx: tx._id not in conflicts,
                                combinedsample)
         self.totaltime += block.time - prevblock.time
+        # TODO: forget about conflicts?
         self.totaltxs -= len(conflicts)
         self.totaltxs = max(self.totaltxs, 0)

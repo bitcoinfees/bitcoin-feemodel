@@ -27,12 +27,13 @@ if not os.path.exists(configfilename):
             f.write(defaultconfigstr)
     except Exception as e:
         print("Error: unable to write to data directory %s." % datadir)
+        raise e
 
 config = configparser.ConfigParser()
 try:
     config.read(configfilename)
 except Exception:
-    print("Error: unable to read config file %s." % configfilename)
+    print("Warning: unable to read config file %s." % configfilename)
 
 
 def load_config(section, option, opt_type=''):

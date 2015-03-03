@@ -75,11 +75,12 @@ class WaitFn(object):
 
 
 class Capacity(object):
-    def __init__(self, feerates, tx_byterates, cap_lower, cap_upper):
+    def __init__(self, feerates, tx_byterates, cap_lower, cap_upper, txrate):
         self.feerates = feerates
         self.tx_byterates = tx_byterates
         self.cap_lower = cap_lower
         self.cap_upper = cap_upper
+        self.txrate = txrate
 
     def calc_stablefeerate(self, rate_ratio_thresh):
         stablefeerate = None
