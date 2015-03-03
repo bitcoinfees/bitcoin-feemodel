@@ -15,7 +15,7 @@ setup(
     author='Ian Chen',
     author_email='bitcoinfees@gmail.com',
     license='MIT',
-    url='https://github.com/bitcoinfees/feemodel',
+    url='https://github.com/bitcoinfees/bitcoin-feemodel',
     install_requires=[
         'python-bitcoinlib',
         'Flask',
