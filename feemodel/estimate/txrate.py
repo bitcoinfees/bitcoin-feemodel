@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class TxRateEstimator(SimTxSource):
-    def __init__(self, maxsamplesize=default_maxsamplesize):
+    def __init__(self, maxsamplesize=default_maxsamplesize,
+                 remove_conflicts=False):
         self.maxsamplesize = maxsamplesize
+        self.remove_conflicts = remove_conflicts
         self._reset_params()
 
     def _reset_params(self):
@@ -72,11 +74,13 @@ class TxRateEstimator(SimTxSource):
             combinedsample = self.txsample
 
         self.totaltxs = newtotaltxs
-        conflicts = [txid for txid, entry in block.entries.items()
-                     if entry.isconflict]
-        self.txsample = filter(lambda tx: tx._id not in conflicts,
-                               combinedsample)
         self.totaltime += block.time - prevblock.time
-        # TODO: forget about conflicts?
-        self.totaltxs -= len(conflicts)
-        self.totaltxs = max(self.totaltxs, 0)
+        if self.remove_conflicts:
+            conflicts = [txid for txid, entry in block.entries.items()
+                         if entry.isconflict]
+            self.txsample = filter(lambda tx: tx._id not in conflicts,
+                                   combinedsample)
+            self.totaltxs -= len(conflicts)
+            self.totaltxs = max(self.totaltxs, 0)
+        else:
+            self.txsample = combinedsample
