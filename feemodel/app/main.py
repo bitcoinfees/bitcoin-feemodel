@@ -1,7 +1,8 @@
 import logging
 import signal
 from flask import Flask, jsonify, make_response
-from feemodel.config import applogfile, loglevel, app_port
+from feemodel.config import (applogfile, loglevel, app_port,
+                             pkgname, __version__)
 from feemodel.app import SimOnline
 from feemodel.txmempool import TxMempool
 
@@ -76,6 +77,7 @@ def main(mempool_only=False, port=app_port):
 
     with sim.context_start():
         # app.run(port=port, debug=True, use_reloader=False)
+        logger.info("{} {} APP START".format(pkgname, __version__))
         app.run(port=port)
 
 
