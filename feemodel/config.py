@@ -9,7 +9,8 @@ pkgname = 'bitcoin-feemodel'
 __version__ = get_distribution(pkgname).version
 
 knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
-defaultconfigfile = resource_stream(__name__, 'defaultconfig.ini')
+defaultconfigfilename = 'default.cfg'
+defaultconfigfile = resource_stream(__name__, defaultconfigfilename)
 defaultconfig = configparser.ConfigParser()
 defaultconfig.readfp(defaultconfigfile)
 
@@ -21,9 +22,9 @@ if not os.path.exists(datadir):
         print("Error: unable to create data directory %s." % datadir)
         raise e
 
-configfilename = os.path.join(datadir, 'config.ini')
+configfilename = os.path.join(datadir, 'feemodel.cfg')
 if not os.path.exists(configfilename):
-    defaultconfigstr = resource_string(__name__, 'defaultconfig.ini')
+    defaultconfigstr = resource_string(__name__, defaultconfigfilename)
     try:
         with open(configfilename, 'w') as f:
             f.write(defaultconfigstr)

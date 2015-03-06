@@ -136,16 +136,24 @@ class TxMempool(StoppableThread):
             # The set of transactions that were removed from the mempool, yet
             # were not included in a block.
             conflicts = set(entries) - new_entries_ids
+            conflicts_size = 0
             for txid in conflicts:
                 # For the first block, label the MemBlock entries that are
                 # conflicts. Assume the conflict was removed after the first
                 # block, so remove them from the remaining blocks.
                 memblocks[0].entries[txid].isconflict = True
+                conflicts_size += memblocks[0].entries[txid].size
                 for memblock in memblocks[1:]:
                     del memblock.entries[txid]
             if len(conflicts):
                 logger.info("process_blocks: %d conflicts removed." %
                             len(conflicts))
+            if conflicts_size > 100000:
+                # If many conflicts are removed, it can screw up the txsource
+                # estimation; so log a warning.
+                logger.warning(
+                    "process_blocks: %d bytes of conflicts removed." %
+                    conflicts_size)
 
             if self.write_history and self.is_alive():
                 for memblock in memblocks:
