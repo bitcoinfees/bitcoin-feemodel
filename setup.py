@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 name = 'bitcoin-feemodel'
-version = '0.0.3'
+version = '0.0.4'
 
 with open('README', 'r') as f:
     readme = f.read()

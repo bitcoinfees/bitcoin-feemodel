@@ -168,7 +168,8 @@ class SteadyStateOnline(StoppableThread):
             self._stats = val
 
     def load_stats(self):
-        savefiles = sorted(os.listdir(self.savedir))
+        savefiles = sorted([f for f in os.listdir(self.savedir)
+                            if f.startswith('ss') and f.endswith('pickle')])
         savefile = os.path.join(self.savedir, savefiles[-1])
         self.stats = load_obj(savefile)
         # Put in the loaded info

@@ -99,7 +99,8 @@ class PoolsEstimatorOnline(StoppableThread):
             self._pe = val
 
     def load_pe(self):
-        savefiles = sorted(os.listdir(self.savedir))
+        savefiles = sorted([f for f in os.listdir(self.savedir)
+                            if f.startswith('pe') and f.endswith('pickle')])
         savefile = os.path.join(self.savedir, savefiles[-1])
         self.pe = load_obj(savefile)
 
