@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 import signal
 from flask import Flask, jsonify, make_response
 from feemodel.config import (applogfile, loglevel, app_port,
@@ -14,7 +15,8 @@ def sigterm_handler(_signo, _stack_frame):
 def main(mempool_only=False, port=app_port):
     formatter = logging.Formatter(
         '%(asctime)s:%(name)s [%(levelname)s] %(message)s')
-    filehandler = logging.FileHandler(applogfile)
+    filehandler = logging.handlers.RotatingFileHandler(
+        applogfile, maxBytes=1000000, backupCount=1)
     filehandler.setLevel(loglevel)
     filehandler.setFormatter(formatter)
     logger = logging.getLogger('feemodel')
