@@ -1,5 +1,8 @@
+import os
 from copy import deepcopy
 from feemodel.util import BlockingProxy
+
+history_file = os.path.join(os.path.dirname(__file__), 'data/test.db')
 
 class TestProxy(BlockingProxy):
     '''A class that mimics bitcoin.rpc.Proxy for testing purposes.'''
@@ -27,7 +30,7 @@ class TestMempool(object):
     '''A class that mimics feemodel.TxMempool'''
     def __init__(self):
         from feemodel.txmempool import MemBlock
-        self.b = MemBlock.read(333931, dbfile='data/test.db')
+        self.b = MemBlock.read(333931, dbfile=history_file)
         for entry in self.b.entries.values():
             assert all([txid in self.b.entries for txid in entry.depends])
 
