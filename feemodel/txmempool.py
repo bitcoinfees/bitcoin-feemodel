@@ -146,9 +146,10 @@ class TxMempool(StoppableThread):
                 for memblock in memblocks[1:]:
                     del memblock.entries[txid]
             if len(conflicts):
-                logger.info("process_blocks: %d conflicts removed." %
-                            len(conflicts))
-            if conflicts_size > 100000:
+                logger.info("process_blocks: %d conflicts "
+                            "(%d bytes) removed." %
+                            (len(conflicts), conflicts_size))
+            if conflicts_size > 10000:
                 # If many conflicts are removed, it can screw up the txsource
                 # estimation; so log a warning.
                 logger.warning(
