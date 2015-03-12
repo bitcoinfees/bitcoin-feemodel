@@ -84,7 +84,7 @@ class TransientOnline(StoppableThread):
         pools.calc_blockrate()
         # TODO: catch unstable error
         sim = Simul(pools, self.tx_source)
-        feeclasses = get_feeclasses(sim.cap, self.tx_source, sim.stablefeerate)
+        feeclasses = get_feeclasses(sim.cap, sim.stablefeerate)
         self.simulate(sim, feeclasses)
         self._updating = False
 

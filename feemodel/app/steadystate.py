@@ -104,7 +104,7 @@ class SteadyStateOnline(StoppableThread):
 
         # TODO: catch unstable error
         sim = Simul(pools, tx_source)
-        feeclasses = get_feeclasses(sim.cap, tx_source, sim.stablefeerate)
+        feeclasses = get_feeclasses(sim.cap, sim.stablefeerate)
         stats = self.simulate(sim, feeclasses)
 
         if feeclasses != waitmeasure.feerates:

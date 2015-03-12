@@ -63,7 +63,7 @@ class TxSourceTests(unittest.TestCase):
     def setUp(self):
         self.tx_source = tx_source
         self.feerates = [0, 2000, 10999, 20000]
-        self.tx_byterates = self.tx_source.get_byterates(self.feerates)
+        _dum, self.tx_byterates = self.tx_source.get_byterates(self.feerates)
 
     def test_basic(self):
         byterates_binned = [0, 500*txrate/3., 640*txrate/3., 250*txrate/3.]
@@ -80,7 +80,7 @@ class TxSourceTests(unittest.TestCase):
         diff = abs(self.txrate - txrate)
         self.assertLess(diff, 0.05)
         source = SimTxSource(tx_gen, self.txrate)
-        tx_byterates = source.get_byterates(self.feerates)
+        _dum, tx_byterates = source.get_byterates(self.feerates)
         for idx in range(len(self.tx_byterates)):
             diff = abs(self.tx_byterates[idx] - tx_byterates[idx])
             self.assertLess(diff, 10)

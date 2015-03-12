@@ -2,7 +2,9 @@ from __future__ import division
 
 from math import sqrt, cos, exp, log, pi
 from random import random
-from bisect import bisect
+from bisect import bisect, bisect_left
+from collections import defaultdict
+
 from feemodel.util import DataSample
 
 
@@ -49,18 +51,49 @@ class SimTxSource(object):
 
         return [self.txsample[int(random()*n)] for i in range(k)]
 
-    def get_byterates(self, feerates):
+    def get_byterates(self, feerates=None):
         '''Get reverse cumulative byterate as a function of feerate.'''
-        # feerates assumed sorted.
+        if not self.txsample:
+            raise ValueError("No txs.")
         n = len(self.txsample)
-        binnedrates = [0.]*len(feerates)
-        for entry in self.txsample:
-            fidx = bisect(feerates, entry.tx.feerate)
-            if fidx:
-                binnedrates[fidx-1] += entry.tx.size
-        byterates = [sum(binnedrates[idx:])*self.txrate/n
-                     for idx in range(len(binnedrates))]
-        return byterates
+        if feerates:
+            # feerates assumed sorted.
+            binnedrates = [0.]*len(feerates)
+            for entry in self.txsample:
+                fidx = bisect(feerates, entry.tx.feerate)
+                if fidx:
+                    binnedrates[fidx-1] += entry.tx.size
+            byterates = [sum(binnedrates[idx:])*self.txrate/n
+                         for idx in range(len(binnedrates))]
+            return feerates, byterates
+        else:
+            # Choose the feerates so that the byterate in each interval
+            # is ~ 0.1 of the total.
+            R = 10  # 1 / 0.1
+            txrate = self.txrate
+            txs = [entry.tx for entry in self.txsample]
+            byteratesmap = defaultdict(float)
+            for tx in txs:
+                byteratesmap[tx.feerate] += tx.size*txrate/n
+            byterates = sorted(byteratesmap.items(), reverse=True)
+            cumbyterates = []
+            cumbyterate = 0.
+            for byterate in byterates:
+                cumbyterate += byterate[1]
+                cumbyterates.append((byterate[0], cumbyterate))
+            feerates, byterates = zip(*cumbyterates)
+            totalbyterate = byterates[-1]
+            byteratetargets = [i/R*totalbyterate for i in range(1, R+1)]
+            feerates_bin = []
+            byterates_bin = []
+            for target in byteratetargets:
+                idx = bisect_left(byterates, target)
+                feerates_bin.append(feerates[idx])
+                byterates_bin.append(byterates[idx])
+
+            feerates_bin.reverse()
+            byterates_bin.reverse()
+            return feerates_bin, byterates_bin
 
     def calc_mean_byterate(self):
         '''Calculate the mean byterate.

@@ -14,10 +14,11 @@ class Simul(object):
         self.pools = pools
         self.tx_source = tx_source
         # TODO: check edge conditions for feerates
-        feerates, cap_lower, cap_upper = self.pools.get_capacity()
-        tx_byterates = tx_source.get_byterates(feerates)
-        self.cap = Capacity(feerates, tx_byterates, cap_lower, cap_upper,
-                            tx_source.txrate)
+        # feerates, cap_lower, cap_upper = self.pools.get_capacity()
+        # tx_byterates = tx_source.get_byterates(feerates)
+        # self.cap = Capacity(feerates, tx_byterates, cap_lower, cap_upper,
+        #                     tx_source.txrate)
+        self.cap = Capacity(pools, tx_source)
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "

@@ -23,7 +23,20 @@ class TxRatesEstimatorTest(unittest.TestCase):
         print(self.tr)
         num_uniquetxs = len(set(self.tr.txsample))
         self.assertEqual(num_uniquetxs, len(self.tr.txsample))
-        byterates = self.tr.get_byterates(feerates)
+        _dum, byterates = self.tr.get_byterates(feerates)
+        for feerate, byterate in zip(feerates, byterates):
+            print('%d\t%.2f' % (feerate, byterate))
+        print("Mean byterate (error): {}, {:.2f}".format(
+            *self.tr.calc_mean_byterate()))
+
+    def test_autofeerate(self):
+        print("Testing autofeerate:")
+        self.tr = TxRateEstimator(maxsamplesize=10000)
+        self.tr.start(blockrange, dbfile=dbfile)
+        print(self.tr)
+        num_uniquetxs = len(set(self.tr.txsample))
+        self.assertEqual(num_uniquetxs, len(self.tr.txsample))
+        feerates, byterates = self.tr.get_byterates()
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
         print("Mean byterate (error): {}, {:.2f}".format(
@@ -37,7 +50,7 @@ class TxRatesEstimatorTest(unittest.TestCase):
         num_uniquetxs = len(set(self.tr.txsample))
         self.assertEqual(num_uniquetxs, len(self.tr.txsample))
         self.assertEqual(num_uniquetxs, maxsamplesize)
-        byterates = self.tr.get_byterates(feerates)
+        _dum, byterates = self.tr.get_byterates(feerates)
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
         print("Mean byterate (error): {}, {:.2f}".format(
