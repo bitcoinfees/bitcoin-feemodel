@@ -4,6 +4,7 @@ import threading
 import sqlite3
 import decimal
 import logging
+from Queue import Queue
 from time import time
 from copy import deepcopy
 
@@ -69,10 +70,12 @@ class TxMempool(StoppableThread):
     errors.
     '''
 
+    PROCESS_STOP = 'stop'  # Sentinel value for stopping process worker thread
+
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
-        self.process_lock = threading.Lock()
         self.mempool_lock = threading.Lock()
+        self.blockqueue = Queue()
         self.best_height = None
         self.rawmempool = None
         self.write_history = write_history
@@ -86,38 +89,43 @@ class TxMempool(StoppableThread):
         '''Target function of the thread.
         Polls mempool every poll_period seconds until stop flag is set.
         '''
+        logger.info("Starting TxMempool")
+        self.process_thread = threading.Thread(target=self.process_worker)
+        self.process_thread.start()
         try:
-            logger.info("Starting TxMempool")
             self.best_height, self.rawmempool = proxy.poll_mempool()
             while not self.is_stopped():
                 self.update()
                 self.sleep(poll_period)
-            logger.info("Stopping TxMempool..")
-            for thread in threading.enumerate():
-                if thread.name.startswith('mempool'):
-                    thread.join()
-            logger.info("TxMempool stopped.")
         finally:
+            self.blockqueue.put(self.PROCESS_STOP)
+            self.process_thread.join()
             self.rawmempool = None
+            logger.info("TxMempool stopped.")
 
     def update(self):
         '''Mempool polling function.'''
         curr_height, rawmp_new = proxy.poll_mempool()
+        if curr_height > self.best_height:
+            process_args = (
+                range(self.best_height+1, curr_height+1),
+                {txid: MemEntry(rawentry)
+                 for txid, rawentry in self.rawmempool.iteritems()},
+                set(rawmp_new)
+            )
+            self.blockqueue.put(process_args)
+            self.best_height = curr_height
         with self.mempool_lock:
-            if curr_height > self.best_height:
-                entries = {txid: MemEntry(rawentry)
-                           for txid, rawentry in self.rawmempool.iteritems()}
-                threading.Thread(
-                    target=self.process_blocks,
-                    args=(range(self.best_height+1, curr_height+1),
-                          entries, set(rawmp_new)),
-                    name='mempool-processblocks').start()
-                self.rawmempool = rawmp_new
-                self.best_height = curr_height
-                return True
-            else:
-                self.rawmempool = rawmp_new
-                return False
+            self.rawmempool = rawmp_new
+
+    def process_worker(self):
+        '''Target function for a worker thread that processes new memblocks.'''
+        while True:
+            args = self.blockqueue.get()
+            if args == self.PROCESS_STOP:
+                break
+            self.process_blocks(*args)
+        logger.info("Process worker received stop sentinel; thread complete.")
 
     def process_blocks(self, blockheight_range, entries, new_entries_ids):
         '''Called when block count has increased.
@@ -127,43 +135,42 @@ class TxMempool(StoppableThread):
         new_entries_ids is the set of txids in the mempool immediately after
         the block(s).
         '''
-        with self.process_lock:
-            memblocks = []
-            for height in blockheight_range:
-                block = proxy.getblock(proxy.getblockhash(height))
-                memblocks.append(MemBlock(height, block, entries))
+        memblocks = []
+        for height in blockheight_range:
+            block = proxy.getblock(proxy.getblockhash(height))
+            memblocks.append(MemBlock(height, block, entries))
 
-            # The set of transactions that were removed from the mempool, yet
-            # were not included in a block.
-            conflicts = set(entries) - new_entries_ids
-            conflicts_size = 0
-            for txid in conflicts:
-                # For the first block, label the MemBlock entries that are
-                # conflicts. Assume the conflict was removed after the first
-                # block, so remove them from the remaining blocks.
-                memblocks[0].entries[txid].isconflict = True
-                conflicts_size += memblocks[0].entries[txid].size
-                for memblock in memblocks[1:]:
-                    del memblock.entries[txid]
-            if len(conflicts):
-                logger.info("process_blocks: %d conflicts "
-                            "(%d bytes) removed." %
-                            (len(conflicts), conflicts_size))
-            if conflicts_size > 10000:
-                # If many conflicts are removed, it can screw up the txsource
-                # estimation; so log a warning.
-                logger.warning(
-                    "process_blocks: %d bytes of conflicts removed." %
-                    conflicts_size)
+        # The set of transactions that were removed from the mempool, yet
+        # were not included in a block.
+        conflicts = set(entries) - new_entries_ids
+        conflicts_size = 0
+        for txid in conflicts:
+            # For the first block, label the MemBlock entries that are
+            # conflicts. Assume the conflict was removed after the first
+            # block, so remove them from the remaining blocks.
+            memblocks[0].entries[txid].isconflict = True
+            conflicts_size += memblocks[0].entries[txid].size
+            for memblock in memblocks[1:]:
+                del memblock.entries[txid]
+        if len(conflicts):
+            logger.info("process_blocks: %d conflicts "
+                        "(%d bytes) removed." %
+                        (len(conflicts), conflicts_size))
+        if conflicts_size > 10000:
+            # If many conflicts are removed, it can screw up the txsource
+            # estimation; so log a warning.
+            logger.warning(
+                "process_blocks: %d bytes of conflicts removed." %
+                conflicts_size)
 
-            if self.write_history and self.is_alive():
-                for memblock in memblocks:
-                    try:
-                        memblock.write(self.dbfile, self.keep_history)
-                    except Exception:
-                        logger.exception("MemBlock write/del exception.")
+        if self.write_history and self.is_alive():
+            for memblock in memblocks:
+                try:
+                    memblock.write(self.dbfile, self.keep_history)
+                except Exception:
+                    logger.exception("MemBlock write/del exception.")
 
-            return memblocks
+        return memblocks
 
     def get_entries(self):
         '''Returns mempool entries.'''
