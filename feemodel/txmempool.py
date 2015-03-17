@@ -112,12 +112,8 @@ class TxMempool(StoppableThread):
                     args=(range(self.best_height+1, curr_height+1),
                           entries, set(rawmp_new)),
                     name='mempool-processblocks').start()
-                self.rawmempool = rawmp_new
                 self.best_height = curr_height
-                return True
-            else:
-                self.rawmempool = rawmp_new
-                return False
+            self.rawmempool = rawmp_new
 
     def process_blocks(self, blockheight_range, entries, new_entries_ids):
         '''Called when block count has increased.
@@ -366,7 +362,9 @@ class MemEntry(object):
                      result of being invalidated by some other transaction
                      in the block.
     In addition, for convenience we compute and store the feerate (satoshis
-    per kB of transaction size)
+    per kB of transaction size).
+
+    Also, care is taken not to mutate the rawmempool_entry input.
     '''
     def __init__(self, rawmempool_entry=None):
         if rawmempool_entry:

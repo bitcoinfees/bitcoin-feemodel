@@ -3,6 +3,7 @@ from __future__ import division
 import logging
 from random import sample
 from time import time
+from math import log, exp
 from feemodel.util import round_random
 from feemodel.config import history_file
 from feemodel.txmempool import MemBlock
@@ -11,6 +12,100 @@ from feemodel.simul.txsources import SimEntry
 
 default_maxsamplesize = 10000
 logger = logging.getLogger(__name__)
+
+
+class TxRateEstimator2(SimTxSource):
+    '''Continuous rate estimation with an exponential smoother.'''
+
+    def __init__(self, halflife):
+        '''Specify the halflife of the exponential decay, in seconds.'''
+        self.halflife = halflife
+        self._a = -log(0.5) / halflife  # The exponent coefficient
+        self._reset_params()
+
+    def start(self, blockheight, stopflag=None, dbfile=history_file):
+        self._reset_params()
+        starttime = time()
+        num_blocks_to_use = int(-log(0.01) / self._a / 600)
+        startblock = blockheight - num_blocks_to_use + 1
+        blockrangetuple = (startblock, blockheight+1)
+        logger.info("Starting TxRate estimation "
+                    "from blockrange ({}, {}).".format(*blockrangetuple))
+
+        # Used for the update immediate post-init
+        bestblocktxids = None
+        bestheight = 0
+        besttime = 0
+
+        prevblock = None
+        for height in range(*blockrangetuple):
+            if stopflag and stopflag.is_set():
+                raise StopIteration("Stop flag set.")
+            block = MemBlock.read(height, dbfile=dbfile)
+            if block and prevblock and prevblock.height == height - 1:
+                blocktxids = set(block.entries)
+                newtxids = blocktxids - set(prevblock.entries)
+                newentries = [block.entries[txid] for txid in newtxids]
+                newentries.sort(key=lambda entry: entry.time)
+                prevtime = prevblock.time
+                txbatch = []
+                for entry in newentries:
+                    tx = SimEntry.from_mementry('', entry)
+                    txbatch.append(tx)
+                    interval = entry.time - prevtime
+                    if interval > 5:
+                        self.update_txs(txbatch, interval, is_init=True)
+                        prevtime = entry.time
+                        txbatch = []
+                self.update_txs(
+                    txbatch, max(block.time-prevtime, 0), is_init=True)
+                bestheight = block.height
+                bestblocktxids = blocktxids
+                besttime = block.time
+                # new_txs = [SimEntry.from_mementry('', block.entries[txid])
+                #            for txid in newtxids]
+                # interval = block.time - prevblock.time
+                # self.update_txs(new_txs, interval)
+            prevblock = block
+
+        if self.totaltime <= 0:
+            raise ValueError("Insufficient number of blocks.")
+        self.calc_txrate()
+        logger.info("Finished TxRate estimation in %.2f seconds." %
+                    (time()-starttime))
+        return (bestheight, besttime, bestblocktxids)
+
+    def update_txs(self, new_txs, interval, is_init=False):
+        '''Update the estimator with a new set of transactions.
+
+        new_txs is a list of SimEntry objects and represents the new txs since
+        the last update.
+
+        interval is the time in seconds since the last update.
+        '''
+        self.totaltime += interval
+        num_old_to_keep = round_random(
+            len(self.txsample)*self._decayfactor(interval))
+        self.txsample = sample(self.txsample, num_old_to_keep) + new_txs
+        if not is_init:
+            self.calc_txrate()
+
+    def calc_txrate(self):
+        '''Calculate the tx rate (arrivals per second).'''
+        if self.totaltime <= 0:
+            raise ValueError("Insufficient number of blocks.")
+        self.txrate = len(self.txsample) * self._a / (
+            1 - exp(-self._a * self.totaltime))
+
+    def _reset_params(self):
+        '''Reset the params; at init and upon (re)starting estimation.'''
+        self.txsample = []
+        self.txrate = 0.
+        self.totaltime = 0
+
+    def _decayfactor(self, t):
+        '''The decay factor as a function of time in seconds.'''
+        return exp(-self._a*t)
 
 
 class TxRateEstimator(SimTxSource):
