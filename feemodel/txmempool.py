@@ -373,7 +373,9 @@ class MemEntry(object):
                      result of being invalidated by some other transaction
                      in the block.
     In addition, for convenience we compute and store the feerate (satoshis
-    per kB of transaction size)
+    per kB of transaction size).
+
+    Also, care is taken not to mutate the rawmempool_entry input.
     '''
     def __init__(self, rawmempool_entry=None):
         if rawmempool_entry:
