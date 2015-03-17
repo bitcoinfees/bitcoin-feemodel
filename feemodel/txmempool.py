@@ -109,13 +109,15 @@ class TxMempool(StoppableThread):
         if curr_height > self.best_height:
             process_args = (
                 range(self.best_height+1, curr_height+1),
-                {txid: MemEntry(rawentry)
-                 for txid, rawentry in self.rawmempool.iteritems()},
-                set(rawmp_new)
+                {
+                    txid: MemEntry(rawentry)
+                    for txid, rawentry in self.rawmempool.iteritems()},
+                set(rawmp_new),
+                int(time())
             )
             self.blockqueue.put(process_args)
-            self.best_height = curr_height
         with self.mempool_lock:
+            self.best_height = curr_height
             self.rawmempool = rawmp_new
 
     def process_worker(self):
@@ -127,7 +129,8 @@ class TxMempool(StoppableThread):
             self.process_blocks(*args)
         logger.info("Process worker received stop sentinel; thread complete.")
 
-    def process_blocks(self, blockheight_range, entries, new_entries_ids):
+    def process_blocks(self, blockheight_range, entries,
+                       new_entries_ids, blocktime):
         '''Called when block count has increased.
 
         Records the mempool entries in a MemBlock instance and writes to disk.
@@ -138,7 +141,7 @@ class TxMempool(StoppableThread):
         memblocks = []
         for height in blockheight_range:
             block = proxy.getblock(proxy.getblockhash(height))
-            memblocks.append(MemBlock(height, block, entries))
+            memblocks.append(MemBlock(height, blocktime, block, entries))
 
         # The set of transactions that were removed from the mempool, yet
         # were not included in a block.
@@ -174,12 +177,14 @@ class TxMempool(StoppableThread):
 
     def get_entries(self):
         '''Returns mempool entries.'''
-        if self.rawmempool is None:
-            raise ValueError("No mempool data.")
         with self.mempool_lock:
-            entries = {txid: MemEntry(rawentry)
-                       for txid, rawentry in self.rawmempool.iteritems()}
-            return entries
+            rawmempool = self.rawmempool
+            best_height = self.best_height
+        if rawmempool is None:
+            raise ValueError("No mempool data")
+        entries = {txid: MemEntry(rawentry)
+                   for txid, rawentry in rawmempool.iteritems()}
+        return entries, best_height
 
     def get_status(self):
         runtime = int(time() - self.starttime)
@@ -217,17 +222,18 @@ class MemBlock(object):
         get_heights - Get the list of heights of stored blocks.
     '''
 
-    def __init__(self, blockheight=None, block=None, entries=None):
+    def __init__(self, blockheight=None, blocktime=None,
+                 block=None, entries=None):
         '''Label the mempool entries based on the block data.
 
         We record various block statistics, and for each MemEntry we label
         inblock and leadtime. See MemEntry for more info.
         '''
         # TODO: add warning if measured time differs greatly from timestamp
-        if blockheight and block and entries is not None:
+        if blockheight and blocktime and block and entries is not None:
             self.height = blockheight
             self.size = len(block.serialize())
-            self.time = int(time())
+            self.time = blocktime
             self.entries = deepcopy(entries)
             for entry in self.entries.values():
                 entry.inblock = False

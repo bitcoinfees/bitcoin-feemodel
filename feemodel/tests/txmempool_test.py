@@ -107,7 +107,7 @@ class ProcessBlocksTest(unittest.TestCase):
     def test_process_blocks(self):
         processed_memblock = TxMempool.process_blocks(
             TxMempool(), self.blockheight_range, self.entries,
-            set(self.entries))[0]
+            set(self.entries), 1)[0]
         processed_memblock.time = self.memblock.time
         for entry in processed_memblock.entries.values():
             entry.leadtime = None
@@ -116,7 +116,7 @@ class ProcessBlocksTest(unittest.TestCase):
     def test_process_empty_mempool(self):
         self.memblock.entries = {}
         processed_memblock = TxMempool.process_blocks(
-            TxMempool(), self.blockheight_range, {}, set())[0]
+            TxMempool(), self.blockheight_range, {}, set(), 1)[0]
         processed_memblock.time = self.memblock.time
         self.assertEqual(processed_memblock, self.memblock)
 
@@ -124,7 +124,7 @@ class ProcessBlocksTest(unittest.TestCase):
         print("\nMultiple blocks test\n====================")
         memblocks = TxMempool.process_blocks(
             TxMempool(), range(self.test_blockheight, self.test_blockheight+2),
-            self.entries, set(self.entries))
+            self.entries, set(self.entries), 1)
         previnblock = None
         for m in memblocks:
             self.assertTrue(all([not entry.isconflict
@@ -142,7 +142,7 @@ class ProcessBlocksTest(unittest.TestCase):
         print("\nMultiple blocks conflicts test\n====================")
         memblocks = TxMempool.process_blocks(
             TxMempool(), range(self.test_blockheight, self.test_blockheight+2),
-            self.entries, set())
+            self.entries, set(), 1)
         for idx, m in enumerate(memblocks):
             if idx == 0:
                 conflicts = [txid for txid, entry in m.entries.items()

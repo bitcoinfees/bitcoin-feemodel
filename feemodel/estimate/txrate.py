@@ -14,7 +14,12 @@ default_maxsamplesize = 10000
 logger = logging.getLogger(__name__)
 
 
-class TxRateEstimator2(SimTxSource):
+class TxRateEstimator(object):
+    '''Dummy class to satisfy some imports.'''
+    pass
+
+
+class ExpEstimator(SimTxSource):
     '''Continuous rate estimation with an exponential smoother.'''
 
     def __init__(self, halflife):
@@ -33,9 +38,9 @@ class TxRateEstimator2(SimTxSource):
                     "from blockrange ({}, {}).".format(*blockrangetuple))
 
         # Used for the update immediate post-init
-        bestblocktxids = None
         bestheight = 0
         besttime = 0
+        bestblocktxids = None
 
         prevblock = None
         for height in range(*blockrangetuple):
@@ -68,12 +73,12 @@ class TxRateEstimator2(SimTxSource):
                 # self.update_txs(new_txs, interval)
             prevblock = block
 
-        if self.totaltime <= 0:
+        if self.totaltime == 0:
             raise ValueError("Insufficient number of blocks.")
         self.calc_txrate()
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
-        return (bestheight, besttime, bestblocktxids)
+        return bestheight, besttime, bestblocktxids
 
     def update_txs(self, new_txs, interval, is_init=False):
         '''Update the estimator with a new set of transactions.
@@ -107,8 +112,11 @@ class TxRateEstimator2(SimTxSource):
         '''The decay factor as a function of time in seconds.'''
         return exp(-self._a*t)
 
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
-class TxRateEstimator(SimTxSource):
+
+class RectEstimator(SimTxSource):
     def __init__(self, maxsamplesize=default_maxsamplesize,
                  remove_conflicts=False):
         self.maxsamplesize = maxsamplesize
