@@ -4,13 +4,14 @@ This module contains functions for calculating the stranding fee rate.
 '''
 from __future__ import division
 
-from random import random, choice
+from random import random
+from feemodel.config import minrelaytxfee
+from feemodel.util import DataSample
 
 __all__ = ['tx_preprocess', 'calc_stranding_feerate']
 
 
-def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
-                  remove_zero_fee=True):
+def tx_preprocess(memblock):
     '''Preprocess MemBlock transactions for calculating stranding fee rate.
 
     Returns a list of transactions represented by (feerate, inblock), which
@@ -18,28 +19,16 @@ def tx_preprocess(memblock, remove_high_priority=False, remove_depped=False,
 
     Arguments:
         memblock - A MemBlock object
-        remove_high_priority - remove all high priority transactions
-        remove_depped - remove all transactions which depend on other txs
-                        in the mempool.
-        remove_zero_fee - remove all transactions which have zero fee
     '''
-    try:
-        min_leadtime = min([entry.leadtime
-                            for entry in memblock.entries.itervalues()
-                            if entry.inblock])
-    except ValueError:
-        # No memblock entries are inblock
-        min_leadtime = 0
+    min_leadtime = _calc_min_leadtime(memblock)
 
     txs = [
         (entry.feerate, entry.inblock)
         for entry in memblock.entries.itervalues()
-        if _deps_check(entry, memblock.entries, remove_depped) and
+        if _deps_check(entry, memblock.entries) and
         entry.leadtime >= min_leadtime and
         not entry.isconflict and
-        (entry.feerate if remove_zero_fee else True) and
-        (not entry.is_high_priority()
-         if remove_high_priority else True)]
+        not entry.is_high_priority()]
 
     return txs
 
@@ -56,37 +45,32 @@ def calc_stranding_feerate(txs, bootstrap=True):
 
     txs.sort(key=lambda x: x[0], reverse=True)
     sfr = _calc_stranding_single(txs)
-    sidx = 0
-
-    try:
-        while txs[sidx][0] >= sfr:
-            sidx += 1
-    except IndexError:
-        pass
-
-    abovek = sum(txs[idx][1] for idx in xrange(sidx))
-    belowk = sum(not txs[idx][1] for idx in xrange(sidx, len(txs)))
-
-    aboven = sidx
-    belown = len(txs) - sidx
+    abovek = aboven = belowk = belown = 0
+    alt_bias_ref = None
+    for tx in txs:
+        if tx[0] >= sfr:
+            abovek += tx[1]
+            aboven += 1
+        else:
+            if alt_bias_ref is None:
+                alt_bias_ref = tx[0]
+            belowk += not tx[1]
+            belown += 1
+    if alt_bias_ref is None:
+        alt_bias_ref = minrelaytxfee
 
     if bootstrap and sfr != float("inf"):
-        try:
-            alt_bias_ref = txs[sidx][0]
-        except IndexError:
-            alt_bias_ref = 0
-
-        bs_estimates = [_calc_stranding_single(bootstrap_sample(txs))
-                        for i in range(1000)]
+        bs_estimates = [
+            _calc_stranding_single(bootstrap_sample(txs)) for i in range(1000)]
         if not any([b == float("inf") for b in bs_estimates]):
-            mean = float(sum(bs_estimates)) / len(bs_estimates)
-            std = (sum([(b-mean)**2 for b in bs_estimates]) /
-                   (len(bs_estimates)-1))**0.5
-            bias_ref = max(
-                (sfr, abs(mean-sfr)),
-                (alt_bias_ref, abs(mean-alt_bias_ref)),
-                key=lambda x: x[1])[0]
-            bias = mean - bias_ref
+            datasample = DataSample(bs_estimates)
+            datasample.calc_stats()
+            mean = datasample.mean
+            std = datasample.std
+            bias = mean - alt_bias_ref
+            alt_bias = mean - sfr
+            if abs(alt_bias) > abs(bias):
+                bias = alt_bias
         else:
             bias = std = mean = float("inf")
     else:
@@ -104,40 +88,43 @@ def _calc_stranding_single(txs):
 
     txs is assumed reverse sorted by feerate.
     '''
+    sfr = float("inf")
     cumk = 0
     maxk = 0
-    maxidx = 0
-    txs.insert(0, (float("inf"), 1))
+    maxidx = len(txs) - 1
 
     for idx, tx in enumerate(txs):
         cumk += 1 if tx[1] else -1
-        try:
-            if txs[idx+1][0] == tx[0]:
-                continue
-        except IndexError:
-            pass
+        if idx < maxidx and txs[idx+1][0] == tx[0]:
+            continue
         if cumk > maxk:
             maxk = cumk
-            maxidx = idx
+            sfr = tx[0]
 
-    sfr = txs[maxidx][0]
-    txs.pop(0)
     return sfr
 
 
 def bootstrap_sample(txs):
     '''Bootstrap resampling of txs.'''
     n = len(txs)
-    try:
-        sample = [txs[int(random()*n)] for idx in range(n)]
-    except IndexError:
-        sample = [choice(txs) for idx in range(n)]
+    sample = [txs[int(random()*n)] for idx in range(n)]
     sample.sort(key=lambda x: x[0], reverse=True)
     return sample
 
 
-def _deps_check(entry, entries, remove_depped=False):
-    if remove_depped:
-        return not entry.depends
+def _deps_check(entry, entries):
     deps = [entries.get(dep_id) for dep_id in entry.depends]
     return all([dep.inblock if dep else True for dep in deps])
+
+
+def _calc_min_leadtime(memblock):
+    '''Calc the min leadtime of a memblock.'''
+    try:
+        min_leadtime = min([
+            entry.leadtime
+            for entry in memblock.entries.itervalues()
+            if entry.inblock])
+    except ValueError:
+        # No memblock entries are inblock
+        min_leadtime = 0
+    return min_leadtime

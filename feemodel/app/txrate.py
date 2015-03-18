@@ -28,7 +28,7 @@ class TxRateOnlineEstimator(object):
             bestheight, besttime, bestblocktxids = tr.start(
                 currheight, dbfile=self.dbfile)
             if bestheight == currheight:
-                logger.debug("bestheight matches currheight.")
+                logger.info("bestheight matches currheight.")
                 self.prevtxids = bestblocktxids
                 self.prevtime = besttime
             else:

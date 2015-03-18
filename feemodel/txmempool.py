@@ -13,6 +13,7 @@ from bitcoin.core import b2lx
 from feemodel.config import (history_file, poll_period, keep_history,
                              minrelaytxfee, prioritythresh)
 from feemodel.util import proxy, StoppableThread, get_feerate
+from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +167,15 @@ class TxMempool(StoppableThread):
                 "process_blocks: %d bytes of conflicts removed." %
                 conflicts_size)
 
-        if self.write_history and self.is_alive():
-            for memblock in memblocks:
+        for memblock in memblocks:
+            txs = tx_preprocess(memblock)
+            if txs:
+                stats = calc_stranding_feerate(txs, bootstrap=False)
+                logger.info("Block {}: stranding feerate is {}".
+                            format(memblock.height, stats['sfr']))
+            else:
+                logger.info("Block {}: no txs.".format(memblock.height))
+            if self.write_history and self.is_alive():
                 try:
                     memblock.write(self.dbfile, self.keep_history)
                 except Exception:
@@ -246,8 +254,8 @@ class MemBlock(object):
                 self.entries[txid].inblock = True
                 del entries[txid]
 
-            incl_text = 'MemBlock: %d of %d in block %d' % (
-                len(entries_inblock), len(blocktxs)-1, blockheight)
+            incl_text = 'Block {}: {}/{} in mempool'.format(
+                blockheight, len(entries_inblock), len(blocktxs)-1)
             logger.info(incl_text)
 
             # As a measure of our node's connectivity, we want to note the
