@@ -64,13 +64,20 @@ def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
         alt_bias_ref = minrelaytxfee
 
     if bootstrap and sfr != float("inf"):
+        N = 1000  # Number of bootstrap estimates
         numprocesses = (
             multiprocess if multiprocess is not None
             else multiprocessing.cpu_count())
-        workers = multiprocessing.Pool(processes=numprocesses)
-        Nchunk = 1000 // numprocesses
-        result = workers.map_async(processwork, [(txs, Nchunk)]*numprocesses)
-        bs_estimates = sum(result.get(), [])
+        if numprocesses == 1:
+            bs_estimates = [_calc_stranding_single(bootstrap_sample(txs))
+                            for i in range(N)]
+        else:
+            workers = multiprocessing.Pool(processes=numprocesses)
+            Nchunk = N // numprocesses
+            result = workers.map_async(
+                processwork, [(txs, Nchunk)]*numprocesses)
+            bs_estimates = sum(result.get(), [])
+            workers.terminate()
 
         if not any([b == float("inf") for b in bs_estimates]):
             datasample = DataSample(bs_estimates)
