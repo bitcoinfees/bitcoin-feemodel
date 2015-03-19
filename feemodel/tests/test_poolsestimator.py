@@ -33,6 +33,8 @@ class PoolEstimateTest(unittest.TestCase):
         print(self.pe)
         print(pools)
         pe_ref = load_obj(pe_ref_file)
+        print("pe_ref is: ")
+        pe_ref.print_pools()
         self.assertEqual(pe_ref, self.pe)
 
     def test_saveload(self):

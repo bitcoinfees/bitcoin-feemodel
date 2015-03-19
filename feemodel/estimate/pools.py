@@ -2,10 +2,10 @@ from __future__ import division
 
 import logging
 from time import time
-from random import random
+from itertools import groupby
 from feemodel.config import knownpools, history_file
 from feemodel.util import get_coinbase_info, Table, get_block_timestamp
-from feemodel.util import get_pph
+from feemodel.util import get_pph, get_block_size
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock
@@ -14,18 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 class PoolEstimate(SimPool):
-    def __init__(self, blockheights, blockrangetuple):
+    def __init__(self, blockheights, blockrangetuple, maxblocksize):
         self.blockheights = blockheights
         self.hashrate = None
         self.feelimitedblocks = None
         self.sizelimitedblocks = None
         self.stats = None
         self._estimate_hashrate(blockrangetuple)
-        super(PoolEstimate, self).__init__(self.hashrate, 0, float("inf"))
+        super(PoolEstimate, self).__init__(
+            self.hashrate, maxblocksize, float("inf"))
 
     def estimate_params(self, stopflag=None, dbfile=history_file):
         txs = []
-        deferredblocks = []
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
 
@@ -35,28 +35,25 @@ class PoolEstimate(SimPool):
             block = MemBlock.read(height, dbfile=dbfile)
             if block is None:
                 continue
-            blocktxs = [tx for tx in block.entries.values()
-                        if tx.inblock]
-            if blocktxs:
-                block.avgtxsize = sum([
-                    tx.size for tx in blocktxs]) / len(blocktxs)
+            inblocktxs = filter(lambda tx: tx.inblock, block.entries.values())
+            if inblocktxs:
+                block.avgtxsize = (
+                    sum([tx.size for tx in inblocktxs]) / len(inblocktxs))
             else:
                 block.avgtxsize = 0.
+            if self.maxblocksize - block.size > block.avgtxsize:
+                self.feelimitedblocks.append((block.height, block.size))
+                txs.extend(tx_preprocess(block))
+            else:
+                self.sizelimitedblocks.append((block.height, block.size))
 
-            if block.size > self.maxblocksize:
-                self.maxblocksize = block.size
-                deferredblocks.append(block)
-                continue
-            self._addblock(block, txs)
-
-        for block in deferredblocks:
-            self._addblock(block, txs)
-
-        if not txs and deferredblocks:
-            # All the blocks are close to the max block size. We take the
-            # smallest block.
-            block = min(deferredblocks, key=lambda block: block.size)
-            txs.extend(tx_preprocess(block))
+        if not txs and self.sizelimitedblocks:
+            # All the blocks are close to the max block size.
+            # This should happen rarely, so we just choose the smallest block.
+            smallestheight = min(self.sizelimitedblocks, key=lambda x: x[1])[0]
+            block = MemBlock.read(smallestheight, dbfile=dbfile)
+            if block:
+                txs.extend(tx_preprocess(block))
 
         if txs:
             self.stats = calc_stranding_feerate(txs)
@@ -72,12 +69,12 @@ class PoolEstimate(SimPool):
                 "belowkn": (-1, -1),
             }
 
-        nblocks = len(self.feelimitedblocks) + len(self.sizelimitedblocks)
+        numblocks = len(self.feelimitedblocks) + len(self.sizelimitedblocks)
         maxblocks = len(self.blockheights)
 
-        if nblocks < maxblocks:
+        if numblocks < maxblocks:
             logger.warning("Pool estimation: only %d memblocks found out "
-                           "of possible %d" % (nblocks, maxblocks))
+                           "of possible %d" % (numblocks, maxblocks))
 
     def _estimate_hashrate(self, blockrangetuple):
         retargets = [height for height in range(*blockrangetuple)
@@ -103,14 +100,6 @@ class PoolEstimate(SimPool):
         T = (get_block_timestamp(blockrangetuple[1] - 1) -
              get_block_timestamp(blockrangetuple[0]))
         self.hashrate = totalblocks / ref_p / T
-
-    def _addblock(self, block, txs):
-        if self.maxblocksize - block.size > block.avgtxsize:
-            self.feelimitedblocks.append((block.height, block.size))
-            txs_new = tx_preprocess(block)
-            txs.extend(txs_new)
-        else:
-            self.sizelimitedblocks.append((block.height, block.size))
 
 
 class PoolsEstimator(SimPools):
@@ -144,33 +133,32 @@ class PoolsEstimator(SimPools):
                 raise StopIteration("Stop flag set.")
             try:
                 baddrs, btag = get_coinbase_info(height)
+                blocksize = get_block_size(height)
             except IndexError:
                 raise IndexError("PoolEstimator: bad block range.")
-            else:
-                baddrs = filter(bool, baddrs)
 
+            name = None
             for paddr, pattrs in self.poolinfo['payout_addresses'].items():
+                candidate_name = pattrs['name']
                 if paddr in baddrs:
-                    if height in self.blockmap:
-                        if pattrs['name'] != self.blockmap[height]:
-                            logger.warning(
-                                "PoolsEstimator: "
-                                "> 1 pools mapped to block %d" % height)
-                    else:
-                        self.blockmap[height] = pattrs['name']
+                    if name is None:
+                        name = candidate_name
+                    elif name != candidate_name:
+                        logger.warning(
+                            "PoolsEstimator: "
+                            "> 1 pools mapped to block %d" % height)
 
             for ptag, pattrs in self.poolinfo['coinbase_tags'].items():
+                candidate_name = pattrs['name']
                 if ptag in btag:
-                    if height in self.blockmap:
-                        if pattrs['name'] != self.blockmap[height]:
-                            logger.warning(
-                                "PoolsEstimator: "
-                                "> 1 pools mapped to block %d" % height)
-                    else:
-                        self.blockmap[height] = pattrs['name']
+                    if name is None:
+                        name = candidate_name
+                    elif name != candidate_name:
+                        logger.warning(
+                            "PoolsEstimator: "
+                            "> 1 pools mapped to block %d" % height)
 
-            if height not in self.blockmap:
-                name = None
+            if name is None:
                 for addr in baddrs:
                     if addr is not None:
                         # Underscore indicates that the pool is not in the
@@ -178,11 +166,13 @@ class PoolsEstimator(SimPools):
                         # coinbase addr as the name.
                         name = addr[:12] + '_'
                         break
-                if name is None:
-                    logger.warning(
-                        "Unable to identify pool of block %d." % height)
-                    name = 'U' + str(int(random()*1000)) + '_'
-                self.blockmap[height] = name
+
+            if name is None:
+                logger.warning(
+                    "Unable to identify pool of block %d." % height)
+                name = 'U' + str(height) + '_'
+
+            self.blockmap[height] = (name, blocksize)
 
         for height in self.blockmap.keys():
             if height < blockrangetuple[0] or height >= blockrangetuple[1]:
@@ -195,14 +185,23 @@ class PoolsEstimator(SimPools):
 
     def estimate_pools(self, stopflag=None, dbfile=history_file):
         self.pools = {}
-        poollist = set(self.blockmap.values())
         blockrangetuple = (min(self.blockmap), max(self.blockmap)+1)
-        for poolname in poollist:
+
+        def keyfunc(blocktuple):
+            '''Select the pool name for itertools.groupby.'''
+            return blocktuple[1][0]
+
+        blockmap_items = sorted(self.blockmap.items(), key=keyfunc)
+        for poolname, pool_blockmap_items in groupby(blockmap_items, keyfunc):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            blockheights = [height for height, name in self.blockmap.items()
-                            if name == poolname]
-            pool = PoolEstimate(blockheights, blockrangetuple)
+            blockheights = []
+            blocksizes = []
+            for b in pool_blockmap_items:
+                blockheights.append(b[0])
+                blocksizes.append(b[1][1])
+            maxblocksize = max(blocksizes) if blocksizes else 0
+            pool = PoolEstimate(blockheights, blockrangetuple, maxblocksize)
             pool.estimate_params(stopflag=stopflag, dbfile=dbfile)
             logger.info("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool

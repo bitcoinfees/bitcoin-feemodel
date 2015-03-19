@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from random import random
 from functools import wraps
 from time import time
+from collections import OrderedDict
 try:
     import cPickle as pickle
 except ImportError:
@@ -110,7 +111,43 @@ class BlockingProxy(Proxy):
             self._RawProxy__conn.close()
 
 
-class BatchProxy(BlockingProxy):
+class CacheProxy(BlockingProxy):
+    '''Proxy which caches recent blocks and block hashes.'''
+
+    def __init__(self, maxblocks=10, maxhashes=1000):
+        super(CacheProxy, self).__init__()
+        self.blockmap = OrderedDict()
+        self.hashmap = OrderedDict()
+        self.maxblocks = maxblocks
+        self.maxhashes = maxhashes
+
+    def getcache(self, d, key, maxitems, func):
+        with self.rlock:
+            result = d.get(key)
+            if result is not None:
+                # Move the most recently accessed item to the front
+                del d[key]
+                d[key] = result
+            else:
+                result = func(key)
+                d[key] = result
+                if len(d) > maxitems:
+                    # Remove the least recently accessed item
+                    d.popitem(last=False)
+            return result
+
+    def getblock(self, blockhash):
+        block = self.getcache(self.blockmap, blockhash, self.maxblocks,
+                              super(CacheProxy, self).getblock)
+        return block
+
+    def getblockhash(self, blockheight):
+        blockhash = self.getcache(self.hashmap, blockheight, self.maxhashes,
+                                  super(CacheProxy, self).getblockhash)
+        return blockhash
+
+
+class BatchProxy(CacheProxy):
     '''Proxy with batch calls.'''
 
     def poll_mempool(self):
@@ -264,15 +301,9 @@ def load_obj(filename):
     return obj
 
 
-def get_coinbase_info(blockheight=None, block=None):
-    '''Gets coinbase tag and addresses of a specified block.
+def get_coinbase_info(blockheight):
+    '''Gets coinbase tag and addresses of a block with specified height.
 
-    You can either specify a block height, or pass in a
-    bitcoin.core.CBlock object.
-
-    Keyword args:
-        blockheight - height of block
-        block - a bitcoin.core.CBlock object
     Returns:
         addresses - A list of p2sh/p2pkh addresses corresponding to the
                     outputs. Returns None in place of an unrecognizable
@@ -282,8 +313,7 @@ def get_coinbase_info(blockheight=None, block=None):
         Exceptions originating from bitcoin.rpc.Proxy, if there is a problem
         with JSON-RPC.
     '''
-    if not block:
-        block = proxy.getblock(proxy.getblockhash(blockheight))
+    block = proxy.getblock(proxy.getblockhash(blockheight))
     coinbase_tx = block.vtx[0]
     assert coinbase_tx.is_coinbase()
     addresses = []
@@ -301,10 +331,9 @@ def get_coinbase_info(blockheight=None, block=None):
     return addresses, tag
 
 
-def get_pph(blockheight=None, block=None):
+def get_pph(blockheight):
     '''Get probability p of finding a block, per hash performed.'''
-    if not block:
-        block = proxy.getblock(proxy.getblockhash(blockheight))
+    block = proxy.getblock(proxy.getblockhash(blockheight))
     nbits = hex(block.nBits)[2:]
     assert len(nbits) == 8
     significand = int(nbits[2:], base=16)
@@ -322,6 +351,12 @@ def get_block_timestamp(blockheight):
     '''Get the timestamp of a block specified by height.'''
     block = proxy.getblock(proxy.getblockhash(blockheight))
     return block.nTime
+
+
+def get_block_size(blockheight):
+    '''Get the size of a block specified by height, in bytes.'''
+    block = proxy.getblock(proxy.getblockhash(blockheight))
+    return len(block.serialize())
 
 
 def get_feerate(rawentry):
