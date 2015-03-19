@@ -5,11 +5,11 @@ import threading
 from copy import deepcopy
 from time import sleep
 from feemodel.util import save_obj, load_obj
-from feemodel.simul import SimPools
 from feemodel.estimate import PoolsEstimator
 
 logging.basicConfig(level=logging.DEBUG)
 dbfile = 'data/test.db'
+pe_ref_file = "data/pe_ref.pickle"
 savefile = 'data/tmp.pickle'
 
 blockrange = (333931, 333954)
@@ -32,6 +32,8 @@ class PoolEstimateTest(unittest.TestCase):
         pools = self.pe.get()
         print(self.pe)
         print(pools)
+        pe_ref = load_obj(pe_ref_file)
+        self.assertEqual(pe_ref, self.pe)
 
     def test_saveload(self):
         save_obj(self.pe, savefile)
@@ -41,7 +43,6 @@ class PoolEstimateTest(unittest.TestCase):
     def test_redorange(self):
         pe_tmp = deepcopy(self.pe)
         pe_tmp.start(blockrange, dbfile=dbfile)
-        pe_tmp.timestamp = self.pe.timestamp
         self.assertEqual(pe_tmp, self.pe)
 
     def test_smallrange(self):

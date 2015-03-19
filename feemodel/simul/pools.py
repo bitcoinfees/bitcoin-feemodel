@@ -150,7 +150,7 @@ class SimPools(object):
             len(self.__pools), numeffpools)
 
     def __eq__(self, other):
-        return self.__dict__ == other.__dict__
+        return self.__poolsidx == other.__poolsidx
 
     # #def calc_capacities(self, tx_source):
     # #    poolfeerates = [pool.minfeerate for name, pool in self.__pools]
