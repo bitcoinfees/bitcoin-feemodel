@@ -56,7 +56,7 @@ class PoolEstimate(SimPool):
             # All the blocks are close to the max block size. We take the
             # smallest block.
             block = min(deferredblocks, key=lambda block: block.size)
-            txs.extend(tx_preprocess(block, remove_high_priority=True))
+            txs.extend(tx_preprocess(block))
 
         if txs:
             self.stats = calc_stranding_feerate(txs)
@@ -107,7 +107,7 @@ class PoolEstimate(SimPool):
     def _addblock(self, block, txs):
         if self.maxblocksize - block.size > block.avgtxsize:
             self.feelimitedblocks.append((block.height, block.size))
-            txs_new = tx_preprocess(block, remove_high_priority=True)
+            txs_new = tx_preprocess(block)
             txs.extend(txs_new)
         else:
             self.sizelimitedblocks.append((block.height, block.size))

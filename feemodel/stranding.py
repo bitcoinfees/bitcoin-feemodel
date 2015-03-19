@@ -4,6 +4,7 @@ This module contains functions for calculating the stranding fee rate.
 '''
 from __future__ import division
 
+import multiprocessing
 from random import random
 from feemodel.config import minrelaytxfee
 from feemodel.util import DataSample
@@ -33,12 +34,15 @@ def tx_preprocess(memblock):
     return txs
 
 
-def calc_stranding_feerate(txs, bootstrap=True):
+def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
     '''Compute stranding feerate from preprocessed txs.
 
     txs is [(feerate, inblock) for some list of txs].
     bootstrap specifies whether or not to compute error estimates using
     bootstrap resampling.
+
+    multiprocess is the number of processes to use. defaults to
+    multiprocessing.cpu_count().
     '''
     if not len(txs):
         raise ValueError('Empty txs list')
@@ -60,8 +64,14 @@ def calc_stranding_feerate(txs, bootstrap=True):
         alt_bias_ref = minrelaytxfee
 
     if bootstrap and sfr != float("inf"):
-        bs_estimates = [
-            _calc_stranding_single(bootstrap_sample(txs)) for i in range(1000)]
+        numprocesses = (
+            multiprocess if multiprocess is not None
+            else multiprocessing.cpu_count())
+        workers = multiprocessing.Pool(processes=numprocesses)
+        Nchunk = 1000 // numprocesses
+        result = workers.map_async(processwork, [(txs, Nchunk)]*numprocesses)
+        bs_estimates = sum(result.get(), [])
+
         if not any([b == float("inf") for b in bs_estimates]):
             datasample = DataSample(bs_estimates)
             datasample.calc_stats()
@@ -78,6 +88,12 @@ def calc_stranding_feerate(txs, bootstrap=True):
 
     return {"sfr": sfr, "bias": bias, "mean": mean, "std": std,
             "abovekn": (abovek, aboven), "belowkn": (belowk, belown)}
+
+
+def processwork(args):
+    '''Target function of the process pool.'''
+    txs, N = args
+    return [_calc_stranding_single(bootstrap_sample(txs)) for i in range(N)]
 
 
 def _calc_stranding_single(txs):
