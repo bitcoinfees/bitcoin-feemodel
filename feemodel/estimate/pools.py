@@ -3,6 +3,7 @@ from __future__ import division
 import logging
 from time import time
 from itertools import groupby
+from bisect import bisect_left
 from feemodel.config import knownpools, history_file
 from feemodel.util import get_coinbase_info, Table, get_block_timestamp
 from feemodel.util import get_pph, get_block_size
@@ -85,11 +86,8 @@ class PoolEstimate(SimPool):
         pph = [get_pph(height) for height in retargets]
         numblocks = [0]*len(pph)
 
-        idx = 0
-        for height in sorted(self.blockheights):
-            while height > retargets[idx]:
-                idx += 1
-            numblocks[idx] += 1
+        for height in self.blockheights:
+            numblocks[bisect_left(retargets, height)] += 1
 
         ref_p = pph[0]
         totalblocks = 0.
