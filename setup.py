@@ -1,4 +1,5 @@
 from setuptools import setup, find_packages
+from Cython.Build import cythonize
 
 name = 'bitcoin-feemodel'
 version = '0.0.4'
@@ -23,6 +24,7 @@ setup(
         'requests',
         'tabulate'
     ],
+    ext_modules=cythonize("feemodel/simul/processblock.pyx"),
     entry_points={
         'console_scripts': ['feemodel-cli = feemodel.cli:cli']
     },
