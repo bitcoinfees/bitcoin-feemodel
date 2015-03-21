@@ -21,8 +21,8 @@ class RectEstimatorTest(unittest.TestCase):
         self.tr = RectEstimator(maxsamplesize=10000)
         self.tr.start(blockrange, dbfile=dbfile)
         print(self.tr)
-        num_uniquetxs = len(set(self.tr.txsample))
-        self.assertEqual(num_uniquetxs, len(self.tr.txsample))
+        # num_uniquetxs = len(set(self.tr._txsample))
+        # self.assertEqual(num_uniquetxs, len(self.tr._txsample))
         _dum, byterates = self.tr.get_byterates(feerates)
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
@@ -34,8 +34,8 @@ class RectEstimatorTest(unittest.TestCase):
         self.tr = RectEstimator(maxsamplesize=10000)
         self.tr.start(blockrange, dbfile=dbfile)
         print(self.tr)
-        num_uniquetxs = len(set(self.tr.txsample))
-        self.assertEqual(num_uniquetxs, len(self.tr.txsample))
+        # num_uniquetxs = len(set(self.tr._txsample))
+        # self.assertEqual(num_uniquetxs, len(self.tr._txsample))
         feerates, byterates = self.tr.get_byterates()
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
@@ -47,9 +47,9 @@ class RectEstimatorTest(unittest.TestCase):
         self.tr = RectEstimator(maxsamplesize=maxsamplesize)
         self.tr.start(blockrange, dbfile=dbfile)
         print(self.tr)
-        num_uniquetxs = len(set(self.tr.txsample))
-        self.assertEqual(num_uniquetxs, len(self.tr.txsample))
-        self.assertEqual(num_uniquetxs, maxsamplesize)
+        # num_uniquetxs = len(set(self.tr._txsample))
+        # self.assertEqual(num_uniquetxs, len(self.tr._txsample))
+        # self.assertEqual(num_uniquetxs, maxsamplesize)
         _dum, byterates = self.tr.get_byterates(feerates)
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))
@@ -72,7 +72,7 @@ class ExpEstimatorTest(unittest.TestCase):
         self.tr = ExpEstimator(3600)
         self.tr.start(blockrange[1]-1, dbfile=dbfile)
         print(self.tr)
-        print("len(txsample) is %d" % len(self.tr.txsample))
+        print("len(_txsample) is %d" % len(self.tr._txsample))
         _dum, byterates = self.tr.get_byterates(feerates)
         for feerate, byterate in zip(feerates, byterates):
             print('%d\t%.2f' % (feerate, byterate))

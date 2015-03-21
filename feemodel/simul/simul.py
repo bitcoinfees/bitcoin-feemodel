@@ -3,8 +3,10 @@ from __future__ import division
 from collections import defaultdict
 from bisect import insort
 from time import time
+from copy import copy
 
 from feemodel.simul.stats import Capacity
+from feemodel.simul.txsources import SimEntry, SimTx
 
 rate_ratio_thresh = 0.9
 
@@ -32,11 +34,12 @@ class Simul(object):
         starttime = time()
         for simblock in self.pools.blockgen():
             elapsedrealtime = time() - starttime
-            newentries = self.tx_source.generate_txs(simblock.interval)
-            newentries = filter(
-                lambda entry: entry.tx.feerate >= self.stablefeerate,
-                newentries)
-            self.mempool._add_entries(newentries)
+            newtxs = self.tx_source.generate_txs(simblock.interval)
+            newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
+            # newentries = filter(
+            #     lambda entry: entry.tx.feerate >= self.stablefeerate,
+            #     newentries)
+            self.mempool._add_txs(newtxs)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
 
@@ -49,37 +52,59 @@ class SimMempool(object):
         self._havedeps = {}
         self._depmap = defaultdict(list)
 
-        txids = [entry._id for entry in init_entries]
+        txids = [entry.txid for entry in init_entries]
         # Assert that there are no duplicate txids.
         assert len(set(txids)) == len(txids)
         for entry in init_entries:
+            tx = (entry.tx.feerate, entry.tx.size, entry.txid)
             if not entry.depends:
-                self._nodeps.append(entry)
+                self._nodeps.append(tx)
             else:
-                self._havedeps[entry._id] = entry
+                self._havedeps[entry.txid] = (tx, entry.depends)
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
                     assert dep in txids
-                    self._depmap[dep].append(entry._id)
+                    self._depmap[dep].append(entry.txid)
 
         # For resetting the mempool to initial state.
         self._nodeps_bak = self._nodeps[:]
-        self._havedeps_bak = {
-            txid: entry for txid, entry in self._havedeps.items()}
+        self._havedeps_bak = copy(self._havedeps)
+        # self._havedeps_bak = {
+        #     txid: entry for txid, entry in self._havedeps.items()}
+
+        # for entry in init_entries:
+        #     if not entry.depends:
+        #         self._nodeps.append(entry)
+        #     else:
+        #         self._havedeps[entry._id] = entry
+        #         for dep in entry.depends:
+        #             # Assert that there are no hanging dependencies
+        #             assert dep in txids
+        #             self._depmap[dep].append(entry._id)
+
+        # # For resetting the mempool to initial state.
+        # self._nodeps_bak = self._nodeps[:]
+        # self._havedeps_bak = {
+        #     txid: entry for txid, entry in self._havedeps.items()}
 
     @property
     def entries(self):
-        return self._nodeps + self._havedeps.values()
+        entries = []
+        entries.extend(
+            [SimEntry(tx[2], SimTx(tx[0], tx[1])) for tx in self._nodeps])
+        entries.extend(
+            [SimEntry(txid, SimTx(entry[0][0], entry[0][1]), entry[1])
+             for txid, entry in self._havedeps.items()])
+        return entries
 
     def reset(self):
         self._nodeps = self._nodeps_bak[:]
-        self._havedeps = {
-            txid: entry for txid, entry in self._havedeps_bak.items()}
+        self._havedeps = copy(self._havedeps_bak)
         for entry in self._havedeps.values():
-            entry._reset_deps()
+            entry[1].reset()
 
-    def _add_entries(self, newentries):
-        self._nodeps.extend(newentries)
+    def _add_txs(self, newtxs):
+        self._nodeps.extend(newtxs)
 
     def _process_block(self, simblock):
         maxblocksize = simblock.poolinfo[1].maxblocksize
@@ -88,35 +113,45 @@ class SimMempool(object):
         sfr = float("inf")
         blocksize_ltd = 0
 
-        self._nodeps.sort(key=lambda entry: entry.tx.feerate)
+        self._nodeps.sort()
+        # self._nodeps.sort(key=lambda entry: entry.tx.feerate)
         rejected_entries = []
         blocktxs = []
         while self._nodeps:
-            newentry = self._nodeps.pop()
-            if newentry.tx.feerate >= minfeerate:
-                newblocksize = newentry.tx.size + blocksize
+            # newentry = self._nodeps.pop()
+            newtx = self._nodeps.pop()
+            # if newentry.tx.feerate >= minfeerate:
+            if newtx[0] >= minfeerate:
+                # newblocksize = newentry.tx.size + blocksize
+                newblocksize = newtx[1] + blocksize
                 if newblocksize <= maxblocksize:
                     if blocksize_ltd > 0:
                         blocksize_ltd -= 1
                     else:
-                        sfr = min(newentry.tx.feerate, sfr)
+                        # sfr = min(newentry.tx.feerate, sfr)
+                        if newtx[0] < sfr:
+                            sfr = newtx[0]
 
-                    blocktxs.append(newentry.tx)
+                    # blocktxs.append(newentry.tx)
+                    blocktxs.append(newtx)
                     blocksize = newblocksize
 
-                    dependants = self._depmap.get(newentry._id)
+                    # dependants = self._depmap.get(newentry._id)
+                    dependants = self._depmap.get(newtx[2])
                     if dependants:
                         for txid in dependants:
                             entry = self._havedeps[txid]
-                            entry.depends.remove(newentry._id)
-                            if not entry.depends:
-                                insort(self._nodeps, entry)
+                            # entry.depends.remove(newentry._id)
+                            entry[1].remove(newtx[2])
+                            # if not entry.depends:
+                            if not entry[1]:
+                                insort(self._nodeps, entry[0])
                                 del self._havedeps[txid]
                 else:
-                    rejected_entries.append(newentry)
+                    rejected_entries.append(newtx)
                     blocksize_ltd += 1
             else:
-                rejected_entries.append(newentry)
+                rejected_entries.append(newtx)
                 break
         self._nodeps.extend(rejected_entries)
 

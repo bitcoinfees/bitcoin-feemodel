@@ -5,6 +5,7 @@ from math import log, exp
 from copy import deepcopy
 from bisect import bisect_left
 from feemodel.util import Table
+from feemodel.simul import SimTx
 
 default_blockrate = 1./600
 hard_maxblocksize = 1000000
@@ -20,6 +21,14 @@ class SimBlock(object):
         self.sfr = float("inf")
         self.is_sizeltd = None
         self.txs = None
+
+    @property
+    def txs(self):
+        return [SimTx(tx[0], tx[1]) for tx in self._txs]
+
+    @txs.setter
+    def txs(self, val):
+        self._txs = val
 
     def __repr__(self):
         return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (

@@ -14,9 +14,9 @@ init_pools = {
 }
 
 simtxsample = [
-    SimTx(640, 11000),
-    SimTx(250, 40000),
-    SimTx(500, 2000)]
+    SimTx(11000, 640),
+    SimTx(40000, 250),
+    SimTx(2000, 500)]
 txrate = 1.1
 avgtxbyterate = sum([
     tx.size for tx in simtxsample])/float(len(simtxsample))*txrate
@@ -71,15 +71,21 @@ class TxSourceTests(unittest.TestCase):
                             for idx in range(len(byterates_binned))]
         for actual, target in zip(self.tx_byterates, byterates_target):
             self.assertAlmostEqual(actual, target)
+        txs = self.tx_source.get_txsample()
+        source2 = SimTxSource(txs, self.tx_source.txrate)
+        _dum, byterates2 = source2.get_byterates(self.feerates)
+        self.assertEqual(byterates2, self.tx_byterates)
 
     def test_generate(self):
         t = 10000.
-        entry_gen = self.tx_source.generate_txs(t)
-        tx_gen = [entry.tx for entry in entry_gen]
+        # entry_gen = self.tx_source.generate_txs(t)
+        # tx_gen = [entry.tx for entry in entry_gen]
+        tx_gen = self.tx_source.generate_txs(t)
         self.txrate = len(tx_gen) / t
         diff = abs(self.txrate - txrate)
         self.assertLess(diff, 0.05)
-        source = SimTxSource(tx_gen, self.txrate)
+        txsample = [SimTx(tx[0], tx[1]) for tx in tx_gen]
+        source = SimTxSource(txsample, self.txrate)
         _dum, tx_byterates = source.get_byterates(self.feerates)
         for idx in range(len(self.tx_byterates)):
             diff = abs(self.tx_byterates[idx] - tx_byterates[idx])
