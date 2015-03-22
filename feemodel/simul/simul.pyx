@@ -1,17 +1,24 @@
+# cython: profile=True
+
 from __future__ import division
 
 from collections import defaultdict
 from time import time
 from copy import copy
 from bisect import insort
+import cython
 
 from feemodel.simul.stats import Capacity
-from feemodel.simul.txsources import SimEntry, SimTx
+from feemodel.simul.txsources import SimTx
 
 rate_ratio_thresh = 0.9
 
 
-class Simul(object):
+cdef class Simul(object):
+
+    cdef readonly object pools, tx_source, cap, stablefeerate
+    cdef public SimMempool mempool
+
     def __init__(self, pools, tx_source):
         self.pools = pools
         self.tx_source = tx_source
@@ -46,11 +53,18 @@ class Simul(object):
             yield simblock, elapsedrealtime
 
 
-class SimMempool(object):
+# @cython.nonecheck(False)
+cdef class SimMempool(object):
+
+    cdef:
+        list _nodeps, _nodeps_bak
+        dict _havedeps, _havedeps_bak, _depmap
+
     def __init__(self, init_entries):
         self._nodeps = []
         self._havedeps = {}
-        self._depmap = defaultdict(list)
+        # self._depmap = defaultdict(list)
+        _depmap = defaultdict(list)
 
         txids = [entry.txid for entry in init_entries]
         # Assert that there are no duplicate txids.
@@ -64,11 +78,12 @@ class SimMempool(object):
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
                     assert dep in txids
-                    self._depmap[dep].append(entry.txid)
+                    _depmap[dep].append(entry.txid)
 
         # For resetting the mempool to initial state.
         self._nodeps_bak = self._nodeps[:]
         self._havedeps_bak = copy(self._havedeps)
+        self._depmap = dict(_depmap)
         # self._havedeps_bak = {
         #     txid: entry for txid, entry in self._havedeps.items()}
 
@@ -98,19 +113,32 @@ class SimMempool(object):
         return entries
 
     def reset(self):
+        cdef SimDepends depends
         self._nodeps = self._nodeps_bak[:]
         self._havedeps = copy(self._havedeps_bak)
-        for entry in self._havedeps.values():
-            entry[1].reset()
+        for _dum, depends in self._havedeps.values():
+            depends.reset()
+            # entry[1].reset()
 
-    def _add_txs(self, newtxs):
+    cdef _add_txs(self, list newtxs):
         self._nodeps.extend(newtxs)
 
-    def _process_block(self, simblock):
+    cdef _process_block(self, simblock):
+        DEF MAXFEE = 2100000000
+        cdef int maxblocksize, minfeerate, blocksize, sfr, blocksize_ltd
+        cdef int newtxfeerate, newtxsize
+        cdef tuple newtx, deptx
+        cdef list dependants
+        cdef SimDepends depends
+        local_insort = insort
+
+        poolmfr = simblock.poolinfo[1].minfeerate
+        minfeerate = poolmfr if poolmfr != float("inf") else MAXFEE
         maxblocksize = simblock.poolinfo[1].maxblocksize
-        minfeerate = simblock.poolinfo[1].minfeerate
+        sfr = MAXFEE
+        # minfeerate = simblock.poolinfo[1].minfeerate
+        # sfr = float("inf")
         blocksize = 0
-        sfr = float("inf")
         blocksize_ltd = 0
 
         self._nodeps.sort()
@@ -120,32 +148,36 @@ class SimMempool(object):
         while self._nodeps:
             # newentry = _nodeps.pop()
             newtx = self._nodeps.pop()
+            newtxfeerate, newtxsize, newtxid = newtx
             # if newentry.tx.feerate >= minfeerate:
-            if newtx[0] >= minfeerate:
+            # if newtx[0] >= minfeerate:
+            if newtxfeerate >= minfeerate:
                 # newblocksize = newentry.tx.size + blocksize
-                newblocksize = newtx[1] + blocksize
+                newblocksize = newtxsize + blocksize
                 if newblocksize <= maxblocksize:
                     if blocksize_ltd > 0:
                         blocksize_ltd -= 1
                     else:
                         # sfr = min(newentry.tx.feerate, sfr)
-                        if newtx[0] < sfr:
-                            sfr = newtx[0]
+                        if newtxfeerate < sfr:
+                            sfr = newtxfeerate
 
                     # blocktxs.append(newentry.tx)
                     blocktxs.append(newtx)
                     blocksize = newblocksize
 
                     # dependants = _depmap.get(newentry._id)
-                    dependants = self._depmap.get(newtx[2])
+                    dependants = self._depmap.get(newtxid)
                     if dependants:
                         for txid in dependants:
-                            entry = self._havedeps[txid]
+                            deptx, depends = self._havedeps[txid]
                             # entry.depends.remove(newentry._id)
-                            entry[1].remove(newtx[2])
+                            # entry[1].remove(newtx[2])
+                            depends.remove(newtxid)
                             # if not entry.depends:
-                            if not entry[1]:
-                                insort(self._nodeps, entry[0])
+                            # if not entry[1]:
+                            if not depends:
+                                local_insort(self._nodeps, deptx)
                                 del self._havedeps[txid]
                 else:
                     rejected_entries.append(newtx)
@@ -159,3 +191,49 @@ class SimMempool(object):
         simblock.is_sizeltd = bool(blocksize_ltd)
         simblock.size = blocksize
         simblock.txs = blocktxs
+
+
+class SimEntry(object):
+    def __init__(self, txid, simtx, depends=None):
+        self.txid = txid
+        self.tx = simtx
+        if isinstance(depends, SimDepends):
+            self.depends = depends
+        else:
+            self.depends = SimDepends(depends)
+
+    @classmethod
+    def from_mementry(cls, txid, entry):
+        return cls(txid, SimTx(entry.feerate, entry.size),
+                   depends=entry.depends)
+
+    def __repr__(self):
+        return "SimEntry({}, {}, {})".format(
+            self.txid, repr(self.tx), repr(self.depends))
+
+
+cdef class SimDepends(object):
+
+    cdef set _depends, _depends_bak
+
+    def __init__(self, depends):
+        self._depends = set(depends) if depends else set()
+        self._depends_bak = set(depends)
+
+    cdef remove(self, dependency):
+        self._depends.remove(dependency)
+        # return 1 if bool(self._depends) else 0
+        return bool(self._depends)
+
+    cdef reset(self):
+        # self._depends = self._depends_bak[:]
+        self._depends = set(self._depends_bak)
+
+    def repr(self):
+        return "SimDepends({})".format(self._depends)
+
+    def __iter__(self):
+        return iter(self._depends)
+
+    def __nonzero__(self):
+        return bool(self._depends)

@@ -20,50 +20,6 @@ class SimTx(object):
         return "SimTx{feerate: %d, size: %d}" % (self.feerate, self.size)
 
 
-class SimEntry(object):
-    def __init__(self, txid, simtx, depends=None):
-        self.txid = txid
-        self.tx = simtx
-        if isinstance(depends, SimDepends):
-            self.depends = depends
-        else:
-            self.depends = SimDepends(depends)
-
-    @classmethod
-    def from_mementry(cls, txid, entry):
-        return cls(txid, SimTx(entry.feerate, entry.size),
-                   depends=entry.depends)
-
-    def __repr__(self):
-        return "SimEntry({}, {}, {})".format(
-            self.txid, repr(self.tx), repr(self.depends))
-
-
-cdef class SimDepends(object):
-
-    cdef list _depends, _depends_bak
-
-    def __init__(self, depends):
-        self._depends = depends if depends else []
-        self._depends_bak = depends[:]
-
-    cpdef remove(self, dependency):
-        self._depends.remove(dependency)
-        return bool(self._depends)
-
-    cpdef reset(self):
-        self._depends = self._depends_bak[:]
-
-    def repr(self):
-        return "SimDepends({})".format(self._depends)
-
-    def __iter__(self):
-        return iter(self._depends)
-
-    def __nonzero__(self):
-        return bool(self._depends)
-
-
 class SimTxSource(object):
 
     def __init__(self, txsample, txrate):
