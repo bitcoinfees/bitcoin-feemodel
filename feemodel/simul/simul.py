@@ -3,10 +3,10 @@ from __future__ import division
 from collections import defaultdict
 from time import time
 from copy import copy
+from bisect import insort
 
 from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimEntry, SimTx
-from feemodel.simul.processblock import _process_block
 
 rate_ratio_thresh = 0.9
 
@@ -107,4 +107,55 @@ class SimMempool(object):
         self._nodeps.extend(newtxs)
 
     def _process_block(self, simblock):
-        _process_block(self._nodeps, self._havedeps, self._depmap, simblock)
+        maxblocksize = simblock.poolinfo[1].maxblocksize
+        minfeerate = simblock.poolinfo[1].minfeerate
+        blocksize = 0
+        sfr = float("inf")
+        blocksize_ltd = 0
+
+        self._nodeps.sort()
+        # _nodeps.sort(key=lambda entry: entry.tx.feerate)
+        rejected_entries = []
+        blocktxs = []
+        while self._nodeps:
+            # newentry = _nodeps.pop()
+            newtx = self._nodeps.pop()
+            # if newentry.tx.feerate >= minfeerate:
+            if newtx[0] >= minfeerate:
+                # newblocksize = newentry.tx.size + blocksize
+                newblocksize = newtx[1] + blocksize
+                if newblocksize <= maxblocksize:
+                    if blocksize_ltd > 0:
+                        blocksize_ltd -= 1
+                    else:
+                        # sfr = min(newentry.tx.feerate, sfr)
+                        if newtx[0] < sfr:
+                            sfr = newtx[0]
+
+                    # blocktxs.append(newentry.tx)
+                    blocktxs.append(newtx)
+                    blocksize = newblocksize
+
+                    # dependants = _depmap.get(newentry._id)
+                    dependants = self._depmap.get(newtx[2])
+                    if dependants:
+                        for txid in dependants:
+                            entry = self._havedeps[txid]
+                            # entry.depends.remove(newentry._id)
+                            entry[1].remove(newtx[2])
+                            # if not entry.depends:
+                            if not entry[1]:
+                                insort(self._nodeps, entry[0])
+                                del self._havedeps[txid]
+                else:
+                    rejected_entries.append(newtx)
+                    blocksize_ltd += 1
+            else:
+                rejected_entries.append(newtx)
+                break
+        self._nodeps.extend(rejected_entries)
+
+        simblock.sfr = sfr if blocksize_ltd else minfeerate
+        simblock.is_sizeltd = bool(blocksize_ltd)
+        simblock.size = blocksize
+        simblock.txs = blocktxs

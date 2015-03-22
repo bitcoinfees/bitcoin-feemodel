@@ -1,9 +1,12 @@
+# cython: profile=True
+
 from __future__ import division
 
 from math import sqrt, cos, exp, log, pi
 from random import random
 from bisect import bisect, bisect_left
 from itertools import groupby
+import cython
 
 from feemodel.util import DataSample
 
@@ -36,16 +39,19 @@ class SimEntry(object):
             self.txid, repr(self.tx), repr(self.depends))
 
 
-class SimDepends(object):
+cdef class SimDepends(object):
+
+    cdef list _depends, _depends_bak
+
     def __init__(self, depends):
         self._depends = depends if depends else []
         self._depends_bak = depends[:]
 
-    def remove(self, dependency):
+    cpdef remove(self, dependency):
         self._depends.remove(dependency)
         return bool(self._depends)
 
-    def reset(self):
+    cpdef reset(self):
         self._depends = self._depends_bak[:]
 
     def repr(self):
@@ -59,18 +65,27 @@ class SimDepends(object):
 
 
 class SimTxSource(object):
+
     def __init__(self, txsample, txrate):
         self._txsample = [(simtx.feerate, simtx.size, '')
                           for simtx in txsample]
         self.txrate = txrate
 
+    # @cython.nonecheck(False)
     def generate_txs(self, time_interval):
+        cdef:
+            int i
+            int numtxs
+
         if not self._txsample:
             raise ValueError("No txs.")
-        k = poisson_sample(self.txrate*time_interval)
-        n = len(self._txsample)
+        numtxs = poisson_sample(self.txrate*time_interval)
+        samplesize = len(self._txsample)
+        txsample = self._txsample
+        localrandom = random
 
-        return [self._txsample[int(random()*n)] for i in range(k)]
+        return [txsample[int(localrandom()*samplesize)] for i in range(numtxs)]
+        # return [self._txsample[int(random()*samplesize)] for i in range(numtxs)]
 
     def get_txsample(self):
         return [SimTx(tx[0], tx[1]) for tx in self._txsample]
@@ -174,24 +189,34 @@ class SimTxSource(object):
             len(self._txsample), self.txrate)
 
 
-def poisson_sample(l):
+cdef poisson_sample(l):
     # http://en.wikipedia.org/wiki/Poisson_distribution
     # #Generating_Poisson-distributed_random_variables
+    cdef:
+        float p
+        int k
+        float L
+
     if l > 30:
-        return int(round(poisson_approx(l)))
+        return poisson_approx(l)
     L = exp(-l)
     k = 0
     p = 1
     while p > L:
         k += 1
         p *= random()
-    return k - 1
+    return int(k - 1)
 
 
-def poisson_approx(l):
+cdef poisson_approx(l):
     # box-muller
+    # cdef:
+    #     float u = random()
+    #     float v = random()
+    #     float z
     u = random()
     v = random()
+    z = pow(-2*log(u), 0.5)*cos(2*pi*v)
 
-    z = sqrt(-2*log(u))*cos(2*pi*v)
-    return z*sqrt(l) + l
+    # return int(round(z*sqrt(l) + l))
+    return int(round(z*pow(l, 0.5) + l))

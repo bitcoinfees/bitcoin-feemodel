@@ -24,7 +24,9 @@ setup(
         'requests',
         'tabulate'
     ],
-    ext_modules=cythonize("feemodel/simul/processblock.pyx"),
+    ext_modules=cythonize([
+        "feemodel/simul/txsources.pyx",
+    ]),
     entry_points={
         'console_scripts': ['feemodel-cli = feemodel.cli:cli']
     },
