@@ -1,12 +1,9 @@
-# cython: profile=True
-
 from __future__ import division
 
 from collections import defaultdict
 from time import time
 from copy import copy
 from bisect import insort
-import cython
 
 from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimTx
@@ -23,10 +20,6 @@ cdef class Simul(object):
         self.pools = pools
         self.tx_source = tx_source
         # TODO: check edge conditions for feerates
-        # feerates, cap_lower, cap_upper = self.pools.get_capacity()
-        # tx_byterates = tx_source.get_byterates(feerates)
-        # self.cap = Capacity(feerates, tx_byterates, cap_lower, cap_upper,
-        #                     tx_source.txrate)
         self.cap = Capacity(pools, tx_source)
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
@@ -43,9 +36,6 @@ cdef class Simul(object):
             elapsedrealtime = time() - starttime
             newtxs = self.tx_source.generate_txs(simblock.interval)
             newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
-            # newentries = filter(
-            #     lambda entry: entry.tx.feerate >= self.stablefeerate,
-            #     newentries)
             self.mempool._add_txs(newtxs)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
@@ -53,7 +43,6 @@ cdef class Simul(object):
             yield simblock, elapsedrealtime
 
 
-# @cython.nonecheck(False)
 cdef class SimMempool(object):
 
     cdef:
@@ -63,7 +52,6 @@ cdef class SimMempool(object):
     def __init__(self, init_entries):
         self._nodeps = []
         self._havedeps = {}
-        # self._depmap = defaultdict(list)
         _depmap = defaultdict(list)
 
         txids = [entry.txid for entry in init_entries]
@@ -84,23 +72,6 @@ cdef class SimMempool(object):
         self._nodeps_bak = self._nodeps[:]
         self._havedeps_bak = copy(self._havedeps)
         self._depmap = dict(_depmap)
-        # self._havedeps_bak = {
-        #     txid: entry for txid, entry in self._havedeps.items()}
-
-        # for entry in init_entries:
-        #     if not entry.depends:
-        #         self._nodeps.append(entry)
-        #     else:
-        #         self._havedeps[entry._id] = entry
-        #         for dep in entry.depends:
-        #             # Assert that there are no hanging dependencies
-        #             assert dep in txids
-        #             self._depmap[dep].append(entry._id)
-
-        # # For resetting the mempool to initial state.
-        # self._nodeps_bak = self._nodeps[:]
-        # self._havedeps_bak = {
-        #     txid: entry for txid, entry in self._havedeps.items()}
 
     @property
     def entries(self):
@@ -116,66 +87,54 @@ cdef class SimMempool(object):
         cdef SimDepends depends
         self._nodeps = self._nodeps_bak[:]
         self._havedeps = copy(self._havedeps_bak)
-        for _dum, depends in self._havedeps.values():
+        for _dum, depends in self._havedeps.itervalues():
             depends.reset()
-            # entry[1].reset()
 
     cdef _add_txs(self, list newtxs):
         self._nodeps.extend(newtxs)
 
     cdef _process_block(self, simblock):
         DEF MAXFEE = 2100000000
-        cdef int maxblocksize, minfeerate, blocksize, sfr, blocksize_ltd
-        cdef int newtxfeerate, newtxsize
-        cdef tuple newtx, deptx
-        cdef list dependants
-        cdef SimDepends depends
+        cdef:
+            int maxblocksize, minfeerate, blocksize, sfr, blocksize_ltd
+            int newtxfeerate, newtxsize
+            tuple newtx, deptx
+            list dependants
+            SimDepends depends
         local_insort = insort
 
-        poolmfr = simblock.poolinfo[1].minfeerate
-        minfeerate = poolmfr if poolmfr != float("inf") else MAXFEE
+        _poolmfr = simblock.poolinfo[1].minfeerate
+        minfeerate = _poolmfr if _poolmfr != float("inf") else MAXFEE
         maxblocksize = simblock.poolinfo[1].maxblocksize
         sfr = MAXFEE
-        # minfeerate = simblock.poolinfo[1].minfeerate
-        # sfr = float("inf")
         blocksize = 0
         blocksize_ltd = 0
 
         self._nodeps.sort()
-        # _nodeps.sort(key=lambda entry: entry.tx.feerate)
         rejected_entries = []
         blocktxs = []
         while self._nodeps:
-            # newentry = _nodeps.pop()
             newtx = self._nodeps.pop()
             newtxfeerate, newtxsize, newtxid = newtx
-            # if newentry.tx.feerate >= minfeerate:
-            # if newtx[0] >= minfeerate:
             if newtxfeerate >= minfeerate:
-                # newblocksize = newentry.tx.size + blocksize
                 newblocksize = newtxsize + blocksize
                 if newblocksize <= maxblocksize:
                     if blocksize_ltd > 0:
                         blocksize_ltd -= 1
                     else:
-                        # sfr = min(newentry.tx.feerate, sfr)
+                        # FIXME: SFR setting must be changed to match
+                        #        stranding.py's definition
                         if newtxfeerate < sfr:
                             sfr = newtxfeerate
 
-                    # blocktxs.append(newentry.tx)
                     blocktxs.append(newtx)
                     blocksize = newblocksize
 
-                    # dependants = _depmap.get(newentry._id)
                     dependants = self._depmap.get(newtxid)
-                    if dependants:
+                    if dependants is not None:
                         for txid in dependants:
                             deptx, depends = self._havedeps[txid]
-                            # entry.depends.remove(newentry._id)
-                            # entry[1].remove(newtx[2])
                             depends.remove(newtxid)
-                            # if not entry.depends:
-                            # if not entry[1]:
                             if not depends:
                                 local_insort(self._nodeps, deptx)
                                 del self._havedeps[txid]
@@ -222,11 +181,9 @@ cdef class SimDepends(object):
 
     cdef remove(self, dependency):
         self._depends.remove(dependency)
-        # return 1 if bool(self._depends) else 0
         return bool(self._depends)
 
     cdef reset(self):
-        # self._depends = self._depends_bak[:]
         self._depends = set(self._depends_bak)
 
     def repr(self):

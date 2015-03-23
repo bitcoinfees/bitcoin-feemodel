@@ -1,12 +1,9 @@
-# cython: profile=True
-
 from __future__ import division
 
 from math import sqrt, cos, exp, log, pi
 from random import random
 from bisect import bisect, bisect_left
 from itertools import groupby
-import cython
 
 from feemodel.util import DataSample
 
@@ -17,7 +14,7 @@ class SimTx(object):
         self.size = size
 
     def __repr__(self):
-        return "SimTx{feerate: %d, size: %d}" % (self.feerate, self.size)
+        return "SimTx(feerate: %d, size: %d)" % (self.feerate, self.size)
 
 
 class SimTxSource(object):
@@ -27,7 +24,6 @@ class SimTxSource(object):
                           for simtx in txsample]
         self.txrate = txrate
 
-    # @cython.nonecheck(False)
     def generate_txs(self, time_interval):
         cdef:
             int i
@@ -41,7 +37,6 @@ class SimTxSource(object):
         localrandom = random
 
         return [txsample[int(localrandom()*samplesize)] for i in range(numtxs)]
-        # return [self._txsample[int(random()*samplesize)] for i in range(numtxs)]
 
     def get_txsample(self):
         return [SimTx(tx[0], tx[1]) for tx in self._txsample]
@@ -52,16 +47,12 @@ class SimTxSource(object):
             raise ValueError("No txs.")
         n = len(self._txsample)
         if feerates:
-            # feerates assumed sorted.
+            feerates.sort()
             binnedrates = [0.]*len(feerates)
-            for tx in self._txsample:
-                fidx = bisect(feerates, tx[0])
+            for txfeerate, txsize, _dum in self._txsample:
+                fidx = bisect(feerates, txfeerate)
                 if fidx:
-                    binnedrates[fidx-1] += tx[1]
-            # for entry in self._txsample:
-            #     fidx = bisect(feerates, entry.tx.feerate)
-            #     if fidx:
-            #         binnedrates[fidx-1] += entry.tx.size
+                    binnedrates[fidx-1] += txsize
             byterates = [sum(binnedrates[idx:])*self.txrate/n
                          for idx in range(len(binnedrates))]
             return feerates, byterates
@@ -141,7 +132,7 @@ class SimTxSource(object):
         return mean_byterate, std
 
     def __repr__(self):
-        return "SimTxSource{{samplesize: {}, txrate: {}}}".format(
+        return "SimTxSource({samplesize: {}, txrate: {}})".format(
             len(self._txsample), self.txrate)
 
 
