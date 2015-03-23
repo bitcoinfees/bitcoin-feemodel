@@ -1,3 +1,4 @@
+# cython: profile=True
 '''Stranding fee rate calculation
 
 This module contains functions for calculating the stranding fee rate.
@@ -103,7 +104,7 @@ def processwork(args):
     return [_calc_stranding_single(bootstrap_sample(txs)) for i in range(N)]
 
 
-def _calc_stranding_single(txs):
+cdef _calc_stranding_single(list txs):
     '''Compute stranding feerate for a single sample.
 
     This is called by calc_stranding_feerate once for each iteration
@@ -111,27 +112,46 @@ def _calc_stranding_single(txs):
 
     txs is assumed reverse sorted by feerate.
     '''
+    cdef:
+        int idx
+        int cumk = 0
+        int maxk = 0
+        int maxidx = len(txs) - 1
     sfr = float("inf")
-    cumk = 0
-    maxk = 0
-    maxidx = len(txs) - 1
+    # cumk = 0
+    # maxk = 0
+    # maxidx = len(txs) - 1
 
-    for idx, tx in enumerate(txs):
-        cumk += 1 if tx[1] else -1
+    for idx in range(maxidx+1):
+        tx = txs[idx]
+        if tx[1] is True:
+            cumk += 1
+        else:
+            cumk += -1
         if idx < maxidx and txs[idx+1][0] == tx[0]:
             continue
         if cumk > maxk:
             maxk = cumk
             sfr = tx[0]
 
+    # for idx, tx in enumerate(txs):
+    #     cumk += 1 if tx[1] else -1
+    #     if idx < maxidx and txs[idx+1][0] == tx[0]:
+    #         continue
+    #     if cumk > maxk:
+    #         maxk = cumk
+    #         sfr = tx[0]
+
     return sfr
 
 
-def bootstrap_sample(txs):
+cdef list bootstrap_sample(list txs):
     '''Bootstrap resampling of txs.'''
+    cdef int idx, n
+    local_random = random
     n = len(txs)
-    sample = [txs[int(random()*n)] for idx in range(n)]
-    sample.sort(key=lambda x: x[0], reverse=True)
+    sample = [txs[int(local_random()*n)] for idx in range(n)]
+    sample.sort(reverse=True)
     return sample
 
 

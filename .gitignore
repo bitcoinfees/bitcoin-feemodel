@@ -13,3 +13,4 @@ venv
 build
 *.c
 *.html
+*.so

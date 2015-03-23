@@ -26,7 +26,8 @@ setup(
     ],
     ext_modules=cythonize([
         "feemodel/simul/txsources.pyx",
-        "feemodel/simul/simul.pyx"
+        "feemodel/simul/simul.pyx",
+        "feemodel/stranding.pyx"
     ]),
     entry_points={
         'console_scripts': ['feemodel-cli = feemodel.cli:cli']
