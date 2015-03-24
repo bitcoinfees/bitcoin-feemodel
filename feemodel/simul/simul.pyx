@@ -1,7 +1,6 @@
 from __future__ import division
 
 from collections import defaultdict
-from time import time
 from copy import copy
 from bisect import insort
 
@@ -31,16 +30,14 @@ cdef class Simul(object):
         if init_entries is None:
             init_entries = []
         self.mempool = SimMempool(init_entries)
-        starttime = time()
         for simblock in self.pools.blockgen():
-            elapsedrealtime = time() - starttime
             newtxs = self.tx_source.generate_txs(simblock.interval)
             newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
             self.mempool._add_txs(newtxs)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
 
-            yield simblock, elapsedrealtime
+            yield simblock
 
 
 cdef class SimMempool(object):

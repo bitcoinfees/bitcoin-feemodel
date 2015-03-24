@@ -1,17 +1,66 @@
+import multiprocessing
+from Queue import Empty
+from time import time
 from feemodel.util import DataSample
 
 
-def transientsim(sim, init_entries=None,
-                 miniters=1000, maxiters=10000, maxtime=60):
-    feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
+def transientsim(sim, init_entries=None, multiprocess=None,
+                 miniters=1000, maxiters=10000, maxtime=60, stopflag=None):
+    starttime = time()
     if init_entries is None:
         init_entries = []
+    feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
+    numprocesses = (
+        multiprocess if multiprocess is not None
+        else multiprocessing.cpu_count())
+    # workers = multiprocessing.Pool(processes=numprocesses)
+    resultqueue = multiprocessing.Queue()
+    maxiterschunk = maxiters // numprocesses
+    miniterschunk = miniters // numprocesses
+    processes = [
+        multiprocessing.Process(
+            target=_simtarget,
+            args=(resultqueue, sim, feepoints, init_entries,
+                  miniterschunk, maxiterschunk, maxtime)
+        )
+        for i in range(numprocesses)]
+    for process in processes:
+        process.start()
 
+    waittimes = {feerate: DataSample() for feerate in feepoints}
+    numiters = 0
+    while any([process.is_alive() for process in processes]):
+        try:
+            result = resultqueue.get(timeout=3)
+        except Empty:
+            pass
+        else:
+            waittimeschunk, numiterschunk = result
+            for feerate, waitsample in waittimes.items():
+                waitsample.add_datapoints(waittimeschunk[feerate].datapoints)
+            numiters += numiterschunk
+        if stopflag is not None and stopflag.is_set():
+            for process in processes:
+                process.terminate()
+            try:
+                while True:
+                    resultqueue.get(False)
+            except Empty:
+                pass
+            raise StopIteration
+
+    return waittimes, time()-starttime, numiters
+
+
+def _simtarget(resultqueue, sim, feepoints, init_entries,
+               miniters, maxiters, maxtime):
+    '''Target sim function for multiprocessing.'''
     numiters = 0
     simtime = 0.
     stranded = set(feepoints)
     waittimes = {feerate: DataSample() for feerate in stranded}
-    for block, realtime in sim.run(init_entries=init_entries):
+    starttime = time()
+    for block in sim.run(init_entries=init_entries):
         simtime += block.interval
         stranding_feerate = block.sfr
 
@@ -22,6 +71,7 @@ def transientsim(sim, init_entries=None,
 
         if not stranded:
             numiters += 1
+            realtime = time() - starttime
             if (numiters >= maxiters or
                     numiters >= miniters and realtime > maxtime):
                 break
@@ -30,7 +80,7 @@ def transientsim(sim, init_entries=None,
                 stranded = set(feepoints)
                 sim.mempool.reset()
 
-    return waittimes, realtime, numiters
+    resultqueue.put((waittimes, numiters))
 
 
 def _get_feepoints(cap, stablefeerate):

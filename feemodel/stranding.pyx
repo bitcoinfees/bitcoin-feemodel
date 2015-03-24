@@ -1,4 +1,3 @@
-# cython: profile=True
 '''Stranding fee rate calculation
 
 This module contains functions for calculating the stranding fee rate.

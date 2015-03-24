@@ -13,8 +13,9 @@ init_entries = [SimEntry.from_mementry(txid, entry)
                 for txid, entry in b.entries.items()]
 
 sim = Simul(refpools, reftxsource)
+# waittimes, realtime, numiters = transientsim(sim, init_entries=init_entries)
 cProfile.run("waittimes, realtime, numiters = transientsim("
-             "sim, init_entries=init_entries)")
+             "sim, init_entries=init_entries, multiprocess=None)")
 print("Completed in {}s with {} iters.".format(realtime, numiters))
 print("Feerate\tMean wait")
 for feerate, waitdata in sorted(waittimes.items()):
