@@ -54,7 +54,6 @@ class ExpEstimator(SimTxSource):
                 prevtime = prevblock.time
                 txbatch = []
                 for entry in newentries:
-                    # tx = SimEntry.from_mementry('', entry)
                     tx = (entry.feerate, entry.size, '')
                     txbatch.append(tx)
                     interval = entry.time - prevtime
@@ -67,15 +66,11 @@ class ExpEstimator(SimTxSource):
                 bestheight = block.height
                 bestblocktxids = blocktxids
                 besttime = block.time
-                # new_txs = [SimEntry.from_mementry('', block.entries[txid])
-                #            for txid in newtxids]
-                # interval = block.time - prevblock.time
-                # self.update_txs(new_txs, interval)
             prevblock = block
 
         if self.totaltime == 0:
             raise ValueError("Insufficient number of blocks.")
-        self.calc_txrate()
+        self._calc_txrate()
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
         return bestheight, besttime, bestblocktxids
@@ -93,9 +88,9 @@ class ExpEstimator(SimTxSource):
             len(self._txsample)*self._decayfactor(interval))
         self._txsample = sample(self._txsample, num_old_to_keep) + new_txs
         if not is_init:
-            self.calc_txrate()
+            self._calc_txrate()
 
-    def calc_txrate(self):
+    def _calc_txrate(self):
         '''Calculate the tx rate (arrivals per second).'''
         if self.totaltime <= 0:
             raise ValueError("Insufficient number of blocks.")

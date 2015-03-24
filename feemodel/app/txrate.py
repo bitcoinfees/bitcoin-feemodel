@@ -19,6 +19,8 @@ class TxRateOnlineEstimator(object):
     def __init__(self, halflife=default_halflife, dbfile=history_file):
         self.dbfile = dbfile
         self.tr = ExpEstimator(halflife)
+        self.prevtxids = None
+        self.prevtime = None
 
     def update(self, curr_entries, currheight):
         currtime = time()
@@ -31,9 +33,6 @@ class TxRateOnlineEstimator(object):
                 logger.info("bestheight matches currheight.")
                 self.prevtxids = bestblocktxids
                 self.prevtime = besttime
-            else:
-                self.prevtxids = None
-                self.prevtime = None
         curr_txids = set(curr_entries)
         if self.prevtime:
             new_txids = curr_txids - self.prevtxids

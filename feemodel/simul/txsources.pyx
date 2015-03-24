@@ -132,7 +132,7 @@ class SimTxSource(object):
         return mean_byterate, std
 
     def __repr__(self):
-        return "SimTxSource({samplesize: {}, txrate: {}})".format(
+        return "SimTxSource(samplesize: {}, txrate: {})".format(
             len(self._txsample), self.txrate)
 
 
