@@ -4,22 +4,61 @@ from time import time
 from feemodel.util import DataSample
 
 
-def transientsim(sim, init_entries=None, multiprocess=None,
-                 miniters=1000, maxiters=10000, maxtime=60, stopflag=None):
+def transientsim(sim, feepoints=None, init_entries=None,
+                 miniters=1000, maxiters=10000, maxtime=60):
+    '''Transient waittimes simulation.'''
+    if init_entries is None:
+        init_entries = []
+    if not feepoints:
+        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
+    numiters = 0
+    simtime = 0.
+    stranded = set(feepoints)
+    waittimes = {feerate: DataSample() for feerate in stranded}
+    starttime = time()
+    elapsedrealtime = None
+
+    for block in sim.run(init_entries=init_entries):
+        simtime += block.interval
+        stranding_feerate = block.sfr
+
+        for feerate in list(stranded):
+            if feerate >= stranding_feerate:
+                waittimes[feerate].add_datapoints([simtime])
+                stranded.remove(feerate)
+
+        if not stranded:
+            numiters += 1
+            elapsedrealtime = time() - starttime
+            if (numiters >= maxiters or
+                    numiters >= miniters and elapsedrealtime > maxtime):
+                break
+            else:
+                simtime = 0.
+                stranded = set(feepoints)
+                sim.mempool.reset()
+
+    return waittimes, elapsedrealtime, numiters
+
+
+def transient_multiproc(sim, feepoints=None, init_entries=None,
+                        miniters=1000, maxiters=10000, maxtime=60,
+                        multiprocess=None, stopflag=None):
+    '''Multiprocessing of transientsim.'''
     starttime = time()
     if init_entries is None:
         init_entries = []
-    feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
+    if not feepoints:
+        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
     numprocesses = (
         multiprocess if multiprocess is not None
         else multiprocessing.cpu_count())
-    # workers = multiprocessing.Pool(processes=numprocesses)
     resultqueue = multiprocessing.Queue()
     maxiterschunk = maxiters // numprocesses
     miniterschunk = miniters // numprocesses
     processes = [
         multiprocessing.Process(
-            target=_simtarget,
+            target=_multiproc_target,
             args=(resultqueue, sim, feepoints, init_entries,
                   miniterschunk, maxiterschunk, maxtime)
         )
@@ -42,44 +81,21 @@ def transientsim(sim, init_entries=None, multiprocess=None,
         if stopflag is not None and stopflag.is_set():
             for process in processes:
                 process.terminate()
-            try:
-                while True:
-                    resultqueue.get(False)
-            except Empty:
-                pass
+            # try:
+            #     while True:
+            #         resultqueue.get(False)
+            # except Empty:
+            #     pass
             raise StopIteration
 
     return waittimes, time()-starttime, numiters
 
 
-def _simtarget(resultqueue, sim, feepoints, init_entries,
-               miniters, maxiters, maxtime):
-    '''Target sim function for multiprocessing.'''
-    numiters = 0
-    simtime = 0.
-    stranded = set(feepoints)
-    waittimes = {feerate: DataSample() for feerate in stranded}
-    starttime = time()
-    for block in sim.run(init_entries=init_entries):
-        simtime += block.interval
-        stranding_feerate = block.sfr
-
-        for feerate in list(stranded):
-            if feerate >= stranding_feerate:
-                waittimes[feerate].add_datapoints([simtime])
-                stranded.remove(feerate)
-
-        if not stranded:
-            numiters += 1
-            realtime = time() - starttime
-            if (numiters >= maxiters or
-                    numiters >= miniters and realtime > maxtime):
-                break
-            else:
-                simtime = 0.
-                stranded = set(feepoints)
-                sim.mempool.reset()
-
+def _multiproc_target(resultqueue, sim, feepoints, init_entries,
+                      miniters, maxiters, maxtime):
+    '''Multiprocessing wrapper for transientsim.'''
+    waittimes, elapsedrealtime, numiters = transientsim(
+        sim, feepoints, init_entries, miniters, maxiters, maxtime)
     resultqueue.put((waittimes, numiters))
 
 

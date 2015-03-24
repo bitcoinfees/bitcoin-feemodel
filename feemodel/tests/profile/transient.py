@@ -1,6 +1,6 @@
 import cProfile
 from feemodel.txmempool import MemBlock
-from feemodel.simul.transient import transientsim
+from feemodel.simul.transient import transient_multiproc as transientsim
 from feemodel.simul import Simul, SimEntry
 from feemodel.util import load_obj
 
