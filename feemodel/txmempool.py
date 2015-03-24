@@ -317,6 +317,12 @@ class MemBlock(object):
                                    (blockheight,)).fetchall()
                 txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
                                     (blockheight,)).fetchall()
+        except sqlite3.OperationalError as e:
+            if e.message.startswith('no such table'):
+                return None
+            else:
+                raise e
+        else:
             if block:
                 blocksize, blocktime = block[0]
             else:
@@ -328,11 +334,6 @@ class MemBlock(object):
             memblock.entries = {
                 tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
             return memblock
-        except sqlite3.OperationalError as e:
-            if e.message.startswith('no such table'):
-                return None
-            else:
-                raise e
         finally:
             if db is not None:
                 db.close()

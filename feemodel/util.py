@@ -347,6 +347,22 @@ def get_pph(blockheight):
     return 2**(logtarget - 256)
 
 
+def get_hashesperblock(blockheight):
+    '''Get the expected number of hashes required per block.'''
+    block = proxy.getblock(proxy.getblockhash(blockheight))
+    nbits = hex(block.nBits)[2:]
+    assert len(nbits) == 8
+    significand = int(nbits[2:], base=16)
+    exponent = (int(nbits[:2], base=16)-3)*8
+    logtarget = log(significand, 2) + exponent
+
+    # This is not technically correct because the target is fulfilled in the
+    # case of equality. It should more correctly be:
+    # 2**256 / (2**logtarget + 1),
+    # but of course the difference is negligible.
+    return 2**(256 - logtarget)
+
+
 def get_block_timestamp(blockheight):
     '''Get the timestamp of a block specified by height.'''
     block = proxy.getblock(proxy.getblockhash(blockheight))
