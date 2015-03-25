@@ -48,13 +48,13 @@ class SimTxSource(object):
         n = len(self._txsample)
         if feerates:
             feerates.sort()
-            binnedrates = [0.]*len(feerates)
+            ratebins = [0.]*len(feerates)
             for txfeerate, txsize, _dum in self._txsample:
                 fidx = bisect(feerates, txfeerate)
                 if fidx:
-                    binnedrates[fidx-1] += txsize
-            byterates = [sum(binnedrates[idx:])*self.txrate/n
-                         for idx in range(len(binnedrates))]
+                    ratebins[fidx-1] += txsize
+            byterates = [sum(ratebins[idx:])*self.txrate/n
+                         for idx in range(len(ratebins))]
             return feerates, byterates
         else:
             # Choose the feerates so that the byterate in each interval

@@ -15,7 +15,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
     stranded = set(feepoints)
     waittimes = defaultdict(list)
     starttime = time()
-    elapsedrealtime = None
+    elapsedrealtime = 0
 
     for block in sim.run(init_entries=init_entries):
         if stopflag and stopflag.is_set():

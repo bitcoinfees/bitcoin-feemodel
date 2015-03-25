@@ -69,6 +69,9 @@ class PoolsOnlineEstimator(object):
 
         threading.Thread(target=update_target).start()
 
+    def get_pools(self):
+        return self.poolsestimate
+
     def load_estimates(self):
         savefiles = sorted([f for f in os.listdir(self.savedir)
                             if f.startswith('pe') and f.endswith('pickle')])
@@ -79,6 +82,9 @@ class PoolsOnlineEstimator(object):
         savefilename = 'pe' + str(currheight) + '.pickle'
         savefile = os.path.join(self.savedir, savefilename)
         save_obj(self.poolsestimate, savefile)
+
+    def __nonzero__(self):
+        return bool(self.poolsestimate)
 
 
 # #class PoolsEstimatorOnline(StoppableThread):

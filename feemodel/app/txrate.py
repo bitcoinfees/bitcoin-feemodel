@@ -18,16 +18,16 @@ class TxRateOnlineEstimator(object):
 
     def __init__(self, halflife=default_halflife, dbfile=history_file):
         self.dbfile = dbfile
-        self.tr = ExpEstimator(halflife)
+        self.txrate_estimator = ExpEstimator(halflife)
         self.prevtxids = None
         self.prevtime = None
 
     def update(self, curr_entries, currheight):
         currtime = time()
-        tr = copy(self.tr)
-        if tr.totaltime == 0:
+        txrate_estimator = copy(self.txrate_estimator)
+        if txrate_estimator.totaltime == 0:
             # Estimate not yet initialized.
-            bestheight, besttime, bestblocktxids = tr.start(
+            bestheight, besttime, bestblocktxids = txrate_estimator.start(
                 currheight, dbfile=self.dbfile)
             if bestheight == currheight:
                 logger.info("bestheight matches currheight.")
@@ -38,7 +38,13 @@ class TxRateOnlineEstimator(object):
             new_txids = curr_txids - self.prevtxids
             new_txs = [SimEntry.from_mementry('', curr_entries[txid])
                        for txid in new_txids]
-            tr.update_txs(new_txs, currtime - self.prevtime)
+            txrate_estimator.update_txs(new_txs, currtime - self.prevtime)
         self.prevtime = currtime
         self.prevtxids = curr_txids
-        self.tr = tr
+        self.txrate_estimator = txrate_estimator
+
+    def get_txsource(self):
+        return self.txrate_estimator
+
+    def __nonzero__(self):
+        return bool(self.txrate_estimator)

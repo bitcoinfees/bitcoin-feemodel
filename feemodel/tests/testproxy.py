@@ -37,4 +37,27 @@ class TestMempool(object):
     def get_entries(self):
         return self.b.entries
 
+
+class TestPoolsOnline(object):
+    def __init__(self, poolsestimate):
+        self.poolsestimate = poolsestimate
+
+    def get_pools(self):
+        return self.poolsestimate
+
+    def __nonzero__(self):
+        return bool(self.poolsestimate)
+
+
+class TestTxOnline(object):
+    def __init__(self, txrate_estimator):
+        self.txrate_estimator = txrate_estimator
+
+    def get_txsource(self):
+        return self.txrate_estimator
+
+    def __nonzero__(self):
+        return bool(self.txrate_estimator)
+
+
 proxy = TestProxy()
