@@ -68,16 +68,7 @@ def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
         numprocesses = (
             multiprocess if multiprocess is not None
             else multiprocessing.cpu_count())
-        if numprocesses == 1:
-            bs_estimates = [_calc_stranding_single(bootstrap_sample(txs))
-                            for i in range(N)]
-        else:
-            workers = multiprocessing.Pool(processes=numprocesses)
-            Nchunk = N // numprocesses
-            result = workers.map_async(
-                processwork, [(txs, Nchunk)]*numprocesses)
-            bs_estimates = sum(result.get(), [])
-            workers.terminate()
+        bs_estimates = _get_bs_estimates(txs, N, numprocesses)
 
         if not any([b == float("inf") for b in bs_estimates]):
             datasample = DataSample(bs_estimates)
@@ -97,7 +88,22 @@ def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
             "abovekn": (abovek, aboven), "belowkn": (belowk, belown)}
 
 
-def processwork(args):
+def _get_bs_estimates(txs, N, numprocesses):
+    if numprocesses == 1:
+        bs_estimates = [_calc_stranding_single(bootstrap_sample(txs))
+                        for i in range(N)]
+    else:
+        workers = multiprocessing.Pool(processes=numprocesses)
+        Nchunk = N // numprocesses
+        result = workers.map_async(
+            _processwork, [(txs, Nchunk)]*numprocesses)
+        workers.close()
+        bs_estimates = sum(result.get(), [])
+        workers.join()
+    return bs_estimates
+
+
+def _processwork(args):
     '''Target function of the process pool.'''
     txs, N = args
     return [_calc_stranding_single(bootstrap_sample(txs)) for i in range(N)]

@@ -135,6 +135,9 @@ class SimTxSource(object):
         return "SimTxSource(samplesize: {}, txrate: {})".format(
             len(self._txsample), self.txrate)
 
+    def __nonzero__(self):
+        return bool(len(self._txsample))
+
 
 cdef poisson_sample(l):
     # http://en.wikipedia.org/wiki/Poisson_distribution

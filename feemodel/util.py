@@ -1,6 +1,7 @@
 from __future__ import division
 
 import threading
+import multiprocessing
 import logging
 from bisect import insort, bisect
 from math import ceil, log
@@ -27,7 +28,7 @@ class StoppableThread(threading.Thread):
 
     def __init__(self):
         super(StoppableThread, self).__init__(name=self.__class__.__name__)
-        self.__stopflag = threading.Event()
+        self.__stopflag = multiprocessing.Event()
 
     def run(self):
         '''The target function of the thread.'''

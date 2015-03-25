@@ -192,6 +192,7 @@ class PoolsEstimator(SimPools):
         if not currheight:
             currheight = max(self.blockmap)
         totalhashrate = sum([pool.hashrate for pool in self.pools.values()])
+        # TODO: get rid of get_pph, use get_hashesperblock
         curr_pph = get_pph(currheight)
         self.blockrate = curr_pph * totalhashrate
 
