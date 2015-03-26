@@ -13,18 +13,20 @@ from feemodel.estimate.pools import PoolsEstimator
 logger = logging.getLogger(__name__)
 
 default_update_period = 86400
+default_savedir = os.path.join(datadir, 'pools/')
 
 
 class PoolsOnlineEstimator(object):
 
-    savedir = os.path.join(datadir, 'pools/')
-
     def __init__(self, window,
-                 update_period=default_update_period, dbfile=history_file):
-        self.lock = threading.Lock()
-        self.dbfile = dbfile
+                 update_period=default_update_period,
+                 dbfile=history_file,
+                 savedir=default_savedir):
         self.window = window
         self.update_period = update_period
+        self.dbfile = dbfile
+        self.savedir = savedir
+        self.lock = threading.Lock()
         try:
             self.load_estimates()
             assert self.poolsestimate
@@ -41,33 +43,46 @@ class PoolsOnlineEstimator(object):
             else:
                 logger.info("Pools Estimator loaded with best height %d." %
                             bestheight)
-        self.next_update = self.pe.timestamp + update_period
+        self.next_update = self.poolsestimate.timestamp + update_period
         if not os.path.exists(self.savedir):
-            os.mkdir(self.savedir)
+            os.makedirs(self.savedir)
 
-    def update(self, currheight, stopflag=None):
+    def update_async(self, currheight, stopflag=None):
+        '''Update pool estimates in a new thread.
+
+        To be called by main thread once every mempool poll period.
+        '''
 
         def update_target():
-            if self.lock.locked():
-                # Make sure only 1 estimation thread is running at a time.
-                return
             with self.lock:
-                rangetuple = (currheight-self.window+1, currheight+1)
-                have_heights = MemBlock.get_heights(blockrangetuple=rangetuple)
+                self.next_update = time() + self.update_period
+                rangetuple = [currheight-self.window+1, currheight+1]
+                have_heights = MemBlock.get_heights(blockrangetuple=rangetuple,
+                                                    dbfile=self.dbfile)
                 if have_heights:
-                    rangetuple[0] = min(rangetuple[0], min(have_heights))
+                    rangetuple[0] = max(rangetuple[0], min(have_heights))
                 else:
                     raise ValueError("Insufficient blocks.")
                 poolsestimate = deepcopy(self.poolsestimate)
-                poolsestimate.start(rangetuple, stopflag=stopflag)
+                try:
+                    poolsestimate.start(
+                        rangetuple, stopflag=stopflag, dbfile=self.dbfile)
+                except StopIteration:
+                    return
                 self.poolsestimate = poolsestimate
-                self.next_update = poolsestimate.timestamp + self.update_period
                 try:
                     self.save_estimates(currheight)
                 except Exception:
                     logger.exception("Unable to save pools.")
 
-        threading.Thread(target=update_target).start()
+        if self.lock.locked():
+            # Make sure only 1 estimation thread is running at a time.
+            return None
+        if time() >= self.next_update:
+            t = threading.Thread(target=update_target)
+            t.start()
+            return t
+        return None
 
     def get_pools(self):
         return self.poolsestimate
@@ -75,11 +90,14 @@ class PoolsOnlineEstimator(object):
     def load_estimates(self):
         savefiles = sorted([f for f in os.listdir(self.savedir)
                             if f.startswith('pe') and f.endswith('pickle')])
+        # This works until ~ 2190 CE
         savefile = os.path.join(self.savedir, savefiles[-1])
         self.poolsestimate = load_obj(savefile)
 
     def save_estimates(self, currheight):
-        savefilename = 'pe' + str(currheight) + '.pickle'
+        currheightstr = str(currheight)
+        currheightstr = (7 - len(currheightstr)) * '0' + currheightstr
+        savefilename = 'pe' + currheightstr + '.pickle'
         savefile = os.path.join(self.savedir, savefilename)
         save_obj(self.poolsestimate, savefile)
 
