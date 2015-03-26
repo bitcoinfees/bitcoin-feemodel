@@ -12,6 +12,8 @@ from feemodel.txmempool import MemBlock
 
 logger = logging.getLogger(__name__)
 
+MAX_TXS = 10000
+
 
 class PoolEstimate(SimPool):
     def __init__(self, blockheights, hashrate, maxblocksize):
@@ -28,21 +30,33 @@ class PoolEstimate(SimPool):
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
 
-        for height in self.blockheights:
+        for height in sorted(self.blockheights, reverse=True):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             block = MemBlock.read(height, dbfile=dbfile)
             if block is None:
                 continue
-            inblocktxs = filter(lambda tx: tx.inblock, block.entries.values())
-            if inblocktxs:
-                block.avgtxsize = (
-                    sum([tx.size for tx in inblocktxs]) / len(inblocktxs))
+            _inblocktxs = filter(lambda tx: tx.inblock, block.entries.values())
+            if _inblocktxs:
+                avgtxsize = (
+                    sum([tx.size for tx in _inblocktxs]) / len(_inblocktxs))
             else:
-                block.avgtxsize = 0.
-            if self.maxblocksize - block.size > block.avgtxsize:
+                avgtxsize = 0.
+            # We assume a block is fee-limited if its size is smaller than
+            # the maxblocksize, minus a margin of the block avg tx size.
+            if self.maxblocksize - block.size > avgtxsize:
                 self.feelimitedblocks.append((block.height, block.size))
                 txs.extend(tx_preprocess(block))
+                # Only take up to MAX_TXS of the most recent transactions.
+                # If MAX_TXS is sufficiently high, this helps the adaptivity
+                # of the estimation (i.e. react more quickly to changes in
+                # the pool's minfeerate, at a small cost to the estimate
+                # precision). The optimal figure will depend on the tx byte
+                # rate profile: are there sufficient transactions with a
+                # feerate close to the pool's minfeerate? In the future
+                # MAX_TXS could be selected automatically.
+                if len(txs) >= MAX_TXS:
+                    break
             else:
                 self.sizelimitedblocks.append((block.height, block.size))
 
