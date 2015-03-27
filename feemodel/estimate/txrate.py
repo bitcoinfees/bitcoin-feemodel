@@ -3,7 +3,7 @@ from __future__ import division
 import logging
 from random import sample
 from time import time
-from math import log, exp
+from math import log
 from feemodel.util import round_random
 from feemodel.config import history_file
 from feemodel.txmempool import MemBlock
@@ -24,15 +24,16 @@ class ExpEstimator(SimTxSource):
     def __init__(self, halflife):
         '''Specify the halflife of the exponential decay, in seconds.'''
         self.halflife = halflife
-        self._a = -log(0.5) / halflife  # The exponent coefficient
+        # self._a = -log(0.5) / halflife  # The exponent coefficient
+        self._alpha = 0.5**(1 / halflife)
         self._reset_params()
 
     def start(self, blockheight, stopflag=None, dbfile=history_file):
         self._reset_params()
         starttime = time()
-        num_blocks_to_use = int(-log(0.01) / self._a / 600)
-        startblock = blockheight - num_blocks_to_use + 1
-        blockrangetuple = (startblock, blockheight+1)
+        num_blocks_to_use = int(log(0.01) / log(self._alpha) / 600)
+        _startblock = blockheight - num_blocks_to_use + 1
+        blockrangetuple = (_startblock, blockheight+1)
         logger.info("Starting TxRate estimation "
                     "from blockrange ({}, {}).".format(*blockrangetuple))
 
@@ -85,7 +86,8 @@ class ExpEstimator(SimTxSource):
         '''
         self.totaltime += interval
         num_old_to_keep = round_random(
-            len(self._txsample)*self._decayfactor(interval))
+            len(self._txsample)*self._alpha**interval)
+        # len(self._txsample)*self._decayfactor(interval))
         self._txsample = sample(self._txsample, num_old_to_keep) + new_txs
         if not is_init:
             self._calc_txrate()
@@ -94,8 +96,9 @@ class ExpEstimator(SimTxSource):
         '''Calculate the tx rate (arrivals per second).'''
         if self.totaltime <= 0:
             raise ValueError("Insufficient number of blocks.")
-        self.txrate = len(self._txsample) * self._a / (
-            1 - exp(-self._a * self.totaltime))
+        self.txrate = len(self._txsample) * log(self._alpha) / (
+            self._alpha**self.totaltime - 1)
+        # 1 - exp(-self._a * self.totaltime))
 
     def _reset_params(self):
         '''Reset the params; at init and upon (re)starting estimation.'''
@@ -103,9 +106,10 @@ class ExpEstimator(SimTxSource):
         self.txrate = 0.
         self.totaltime = 0
 
-    def _decayfactor(self, t):
-        '''The decay factor as a function of time in seconds.'''
-        return exp(-self._a*t)
+    # def _decayfactor(self, t):
+    #     '''The decay factor as a function of time in seconds.'''
+    #     return self._alpha**t
+    #     # return exp(-self._a*t)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
