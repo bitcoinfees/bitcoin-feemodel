@@ -5,7 +5,7 @@ import threading
 import os
 from time import time
 from copy import deepcopy
-from feemodel.config import datadir, history_file
+from feemodel.config import datadir, history_file, DIFF_RETARGET_INTERVAL
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import MemBlock
 from feemodel.estimate.pools import PoolsEstimator
@@ -26,6 +26,7 @@ class PoolsOnlineEstimator(object):
         self.update_period = update_period
         self.dbfile = dbfile
         self.savedir = savedir
+        self.best_diff_interval = None
         self.lock = threading.Lock()
         try:
             self.load_estimates()
@@ -43,6 +44,7 @@ class PoolsOnlineEstimator(object):
             else:
                 logger.info("Pools Estimator loaded with best height %d." %
                             bestheight)
+                self.best_diff_interval = bestheight // DIFF_RETARGET_INTERVAL
         self.next_update = self.poolsestimate.timestamp + update_period
         if not os.path.exists(self.savedir):
             os.makedirs(self.savedir)
@@ -52,40 +54,62 @@ class PoolsOnlineEstimator(object):
 
         To be called by main thread once every mempool poll period.
         '''
-
-        def update_target():
-            with self.lock:
-                self.next_update = time() + self.update_period
-                rangetuple = [currheight-self.window+1, currheight+1]
-                have_heights = MemBlock.get_heights(blockrangetuple=rangetuple,
-                                                    dbfile=self.dbfile)
-                if have_heights:
-                    rangetuple[0] = max(rangetuple[0], min(have_heights))
-                else:
-                    raise ValueError("Insufficient blocks.")
-                poolsestimate = deepcopy(self.poolsestimate)
-                try:
-                    poolsestimate.start(
-                        rangetuple, stopflag=stopflag, dbfile=self.dbfile)
-                except StopIteration:
-                    return
-                self.poolsestimate = poolsestimate
-                try:
-                    self.save_estimates(currheight)
-                except Exception:
-                    logger.exception("Unable to save pools.")
-
         if self.lock.locked():
             # Make sure only 1 estimation thread is running at a time.
             return None
+
+        if self.best_diff_interval:
+            # Update the blockrate if the difficulty has changed.
+            curr_diff_interval = currheight // DIFF_RETARGET_INTERVAL
+            if curr_diff_interval > self.best_diff_interval:
+                threading.Thread(
+                    target=self._update_blockrate,
+                    args=(currheight, curr_diff_interval)).start()
+
         if time() >= self.next_update:
-            t = threading.Thread(target=update_target)
+            t = threading.Thread(
+                target=self._update_pools,
+                args=(currheight, stopflag))
             t.start()
             return t
+
         return None
 
     def get_pools(self):
         return self.poolsestimate
+
+    def _update_pools(self, currheight, stopflag):
+        with self.lock:
+            self.next_update = time() + self.update_period
+            rangetuple = [currheight-self.window+1, currheight+1]
+            have_heights = MemBlock.get_heights(
+                blockrangetuple=rangetuple, dbfile=self.dbfile)
+            if have_heights:
+                rangetuple[0] = max(rangetuple[0], min(have_heights))
+            else:
+                raise ValueError("Insufficient blocks.")
+            poolsestimate = deepcopy(self.poolsestimate)
+            try:
+                poolsestimate.start(
+                    rangetuple, stopflag=stopflag, dbfile=self.dbfile)
+            except StopIteration:
+                return
+            self.poolsestimate = poolsestimate
+            self.best_diff_interval = max(
+                self.poolsestimate.blockmap) // DIFF_RETARGET_INTERVAL
+            try:
+                self.save_estimates(currheight)
+            except Exception:
+                logger.exception("Unable to save pools.")
+
+    def _update_blockrate(self, currheight, curr_diff_interval):
+        with self.lock:
+            poolsestimate = deepcopy(self.poolsestimate)
+            poolsestimate.calc_blockrate(currheight=currheight)
+            self.poolsestimate = poolsestimate
+            self.best_diff_interval = curr_diff_interval
+            logger.info("Difficulty has changed; new blockrate is {}".
+                        format(poolsestimate.blockrate))
 
     def load_estimates(self):
         savefiles = sorted([f for f in os.listdir(self.savedir)

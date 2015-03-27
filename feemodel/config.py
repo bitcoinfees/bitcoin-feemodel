@@ -86,3 +86,5 @@ trans_config = {
     'miniters': load_config('app', 'trans_miniters', opt_type='int'),
     'maxtime': load_config('app', 'trans_maxtime', opt_type='int')
 }
+
+DIFF_RETARGET_INTERVAL = 2016

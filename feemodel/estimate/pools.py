@@ -5,7 +5,7 @@ from time import time
 from itertools import groupby
 from feemodel.config import knownpools, history_file
 from feemodel.util import get_coinbase_info, Table, get_block_timestamp
-from feemodel.util import get_pph, get_block_size, get_hashesperblock
+from feemodel.util import get_block_size, get_hashesperblock
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock
@@ -107,8 +107,8 @@ class PoolsEstimator(SimPools):
         starttime = time()
         self.id_blocks(blockrangetuple, stopflag=stopflag)
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
-        self.calc_blockrate()
         self.update()
+        self.calc_blockrate()
         self.timestamp = starttime
         logger.info("Finished pool estimation in %.2f seconds." %
                     (time()-starttime))
@@ -205,10 +205,10 @@ class PoolsEstimator(SimPools):
     def calc_blockrate(self, currheight=None):
         if not currheight:
             currheight = max(self.blockmap)
-        totalhashrate = sum([pool.hashrate for pool in self.pools.values()])
-        # TODO: get rid of get_pph, use get_hashesperblock
-        curr_pph = get_pph(currheight)
-        self.blockrate = curr_pph * totalhashrate
+        if not self.totalhashrate:
+            raise ValueError("No pools.")
+        curr_hashesperblock = get_hashesperblock(currheight)
+        self.blockrate = self.totalhashrate / curr_hashesperblock
 
     def print_pools(self):
         poolitems = self._SimPools__pools
@@ -229,6 +229,7 @@ class PoolsEstimator(SimPools):
                 '%.2f' % pool.stats['bias']))
         table.print_table()
         print("Avg block interval is %.2f" % (1./self.blockrate,))
+        print("Total hashrate is {} Thps.".format(self.totalhashrate*1e-12))
 
     def get_stats(self):
         if not self:

@@ -63,6 +63,7 @@ class SimPool(object):
 class SimPools(object):
     def __init__(self, pools=None, blockrate=default_blockrate):
         self.blockrate = blockrate
+        self.totalhashrate = None
         self.__pools = []
         self.__poolsidx = []
 
@@ -95,8 +96,7 @@ class SimPools(object):
         poolitems = sorted(
             [(name, deepcopy(pool)) for name, pool in pools.items()],
             key=lambda p: p[1], reverse=True)
-        totalhashrate = float(sum(
-            [pool.hashrate for name, pool in poolitems]))
+        totalhashrate = sum([pool.hashrate for name, pool in poolitems])
         if not totalhashrate:
             # TODO: consider using custom error to make explicit
             raise ValueError("No pools.")
@@ -122,6 +122,7 @@ class SimPools(object):
             raise(e)
 
         self.__poolsidx[-1] = 1.
+        self.totalhashrate = totalhashrate
 
     def get_capacity(self):
         poolfeerates = [pool.minfeerate for name, pool in self.__pools]
