@@ -9,6 +9,7 @@ import threading
 from time import sleep, time
 from feemodel.config import datadir
 from feemodel.util import save_obj, get_hashesperblock
+import feemodel.app.pools
 from feemodel.app.pools import PoolsOnlineEstimator
 
 logging.basicConfig(level=logging.DEBUG)
@@ -19,6 +20,7 @@ if os.path.exists(savedir):
     shutil.rmtree(savedir)
 
 _timestamp = None
+feemodel.app.pools.MIN_BLOCKS = 1
 
 
 class PoolsOnlineTests(unittest.TestCase):

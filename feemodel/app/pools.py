@@ -4,7 +4,7 @@ import logging
 import threading
 import os
 from time import time
-from copy import deepcopy
+from copy import deepcopy, copy
 from feemodel.config import datadir, history_file, DIFF_RETARGET_INTERVAL
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import MemBlock
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 default_update_period = 86400
 default_savedir = os.path.join(datadir, 'pools/')
+
+MIN_BLOCKS = 432  # 3 days' worth
 
 
 class PoolsOnlineEstimator(object):
@@ -76,18 +78,24 @@ class PoolsOnlineEstimator(object):
         return None
 
     def get_pools(self):
+        # We use a getter for the pool estimate as a reminder that the
+        # reference is subject to change by the update thread, so you
+        # should bind it to another variable if you want to perform multiple
+        # operations on the object.
         return self.poolsestimate
 
     def _update_pools(self, currheight, stopflag):
         with self.lock:
-            self.next_update = time() + self.update_period
             rangetuple = [currheight-self.window+1, currheight+1]
             have_heights = MemBlock.get_heights(
                 blockrangetuple=rangetuple, dbfile=self.dbfile)
-            if have_heights:
+            if len(have_heights) >= MIN_BLOCKS:
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
-                raise ValueError("Insufficient blocks.")
+                # Only try once every hour, when there aren't enough blocks
+                self.next_update = time() + 3600
+                return
+            self.next_update = time() + self.update_period
             poolsestimate = deepcopy(self.poolsestimate)
             try:
                 poolsestimate.start(
@@ -104,7 +112,7 @@ class PoolsOnlineEstimator(object):
 
     def _update_blockrate(self, currheight, curr_diff_interval):
         with self.lock:
-            poolsestimate = deepcopy(self.poolsestimate)
+            poolsestimate = copy(self.poolsestimate)
             poolsestimate.calc_blockrate(currheight=currheight)
             self.poolsestimate = poolsestimate
             self.best_diff_interval = curr_diff_interval
