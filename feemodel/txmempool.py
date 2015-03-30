@@ -88,6 +88,7 @@ class TxMempool(StoppableThread):
     @StoppableThread.auto_restart(60)
     def run(self):
         '''Target function of the thread.
+
         Polls mempool every poll_period seconds until stop flag is set.
         '''
         logger.info("Starting TxMempool")

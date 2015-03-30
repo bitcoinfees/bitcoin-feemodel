@@ -1,11 +1,13 @@
 import unittest
 import itertools
 from time import time
+from random import random
 from numpy.random import normal
 
 from feemodel.util import get_coinbase_info
 from feemodel.util import round_random, DataSample, interpolate
 from feemodel.util import CacheProxy, BlockingProxy
+from feemodel.util import Function
 
 
 class CacheProxyTest(unittest.TestCase):
@@ -108,6 +110,28 @@ class InterpolateTest(unittest.TestCase):
         for x0, y0ref in zip(X,Y):
             y0, dum = interpolate(x0, x, y)
             self.assertEqual(y0, y0ref)
+
+
+class FunctionTest(unittest.TestCase):
+    def test_A(self):
+        fn = lambda x: -2*x
+        x = range(10)
+        y = map(fn, x)
+        f = Function(x, y)
+        for i in range(10):
+            x0 = random()*9
+            self.assertEqual(fn(x0), f(x0))
+            y0 = fn(x0)
+            self.assertEqual(f.inv(y0), x0)
+        self.assertIsNone(f(10))
+        self.assertIsNone(f(-1))
+        self.assertIsNone(f.inv(-19))
+        self.assertIsNone(f.inv(1))
+
+        self.assertEqual(f(10, use_upper=True), f(9))
+        self.assertEqual(f(-1, use_lower=True), f(0))
+        self.assertEqual(f.inv(-19, use_lower=True), f.inv(-18))
+        self.assertEqual(f.inv(1, use_upper=True), f.inv(0))
 
 
 if __name__ == '__main__':

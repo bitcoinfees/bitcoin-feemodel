@@ -15,6 +15,8 @@ try:
 except ImportError:
     import pickle
 
+from tabulate import tabulate
+
 from bitcoin.rpc import Proxy, JSONRPCException
 from bitcoin.wallet import CBitcoinAddress, CBitcoinAddressError
 from bitcoin.core import COIN
@@ -257,6 +259,61 @@ class DataSample(object):
             self.n, self.mean, self.std, self.mean_interval)
 
 
+class Function(object):
+    '''A (math) function object with interpolation methods.'''
+
+    def __init__(self, x, y):
+        '''y and x are lists s.t. y = f(x) and x is sorted.'''
+        self._x = x
+        self._y = y
+
+    def __call__(self, x, use_upper=False, use_lower=False):
+        '''Evaluate the function at x, by linear interpolation.
+
+        use_upper and use_lower specifies what to do if x is outside
+        the domain of the function [min(self._x), max(self._x)).
+
+        if use_upper is True, then if all([x >= xi for xi in self._x]),
+        return f(max(self._x)).
+
+        if use_lower is True, then if all([x < xi for xi in self._x]),
+        return f(min(self._x)).
+
+        Otherwise return None, if x is outside the domain.
+        '''
+        y, xidx = interpolate(x, self._x, self._y)
+        if xidx == 0:
+            return y if use_lower else None
+        if xidx == len(self._x):
+            return y if use_upper or x == self._x[-1] else None
+        return y
+
+    def inv(self, y, use_upper=False, use_lower=False):
+        '''Evaluate the inverse function at y by linear interpolation.
+
+        use_upper and use_lower have the same meaning as in self.__call__.
+
+        We don't check that the function is 1-to-1: if you call this method,
+        it is assumed so.
+        '''
+        _y = self._y[:]
+        _x = self._x[:]
+        if _y[-1] < _y[0]:
+            _y.reverse()
+            _x.reverse()
+        x, yidx = interpolate(y, _y, _x)
+        if yidx == 0:
+            return x if use_lower else None
+        if yidx == len(_y):
+            return x if use_upper or y == _y[-1] else None
+        return x
+
+    def print_fn(self):
+        headers = ['x', 'y']
+        table = zip(self._x, self._y)
+        print(tabulate(table, headers=headers))
+
+
 class Table(object):
     def __init__(self, colwidths=None, padding=2):
         self.colwidths = colwidths
@@ -332,6 +389,7 @@ def get_coinbase_info(blockheight):
     return addresses, tag
 
 
+# TODO: deprecate this in favour of get_hashesperblock
 def get_pph(blockheight):
     '''Get probability p of finding a block, per hash performed.'''
     block = proxy.getblock(proxy.getblockhash(blockheight))
@@ -421,6 +479,7 @@ def interpolate(x0, x, y):
         return y0, idx
 
 
+# TODO: Deprecate this and itertimer
 def try_wrap(fn):
     '''Decorator to try a function and log all exceptions without raising.'''
     @wraps(fn)

@@ -1,11 +1,14 @@
 '''Test app.transient.'''
 import unittest
 import logging
-from time import sleep
-from pprint import pprint
+from time import sleep, time
+from bisect import bisect
+from math import log
+from random import choice
 from feemodel.tests.testproxy import TestMempool, TestPoolsOnline, TestTxOnline
 from feemodel.util import load_obj
 from feemodel.app.transient import TransientOnline
+from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
 
 dbfile = 'data/test.db'
 refpools = load_obj('data/pe_ref.pickle')
@@ -27,28 +30,51 @@ class TransientSimTests(unittest.TestCase):
             stats = transientonline.stats
             print("Expected wait:")
             stats.expectedwaits.print_fn()
-            print("Median wait:")
-            stats.waitpercentiles[9].print_fn()
-            print("Predicts for 10000 feerate:")
-            pprint(zip(stats.predict(10000), statsref.predict(10000)))
-            print("Predicts for 2679 feerate:")
-            pprint(zip(stats.predict(2679), statsref.predict(2679)))
-            print("Predicts for 2680 feerate:")
-            pprint(zip(stats.predict(2680), statsref.predict(2680)))
-            print("Predicts for 50000 feerate:")
-            pprint(zip(stats.predict(50000), statsref.predict(50000)))
-            print("Predicts for 0 feerate:")
-            pprint(zip(stats.predict(0), statsref.predict(0)))
+            print("Expected waits (ref):")
+            statsref.expectedwaits.print_fn()
+            print("Median wait (idx {}):".format(WAIT_MEDIAN_IDX))
+            stats.waitpercentiles[WAIT_MEDIAN_IDX].print_fn()
+            print("Median wait (ref) (idx {}):".format(WAIT_MEDIAN_IDX))
+            statsref.waitpercentiles[WAIT_MEDIAN_IDX].print_fn()
 
-            self.assertTrue(all([w is None for w in stats.predict(2679)]))
-            self.assertTrue(all([w is not None for w in stats.predict(2680)]))
-            self.assertEqual(stats.predict(44444), stats.predict(44445))
+            print("Comparing expected waits with ref:")
+            for wait, waitref in zip(stats.expectedwaits.waits, statsref.expectedwaits.waits):
+                logdiff = abs(log(wait) - log(waitref))
+                print("wait/waitref is {}.".format(wait/waitref))
+                self.assertLess(logdiff, 0.1)
+            wait_idx = choice(range(len(WAIT_PERCENTILE_PTS)))
+            print("Comparing {} percentile waits with ref:".
+                  format(WAIT_PERCENTILE_PTS[wait_idx]))
+            for wait, waitref in zip(
+                    stats.waitpercentiles[wait_idx].waits,
+                    statsref.waitpercentiles[wait_idx].waits):
+                logdiff = abs(log(wait) - log(waitref))
+                print("wait/waitref is {}.".format(wait/waitref))
+                self.assertLess(logdiff, 0.1)
+
             self.assertEqual(stats.expectedwaits(44444),
                              stats.expectedwaits(44445))
             minwait = stats.expectedwaits.waits[-1]
             self.assertIsNotNone(stats.expectedwaits.inv(minwait))
             self.assertIsNone(stats.expectedwaits.inv(minwait-1))
             self.assertEqual(10000, stats.numiters)
+
+            # Waits predict for various feerates and percentiles
+            currtime = time()
+            for feerate in [2680, 10000, 44444, 44445]:
+                txpredict = stats.predict(feerate, currtime)
+                self.assertEqual(txpredict.calc_pval(currtime+0), 1)
+                self.assertEqual(txpredict.calc_pval(currtime+float("inf")), 0)
+                for pctl in [0.05, 0.5, 0.9]:
+                    wait_idx = bisect(WAIT_PERCENTILE_PTS, pctl) - 1
+                    wait = stats.waitpercentiles[wait_idx](feerate)
+                    print("{} wait for feerate of {} is {}.".format(pctl, feerate, wait))
+                    blocktime = currtime + wait
+                    pval = txpredict.calc_pval(blocktime)
+                    self.assertAlmostEqual(pval, 1-pctl)
+
+            txpredict = stats.predict(2679, currtime)
+            self.assertIsNone(txpredict)
 
     def test_B(self):
         pass

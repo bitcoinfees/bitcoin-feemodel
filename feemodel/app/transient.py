@@ -9,13 +9,12 @@ from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul, SimEntry
 from feemodel.simul.stats import WaitFn
 from feemodel.simul.transient import transient_multiproc as transientsim
+from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
 
-tx_maxsamplesize = 10000
 default_update_period = 60.
 default_miniters = 1000
 default_maxiters = 10000
 default_maxtime = 60.
-default_predict_level = 0.9
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,6 @@ class TransientOnline(StoppableThread):
         self._updating = True
         tx_source = self.txonline.get_txsource()
         pools = self.poolsonline.get_pools()
-        pools.calc_blockrate()
         # TODO: catch unstable error
         sim = Simul(pools, tx_source)
         init_entries = [SimEntry.from_mementry(txid, entry)
@@ -100,7 +98,8 @@ class TransientOnline(StoppableThread):
                                     mempoolsizes, mempoolsize_with_fee)
         self._updating = False
 
-    def _calc_mempoolsizes(self, entries, feerates):
+    @staticmethod
+    def _calc_mempoolsizes(entries, feerates):
         '''Calculate the reverse cumulative (wrt feerate) mempool size.
 
         feerates is assumed sorted.
@@ -139,23 +138,24 @@ class TransientStats(object):
             expectedwaits.append(waitdata.mean)
             expectedwaits_err.append(waitdata.mean_interval[1]-waitdata.mean)
             waitpercentiles.append(
-                [waitdata.get_percentile(i*0.05) for i in range(1, 20)])
+                [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
+        self.feerates = feerates
         self.expectedwaits = WaitFn(feerates, expectedwaits,
                                     expectedwaits_err)
         self.waitpercentiles = [
-            WaitFn(feerates, waitpercentile)
-            for waitpercentile in zip(*waitpercentiles)]
+            WaitFn(feerates, w)
+            for w in zip(*waitpercentiles)]
 
-    def predict(self, feerate):
+    def predict(self, feerate, currtime):
         '''Predict the wait time of a transaction with specified feerate.
 
-        Returns a list, waittimes, of quantiles of the wait time distribution:
-        Pr[tx wait time <= waittimes[i]] ~= (i+1)/(len(waittimes)+1)
+        entry is a mementry object. Returns a TxPrediction object.
         '''
-        waittimes = [
-            waitpctl(feerate) for waitpctl in self.waitpercentiles]
-        return waittimes
+        if feerate < self.feerates[0]:
+            return None
+        waitpercentiles = [w(feerate) for w in self.waitpercentiles]
+        return TxPrediction(waitpercentiles, feerate, currtime)
 
     def get_stats(self):
         stats = {
@@ -164,11 +164,10 @@ class TransientStats(object):
             'numiters': self.numiters,
             'cap': self.cap.__dict__,
             'stablefeerate': self.stablefeerate,
-            'feerates': self.expectedwaits.feerates,
+            'feerates': self.feerates,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
-            'waitpercentiles': [waitpctl.waits
-                                for waitpctl in self.waitpercentiles],
+            'waitpercentiles': [w.waits for w in self.waitpercentiles],
             'mempoolsize': self.mempoolsize
         }
         return stats

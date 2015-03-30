@@ -2,7 +2,7 @@ from __future__ import division
 
 from math import ceil
 from bisect import bisect
-from feemodel.util import interpolate, Table
+from feemodel.util import Table, Function
 
 
 class SimStats(object):
@@ -36,23 +36,28 @@ class SimStats(object):
         return bool(self.timestamp)
 
 
-class WaitFn(object):
+class WaitFn(Function):
     '''Wait times as a function of feerate.'''
 
     def __init__(self, feerates, waits, errors=None):
-        self.feerates = feerates
-        self.waits = waits
+        super(WaitFn, self).__init__(feerates, waits)
         self.errors = errors
 
-    def __call__(self, feerate):
-        '''Evaluate the function at feerate.
+    @property
+    def feerates(self):
+        return self._x
 
-        Returns the linear interpolated value of the function. If feerate
-        is lower than all available feerate datapoints, returns None. If it is
-        larger, return the boundary value of the function.
+    @property
+    def waits(self):
+        return self._y
+
+    def __call__(self, feerate):
+        '''Linear interpolation of wait time at feerate.
+
+        If feerate is lower than all available feerate datapoints,
+        returns None. If it is larger, return the boundary value.
         '''
-        t, idx = interpolate(feerate, self.feerates, self.waits)
-        return t if idx else None
+        return super(WaitFn, self).__call__(feerate, use_upper=True)
 
     def inv(self, wait):
         '''Inverse of self.__call__.
@@ -60,8 +65,7 @@ class WaitFn(object):
         If wait is smaller than all available wait datapoints, returns None.
         If larger, return the boundary value of the function.
         '''
-        t, idx = interpolate(wait, self.waits[-1::-1], self.feerates[-1::-1])
-        return t if idx else None
+        return super(WaitFn, self).inv(wait, use_upper=True)
 
     def print_fn(self):
         table = Table()
