@@ -111,25 +111,12 @@ class SimTxSource(object):
     def calc_mean_byterate(self):
         '''Calculate the mean byterate.
 
-        Returns the mean byterate with its standard error, computed using
-        bootstrap resampling.
+        Returns the mean byterate with its standard error, computed using a
+        normal approximation.
         '''
-        n = len(self._txsample)
-
-        def _calc_single(_txsample):
-            return sum([tx[1] for tx in _txsample])*self.txrate/n
-            # return sum([entry.tx.size for entry in _txsample])*self.txrate/n
-
-        mean_byterate = _calc_single(self._txsample)
-        bootstrap_ests = DataSample()
-        for i in range(1000):
-            txsample = [self._txsample[int(random()*n)] for idx in range(n)]
-            bootstrap_ests.add_datapoints([_calc_single(txsample)])
-
-        bootstrap_ests.calc_stats()
-        std = bootstrap_ests.std
-
-        return mean_byterate, std
+        d = DataSample([tx[1]*self.txrate for tx in self._txsample])
+        d.calc_stats()
+        return d.mean, d.std / len(self._txsample)**0.5
 
     def __repr__(self):
         return "SimTxSource(samplesize: {}, txrate: {})".format(
