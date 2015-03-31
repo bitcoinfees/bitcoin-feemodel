@@ -3,7 +3,6 @@ from __future__ import division
 
 import unittest
 import logging
-from math import log
 from random import random
 from feemodel.app.predict import Prediction
 from feemodel.txmempool import MemBlock, get_mempool
@@ -18,16 +17,21 @@ HALFLIFE = 1000
 
 
 class PredictTests(unittest.TestCase):
+
+    def setUp(self):
+        self.pred = Prediction(HALFLIFE)
+        self.b = MemBlock.read(333931, dbfile=dbfile)
+        self.pred.update_predictions(self.b.entries, transientstats)
+        self.pred.update_predictions(get_mempool(), transientstats)
+
     def test_A(self):
-        pred = Prediction(HALFLIFE)
-        b = MemBlock.read(333931, dbfile=dbfile)
-        blocktime = b.time
-        # inblockentries = {txid: entry for txid, entry in b.entries.items() if entry.inblock}
-        pred.update_predictions(b.entries, transientstats)
-        pred.update_predictions(get_mempool(), transientstats)
+        pred = self.pred
+        blocktime = self.b.time
+        b = self.b
 
         for txpredict in pred.predicts.values():
-            # Adjust the entry time so that the p-value will be uniform in [0, 1]
+            # Adjust the entry time so that the p-value will be
+            # uniform in [0, 1]
             if txpredict is None:
                 continue
             target_pval = random()
@@ -61,6 +65,33 @@ class PredictTests(unittest.TestCase):
         self.assertAlmostEqual(newpdistance, pdistance)
         newpvalcount = sum(pred.pvalcounts)
         self.assertAlmostEqual(newpvalcount, pvalcount*0.5**(N/HALFLIFE))
+
+    def test_B(self):
+        # 0 wait time
+        pred = self.pred
+        blocktime = self.b.time
+        b = self.b
+        for txpredict in pred.predicts.values():
+            if txpredict:
+                txpredict.entrytime = blocktime
+        pred.process_block([b])
+        pdistance = pred.pdistance
+        print("p-distance is {}.".format(pdistance))
+        self.assertEqual(pdistance, 0.99)
+        self.assertEqual(pred.pval_ecdf[-2], 0)
+
+    def test_C(self):
+        # inf wait time
+        pred = self.pred
+        b = self.b
+        for txpredict in pred.predicts.values():
+            if txpredict:
+                txpredict.entrytime = -float("inf")
+        pred.process_block([b])
+        pdistance = pred.pdistance
+        print("p-distance is {}.".format(pdistance))
+        self.assertEqual(pdistance, 0.99)
+        self.assertEqual(pred.pval_ecdf[0], 1)
 
 
 if __name__ == '__main__':
