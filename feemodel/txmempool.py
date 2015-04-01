@@ -321,8 +321,7 @@ class MemBlock(object):
         except sqlite3.OperationalError as e:
             if e.message.startswith('no such table'):
                 return None
-            else:
-                raise e
+            raise e
         else:
             if block:
                 blocksize, blocktime = block[0]
@@ -360,8 +359,7 @@ class MemBlock(object):
         except sqlite3.OperationalError as e:
             if e.message.startswith('no such table'):
                 return []
-            else:
-                raise e
+            raise e
         finally:
             if db is not None:
                 db.close()

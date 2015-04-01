@@ -4,7 +4,8 @@ from __future__ import division
 import unittest
 import logging
 import os
-from random import random
+from math import exp
+from random import random, expovariate
 from feemodel.app.predict import Prediction, pvals_blocks_to_keep
 from feemodel.txmempool import MemBlock, get_mempool
 from feemodel.util import load_obj
@@ -91,7 +92,7 @@ class PredictTests(unittest.TestCase):
         b = self.b
         for txpredict in pred.predicts.values():
             if txpredict:
-                txpredict.entrytime = 0
+                txpredict.entrytime = -float("inf")
         pred.process_block([b], dbfile=pvals_dbfile)
         pdistance = pred.pdistance
         print("p-distance is {}.".format(pdistance))
@@ -113,13 +114,19 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = blocktime - 600
+        pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
+        self.assertIsNone(pred_db.pval_ecdf)
         pred.process_block([b], dbfile=pvals_dbfile)
+        pred_db = Prediction.from_db(HALFLIFE, conditions="waittime>600",
+                                     dbfile=pvals_dbfile)
+        # No pvals
+        self.assertRaises(ValueError, pred_db.print_predicts)
 
         b.height += pvals_blocks_to_keep - 1
         pred.update_predictions(b.entries, transientstats)
         for txpredict in pred.predicts.values():
             if txpredict:
-                txpredict.entrytime = blocktime - 600
+                txpredict.entrytime = blocktime - 300
         pred.process_block([b], dbfile=pvals_dbfile)
 
         # Check stat is unchanged on load
@@ -132,10 +139,44 @@ class PredictTests(unittest.TestCase):
         heights = pred._get_heights(dbfile=pvals_dbfile)
         self.assertEqual(heights, [333931, 333931+pvals_blocks_to_keep-1])
 
+        b.height += 1
+        pred.update_predictions(b.entries, transientstats)
+        for txpredict in pred.predicts.values():
+            if txpredict:
+                txpredict.entrytime = blocktime - 100
+        pred.process_block([b], dbfile=pvals_dbfile)
+
+        heights = pred._get_heights(dbfile=pvals_dbfile)
+        self.assertEqual(
+            heights,
+            [333931+pvals_blocks_to_keep-1, 333931+pvals_blocks_to_keep])
+        pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
+        self.assertTrue(any([
+            abs(p-p_db) >= 0.00001
+            for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf)]))
+        self.assertNotAlmostEqual(pred.pdistance, pred_db.pdistance)
 
     def tearDown(self):
         if os.path.exists(pvals_dbfile):
             os.remove(pvals_dbfile)
+
+
+class GeneralTests(unittest.TestCase):
+
+    def test_A(self):
+        # Test Prediction._add_block_pvals
+        pred = Prediction(HALFLIFE)
+        for i in range(1000):
+            p = [expovariate_pval(expovariate(1)) for i in xrange(300)]
+            pred._add_block_pvals(p)
+        pred._calc_pval_ecdf()
+        print("pdistance is {}.".format(pred.pdistance))
+        self.assertLess(pred.pdistance, 0.01)
+
+
+def expovariate_pval(r):
+    '''Returns the pvalue of an expovariate with rate 1.'''
+    return exp(-r)
 
 
 if __name__ == '__main__':

@@ -155,7 +155,7 @@ class TransientStats(object):
         if feerate < self.feerates[0]:
             return None
         waitpercentiles = [w(feerate) for w in self.waitpercentiles]
-        return TxPrediction(feerate, currtime, waitpercentiles=waitpercentiles)
+        return TxPrediction(waitpercentiles, feerate, currtime)
 
     def get_stats(self):
         stats = {
