@@ -87,7 +87,7 @@ class Prediction(object):
 
     def update_predictions(self, entries, transientstats):
         new_txids = set(entries) - set(self.predicts)
-        currtime = time()
+        currtime = int(time())
         for txid in new_txids:
             entry = entries[txid]
             if not entry.depends and not entry.is_high_priority():
@@ -101,20 +101,19 @@ class Prediction(object):
             if block is None:
                 continue
             newtxpredicts = []
-            numpredicts = 0
-            for txid, entry in block.entries.items():
-                if entry.inblock:
-                    if txid in self.predicts:
-                        txpredict = self.predicts[txid]
-                        if txpredict:
-                            txpredict.calc_pval(block.time)
-                            newtxpredicts.append(txpredict)
-                            numpredicts += 1
-                        del self.predicts[txid]
+            inblocktxids = [txid for txid, entry in block.entries.items()
+                            if entry.inblock]
+            predict_inblock = set(self.predicts) & set(inblocktxids)
+            for txid in predict_inblock:
+                txpredict = self.predicts[txid]
+                if txpredict:
+                    txpredict.calc_pval(block.time)
+                    newtxpredicts.append(txpredict)
+                del self.predicts[txid]
             _pvals = [tx.pval for tx in newtxpredicts]
             self._add_block_pvals(_pvals)
             logger.info("Block %d: %d predicts tallied." %
-                        (block.height, numpredicts))
+                        (block.height, len(newtxpredicts)))
 
             # Remove from predictions those entries that are no longer
             # in the mempool. This can happen, for example, if the predicts
