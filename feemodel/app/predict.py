@@ -1,6 +1,8 @@
 from __future__ import division
 
+import os
 import logging
+import sqlite3
 from time import time
 from bisect import bisect
 from math import ceil
@@ -8,6 +10,7 @@ from math import ceil
 from tabulate import tabulate
 
 from feemodel.util import Function
+from feemodel.config import datadir
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,19 @@ logger = logging.getLogger(__name__)
 WAIT_PERCENTILE_PTS = [0.05*i for i in range(1, 21)]
 NUM_PVAL_POINTS = 100
 WAIT_MEDIAN_IDX = bisect(WAIT_PERCENTILE_PTS, 0.5) - 1
+
+PVALS_DB_SCHEMA = {
+    'txs': [
+        'blockheight INTEGER',
+        'entrytime INTEGER',
+        'feerate INTEGER',
+        'median_wait INTEGER',
+        'waittime INTEGER',
+        'pval REAL'
+    ]
+}
+pvals_dbfile = os.path.join(datadir, 'pvals.db')
+pvals_blocks_to_keep = 2016
 
 
 class TxPrediction(Function):
@@ -31,11 +47,16 @@ class TxPrediction(Function):
 
     _y = [1 - w for w in [0] + WAIT_PERCENTILE_PTS]
 
-    def __init__(self, waitpercentiles, feerate, entrytime):
-        self._x = [0] + waitpercentiles
-        self.feerate = feerate
-        self.entrytime = entrytime
-        self.median_waittime = waitpercentiles[WAIT_MEDIAN_IDX]
+    def __init__(self, feerate, entrytime, waitpercentiles=None):
+        if waitpercentiles:
+            self._x = [0] + waitpercentiles
+            self.median_waittime = int(waitpercentiles[WAIT_MEDIAN_IDX])
+        else:
+            self._x = []
+            self.median_waittime = None
+
+        self.feerate = int(feerate)
+        self.entrytime = int(entrytime)
         self.waittime = None
         self.pval = None
 
@@ -43,10 +64,30 @@ class TxPrediction(Function):
         '''Calculate the p-value of the tx.
 
         blocktime is the timestamp of the block that included the tx.
+        This method only works when waitpercentiles was specified in
+        __init__.
         '''
-        self.waittime = blocktime - self.entrytime
+        self.waittime = int(blocktime) - self.entrytime
         self.pval = self(self.waittime, use_upper=True, use_lower=True)
         return self.pval
+
+    def _get_attr_tuple(self):
+        '''For writing to db.'''
+        attr_tuple = (
+            self.feerate,
+            self.entrytime,
+            self.median_waittime,
+            self.waittime,
+            self.pval)
+        return attr_tuple
+
+    @classmethod
+    def _from_attr_tuple(cls, tup):
+        tx = cls(tup[0], tup[1])
+        tx.median_waittime = tup[2]
+        tx.waittime = tup[3]
+        tx.pval = tup[4]
+        return tx
 
 
 class Prediction(object):
@@ -65,11 +106,12 @@ class Prediction(object):
         for txid in new_txids:
             entry = entries[txid]
             if not entry.depends and not entry.is_high_priority():
-                self.predicts[txid] = transientstats.predict(entry, currtime)
+                self.predicts[txid] = transientstats.predict(entry.feerate,
+                                                             currtime)
             else:
                 self.predicts[txid] = None
 
-    def process_block(self, blocks):
+    def process_block(self, blocks, dbfile=None):
         for block in blocks:
             if block is None:
                 continue
@@ -94,9 +136,33 @@ class Prediction(object):
             predicts_del = set(self.predicts) - set(block.entries)
             for txid in predicts_del:
                 del self.predicts[txid]
+            if dbfile:
+                self._write_block(
+                    block.height, newtxpredicts, dbfile, pvals_blocks_to_keep)
 
         self._calc_pval_ecdf()
         self._calc_pdistance()
+
+    @classmethod
+    def from_db(cls, block_halflife, condition_fn=None, dbfile=pvals_dbfile):
+        '''Load past tx p-vals from db.
+
+        Only uses the txs for which condition_fn(txpredict) is True.
+        '''
+        pred = cls(block_halflife)
+        heights = pred._get_heights(dbfile=dbfile)
+        if not heights:
+            return pred
+        for height in heights:
+            txpredicts = pred._read_block(height, dbfile=dbfile)
+            if txpredicts is None:
+                continue
+            if condition_fn is not None:
+                txpredicts = filter(condition_fn, txpredicts)
+            pred._add_pvals(txpredicts)
+        pred._calc_pval_ecdf()
+        pred._calc_pdistance()
+        return pred
 
     def print_predicts(self):
         '''Print the pval ECDF and predict-distance.'''
@@ -113,8 +179,7 @@ class Prediction(object):
     def _add_pvals(self, txpredicts):
         new_pvalcounts = [0.]*NUM_PVAL_POINTS
         for tx in txpredicts:
-            pval = tx.pval
-            pvalcount_idx = max(int(ceil(pval*NUM_PVAL_POINTS)) - 1, 0)
+            pvalcount_idx = max(int(ceil(tx.pval*NUM_PVAL_POINTS)) - 1, 0)
             new_pvalcounts[pvalcount_idx] += 1
         for idx in range(len(self.pvalcounts)):
             self.pvalcounts[idx] = (self._alpha*self.pvalcounts[idx] +
@@ -122,6 +187,9 @@ class Prediction(object):
 
     def _calc_pval_ecdf(self):
         totalcount = sum(self.pvalcounts)
+        if not totalcount:
+            self.pval_ecdf = None
+            return
         self.pval_ecdf = []
         cumsum = 0.
         for count in self.pvalcounts:
@@ -143,9 +211,83 @@ class Prediction(object):
         the probability P that the tx will be within the bound (i.e. w <= W)
         satisfies abs(P - L) <= d.
         '''
+        if not self.pval_ecdf:
+            self.pdistance = None
+            return
         d = [abs(pr - (idx+1)/NUM_PVAL_POINTS)
              for idx, pr in enumerate(self.pval_ecdf)]
         self.pdistance = max(d)
+
+    def _write_block(self, blockheight, txpredicts, dbfile, blocks_to_keep):
+        '''Write the block's p-val statistics to db.'''
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            for key, val in PVALS_DB_SCHEMA.items():
+                db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
+                           (key, ','.join(val)))
+            db.execute('CREATE INDEX IF NOT EXISTS heightidx '
+                       'ON txs (blockheight)')
+            with db:
+                logger.debug("Writing {} predicts to block {}.".format(len(txpredicts), blockheight))
+                db.executemany(
+                    'INSERT INTO txs VALUES (?,?,?,?,?,?)',
+                    [(blockheight,) + tx._get_attr_tuple()
+                     for tx in txpredicts])
+
+            if blocks_to_keep > 0:
+                height_thresh = blockheight - blocks_to_keep
+                with db:
+                    db.execute('DELETE FROM txs WHERE blockheight<=?',
+                               (height_thresh,))
+        finally:
+            if db is not None:
+                db.close()
+
+    @staticmethod
+    def _read_block(blockheight, dbfile=pvals_dbfile):
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            db.row_factory = Prediction._db_row_factory
+            txpredicts = db.execute(
+                "SELECT * FROM txs WHERE blockheight=?",
+                (blockheight, )).fetchall()
+            return txpredicts
+        except sqlite3.OperationalError as e:
+            if e.message.startswith('no such table'):
+                return None
+            else:
+                raise e
+        finally:
+            if db is not None:
+                db.close()
+
+    @staticmethod
+    def _get_heights(dbfile=pvals_dbfile):
+        '''Get the block heights in the db.
+
+        Returns the list of heights for which tx p-value records exist.
+        '''
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            heights = db.execute(
+                "SELECT DISTINCT blockheight FROM txs").fetchall()
+            return sorted([r[0] for r in heights])
+        except sqlite3.OperationalError as e:
+            if e.message.startswith('no such table'):
+                return None
+            else:
+                raise e
+        finally:
+            if db is not None:
+                db.close()
+
+    @staticmethod
+    def _db_row_factory(cursor, row):
+        '''Row factory for forming TxPrediction object from p-val DB row.'''
+        return TxPrediction._from_attr_tuple(row[1:])
 
 
 # #class BlockScore(object):
