@@ -44,7 +44,7 @@ class PredictTests(unittest.TestCase):
             waittime = txpredict.inv(target_pval)
             txpredict.entrytime = blocktime - waittime
 
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
         pvalcount = sum(pred.pvalcounts)
         pdistance = pred.pdistance
         print("p-distance is {}.".format(pdistance))
@@ -65,7 +65,7 @@ class PredictTests(unittest.TestCase):
         # Check the exponential decay
         N = 10
         for i in range(N):
-            pred.process_block([b])
+            pred.process_blocks([b])
 
         newpdistance = pred.pdistance
         self.assertAlmostEqual(newpdistance, pdistance)
@@ -80,7 +80,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = blocktime
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
         pdistance = pred.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
@@ -93,7 +93,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = -float("inf")
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
         pdistance = pred.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
@@ -104,7 +104,7 @@ class PredictTests(unittest.TestCase):
         pred = self.pred
         b = self.b
         b.entries = {}
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
 
     def test_E(self):
         # DB checks
@@ -116,7 +116,7 @@ class PredictTests(unittest.TestCase):
                 txpredict.entrytime = blocktime - 600
         pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
         self.assertIsNone(pred_db.pval_ecdf)
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
         pred_db = Prediction.from_db(HALFLIFE, conditions="waittime>600",
                                      dbfile=pvals_dbfile)
         # No pvals
@@ -127,7 +127,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = blocktime - 300
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
 
         # Check stat is unchanged on load
         pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
@@ -144,7 +144,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = blocktime - 100
-        pred.process_block([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=pvals_dbfile)
 
         heights = pred._get_heights(dbfile=pvals_dbfile)
         self.assertEqual(

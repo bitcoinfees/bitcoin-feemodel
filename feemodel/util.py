@@ -314,6 +314,7 @@ class Function(object):
         print(tabulate(table, headers=headers))
 
 
+# TODO: deprecate this
 class Table(object):
     def __init__(self, colwidths=None, padding=2):
         self.colwidths = colwidths

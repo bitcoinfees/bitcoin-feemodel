@@ -32,7 +32,7 @@ class SimBlock(object):
 
     def __repr__(self):
         return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (
-            self.height, len(self.txs), self.size, self.sfr)
+            self.height, len(self._txs), self.size, self.sfr)
 
 
 class SimPool(object):
@@ -125,9 +125,9 @@ class SimPools(object):
         self.totalhashrate = totalhashrate
 
     def get_capacity(self):
-        poolfeerates = [pool.minfeerate for name, pool in self.__pools]
+        poolfeerates = [pool.minfeerate for name, pool in self.__pools
+                        if pool.minfeerate < float("inf")]
         poolfeerates = sorted(set(poolfeerates + [0]))
-        poolfeerates = filter(lambda fee: fee < float("inf"), poolfeerates)
 
         cap_lower = [
             sum([pool.proportion*pool.maxblocksize
@@ -166,7 +166,7 @@ class SimPools(object):
         elogp = -sum([p.proportion*log(p.proportion)
                      for n, p in self.__pools])
         numeffpools = exp(elogp)
-        return "SimPools{Num: %d, NumEffective: %.2f}" % (
+        return "SimPools(Num: %d, NumEffective: %.2f)" % (
             len(self.__pools), numeffpools)
 
     def __eq__(self, other):

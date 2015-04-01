@@ -3,8 +3,11 @@ from __future__ import division
 import logging
 from time import time
 from itertools import groupby
+
+from tabulate import tabulate
+
 from feemodel.config import knownpools, history_file
-from feemodel.util import get_coinbase_info, Table, get_block_timestamp
+from feemodel.util import get_coinbase_info, get_block_timestamp
 from feemodel.util import get_block_size, get_hashesperblock
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
@@ -21,7 +24,7 @@ class PoolEstimate(SimPool):
         self.hashrate = hashrate
         self.feelimitedblocks = None
         self.sizelimitedblocks = None
-        self.stats = None
+        self.mfrstats = None
         super(PoolEstimate, self).__init__(
             hashrate, maxblocksize, float("inf"))
 
@@ -69,11 +72,11 @@ class PoolEstimate(SimPool):
                 txs.extend(tx_preprocess(block))
 
         if txs:
-            self.stats = calc_stranding_feerate(txs)
-            self.minfeerate = self.stats['sfr']
+            self.mfrstats = calc_stranding_feerate(txs)
+            self.minfeerate = self.mfrstats['sfr']
         else:
             logger.warning("Pool estimation: no valid transactions.")
-            self.stats = {
+            self.mfrstats = {
                 "sfr": float("inf"),
                 "bias": float("inf"),
                 "mean": float("inf"),
@@ -212,22 +215,21 @@ class PoolsEstimator(SimPools):
 
     def print_pools(self):
         poolitems = self._SimPools__pools
-        table = Table()
-        table.add_row(("Name", "Hashrate", "Prop", "MBS", "MFR", "AKN", "BKN",
-                       "mean", "std", "bias"))
-        for name, pool in poolitems:
-            table.add_row((
-                name,
-                '%.0f' % (pool.hashrate*1e-12),
-                '%.3f' % pool.proportion,
-                pool.maxblocksize,
-                pool.minfeerate,
-                pool.stats['abovekn'],
-                pool.stats['belowkn'],
-                '%.2f' % pool.stats['mean'],
-                '%.2f' % pool.stats['std'],
-                '%.2f' % pool.stats['bias']))
-        table.print_table()
+        headers = ["Name", "Hashrate", "Prop", "MBS", "MFR", "AKN", "BKN",
+                   "MFR.mean", "MFR.std", "MFR.bias"]
+        table = [[
+            name,
+            pool.hashrate*1e-12,
+            pool.proportion,
+            pool.maxblocksize,
+            pool.minfeerate,
+            pool.mfrstats['abovekn'],
+            pool.mfrstats['belowkn'],
+            pool.mfrstats['mean'],
+            pool.mfrstats['std'],
+            pool.mfrstats['bias']]
+            for name, pool in poolitems]
+        print(tabulate(table, headers=headers))
         print("Avg block interval is %.2f" % (1./self.blockrate,))
         print("Total hashrate is {} Thps.".format(self.totalhashrate*1e-12))
 
@@ -244,11 +246,11 @@ class PoolsEstimator(SimPools):
                 'proportion': pool.proportion,
                 'maxblocksize': pool.maxblocksize,
                 'minfeerate': pool.minfeerate,
-                'abovekn': pool.stats['abovekn'],
-                'belowkn': pool.stats['belowkn'],
-                'mean': pool.stats['mean'],
-                'std': pool.stats['std'],
-                'bias': pool.stats['bias']
+                'abovekn': pool.mfrstats['abovekn'],
+                'belowkn': pool.mfrstats['belowkn'],
+                'mean': pool.mfrstats['mean'],
+                'std': pool.mfrstats['std'],
+                'bias': pool.mfrstats['bias']
             }
             for name, pool in self._SimPools__pools
         }

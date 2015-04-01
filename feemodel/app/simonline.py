@@ -1,23 +1,101 @@
-# #from __future__ import division
-# #
-# #import logging
-# #import threading
-# #import os
-# #
-# #from feemodel.config import datadir, pools_config, ss_config, trans_config
-# #from feemodel.util import save_obj, load_obj
+from __future__ import division
+
+import os
+import logging
+import threading
+
 from feemodel.txmempool import TxMempool
-# ## from feemodel.app import SteadyStateOnline, TransientOnline
-# ## from feemodel.app import PoolsEstimatorOnline, Prediction
-# #
-# #predict_feerates = range(0, 60000, 10000)
-# #predict_window = 2016
-# #
-# #logger = logging.getLogger(__name__)
+from feemodel.config import datadir
+from feemodel.util import load_obj, save_obj
+from feemodel.app.pools import PoolsOnlineEstimator
+from feemodel.app.txrate import TxRateOnlineEstimator
+from feemodel.app.transient import TransientOnline
+from feemodel.app.predict import Prediction, pvals_dbfile
+
+logger = logging.getLogger(__name__)
+
+pools_window = 2016
+pools_update_period = 86400
+pools_minblocks = 432
+
+txrate_halflife = 3600
+
+trans_update_period = 60
+trans_miniters = 1000
+trans_maxiters = 10000
+
+predict_savefile = os.path.join(datadir, 'savepredict.pickle')
+predict_block_halflife = 1008
 
 
 class SimOnline(TxMempool):
-    pass
+
+    def __init__(self, predict_savefile=predict_savefile):
+        super(SimOnline, self).__init__()
+        self.predict_lock = threading.Lock()
+        self.predict_savefile = predict_savefile
+        self.load_predicts()
+
+        self.poolsonline = PoolsOnlineEstimator(
+            pools_window,
+            update_period=pools_update_period,
+            minblocks=pools_minblocks)
+        self.txonline = TxRateOnlineEstimator(halflife=txrate_halflife)
+        self.transient = TransientOnline(
+            self,
+            self.poolsonline,
+            self.txonline,
+            update_period=trans_update_period,
+            miniters=trans_miniters,
+            maxiters=trans_maxiters)
+
+    def run(self):
+        with self.transient.context_start():
+            super(SimOnline, self).run()
+
+    def update(self):
+        super(SimOnline, self).update()
+        entries, currheight = self.get_entries()
+        self.poolsonline.update_async(
+            currheight, stopflag=self.get_stop_object())
+        threading.Thread(
+            target=self.update_predicts,
+            args=(entries,)).start()
+
+    def process_blocks(self, *args):
+        memblocks = super(SimOnline, self).process_blocks(*args)
+        with self.predict_lock:
+            self.prediction.process_blocks(memblocks, dbfile=pvals_dbfile)
+            self.save_predicts()
+
+    def get_predictstats(self):
+        with self.predict_lock:
+            return self.prediction.get_stats()
+
+    def get_transientstats(self):
+        return self.transient.stats.get_stats()
+
+    def get_poolstats(self):
+        pass
+
+    def update_predicts(self, entries):
+        with self.predict_lock:
+            self.prediction.update_predictions(
+                entries, self.transient.stats)
+
+    def load_predicts(self):
+        try:
+            self.prediction = load_obj(self.predict_savefile)
+        except Exception:
+            logger.info("Unable to load saved predicts; "
+                        "starting from scratch.")
+            self.prediction = Prediction(predict_block_halflife)
+
+    def save_predicts(self):
+        try:
+            save_obj(self.prediction, self.predict_savefile)
+        except Exception:
+            logger.info("Unable to save predicts.")
 
 
 # #class SimOnline(TxMempool):

@@ -75,6 +75,8 @@ class TxMempool(StoppableThread):
 
     def __init__(self, write_history=True, dbfile=history_file,
                  keep_history=keep_history):
+        # TODO: use (dbfile is not None) in place of write_history;
+        #       also move keep_history to a global var?
         self.mempool_lock = threading.Lock()
         self.blockqueue = Queue()
         self.best_height = None

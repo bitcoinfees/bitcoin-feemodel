@@ -14,7 +14,6 @@ from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
 default_update_period = 60.
 default_miniters = 1000
 default_maxiters = 10000
-default_maxtime = 60.
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +76,9 @@ class TransientOnline(StoppableThread):
         waittimes, timespent, numiters = transientsim(
             sim,
             init_entries=init_entries,
-            miniters=default_miniters,
-            maxiters=default_maxiters,
-            maxtime=default_maxtime,
+            miniters=self.miniters,
+            maxiters=self.maxiters,
+            maxtime=self.update_period,
             stopflag=self.get_stop_object())
         mempoolsizes = self._calc_mempoolsizes(init_entries,
                                                sorted(waittimes.keys()))

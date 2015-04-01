@@ -86,6 +86,8 @@ class Prediction(object):
         self.predicts = {}
 
     def update_predictions(self, entries, transientstats):
+        if not transientstats:
+            return
         new_txids = set(entries) - set(self.predicts)
         currtime = int(time())
         for txid in new_txids:
@@ -96,7 +98,7 @@ class Prediction(object):
             else:
                 self.predicts[txid] = None
 
-    def process_block(self, blocks, dbfile=None):
+    def process_blocks(self, blocks, dbfile=None):
         for block in blocks:
             if block is None:
                 continue
@@ -126,37 +128,6 @@ class Prediction(object):
                     block.height, newtxpredicts, dbfile, pvals_blocks_to_keep)
 
         self._calc_pval_ecdf()
-
-    @classmethod
-    def from_db(cls, block_halflife, conditions=None, dbfile=pvals_dbfile):
-        '''Load past tx p-vals from db.
-
-        Only uses the txs for which condition_fn(txpredict) is True.
-        '''
-        pred = cls(block_halflife)
-        heights = pred._get_heights(dbfile=dbfile)
-        if not heights:
-            return pred
-        for height in heights:
-            pvals = pred._read_block(
-                height, conditions=conditions, dbfile=dbfile)
-            pred._add_block_pvals(pvals)
-        pred._calc_pval_ecdf()
-        return pred
-
-    def print_predicts(self):
-        '''Print the pval ECDF and predict-distance.'''
-        if not self.pval_ecdf:
-            raise ValueError("No valid ECDF.")
-        headers = ['x', 'F(x)']
-        table = zip(
-            [i / NUM_PVAL_POINTS for i in range(1, NUM_PVAL_POINTS+1)],
-            self.pval_ecdf)
-        print("ECDF of p-values")
-        print("================")
-        print(tabulate(table, headers=headers))
-        print("Halflife: {} blocks.".format(self.block_halflife))
-        print("Predict-distance: {}".format(self.pdistance))
 
     def _add_block_pvals(self, pvals):
         new_pvalcounts = [0.]*NUM_PVAL_POINTS
@@ -195,6 +166,23 @@ class Prediction(object):
             self.pval_ecdf.append(p)
             d.append(abs(p - (idx+1)/NUM_PVAL_POINTS))
         self.pdistance = max(d)
+
+    @classmethod
+    def from_db(cls, block_halflife, conditions=None, dbfile=pvals_dbfile):
+        '''Load past tx p-vals from db.
+
+        Only uses the txs for which condition_fn(txpredict) is True.
+        '''
+        pred = cls(block_halflife)
+        heights = pred._get_heights(dbfile=dbfile)
+        if not heights:
+            return pred
+        for height in heights:
+            pvals = pred._read_block(
+                height, conditions=conditions, dbfile=dbfile)
+            pred._add_block_pvals(pvals)
+        pred._calc_pval_ecdf()
+        return pred
 
     def _write_block(self, blockheight, txpredicts, dbfile, blocks_to_keep):
         '''Write the block's txpredicts to db.'''
@@ -264,6 +252,27 @@ class Prediction(object):
         finally:
             if db is not None:
                 db.close()
+
+    def print_predicts(self):
+        '''Print the pval ECDF and predict-distance.'''
+        if not self.pval_ecdf:
+            raise ValueError("No valid ECDF.")
+        headers = ['x', 'F(x)']
+        table = zip(
+            [i / NUM_PVAL_POINTS for i in range(1, NUM_PVAL_POINTS+1)],
+            self.pval_ecdf)
+        print("ECDF of p-values")
+        print("================")
+        print(tabulate(table, headers=headers))
+        print("Halflife: {} blocks.".format(self.block_halflife))
+        print("Predict-distance: {}".format(self.pdistance))
+
+    def get_stats(self):
+        if not self.pval_ecdf:
+            return None
+        return {
+            "pval_ecdf": self.pval_ecdf,
+            "pdistance": self.pdistance}
 
 
 # #class BlockScore(object):

@@ -14,18 +14,19 @@ logger = logging.getLogger(__name__)
 
 default_update_period = 86400
 default_savedir = os.path.join(datadir, 'pools/')
-
-MIN_BLOCKS = 432  # 3 days' worth
+default_minblocks = 432  # 3 days' worth
 
 
 class PoolsOnlineEstimator(object):
 
     def __init__(self, window,
                  update_period=default_update_period,
+                 minblocks=default_minblocks,
                  dbfile=history_file,
                  savedir=default_savedir):
         self.window = window
         self.update_period = update_period
+        self.minblocks = minblocks
         self.dbfile = dbfile
         self.savedir = savedir
         self.best_diff_interval = None
@@ -89,7 +90,7 @@ class PoolsOnlineEstimator(object):
             rangetuple = [currheight-self.window+1, currheight+1]
             have_heights = MemBlock.get_heights(
                 blockrangetuple=rangetuple, dbfile=self.dbfile)
-            if len(have_heights) >= MIN_BLOCKS:
+            if len(have_heights) >= self.minblocks:
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
                 # Only try once every hour, when there aren't enough blocks
