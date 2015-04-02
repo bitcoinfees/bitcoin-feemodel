@@ -124,7 +124,7 @@ class CacheProxy(BlockingProxy):
         self.maxblocks = maxblocks
         self.maxhashes = maxhashes
 
-    def getcache(self, d, key, maxitems, func):
+    def getcache(self, d, key, maxitems, default_fn):
         with self.rlock:
             result = d.get(key)
             if result is not None:
@@ -132,7 +132,7 @@ class CacheProxy(BlockingProxy):
                 del d[key]
                 d[key] = result
             else:
-                result = func(key)
+                result = default_fn(key)
                 d[key] = result
                 if len(d) > maxitems:
                     # Remove the least recently accessed item
