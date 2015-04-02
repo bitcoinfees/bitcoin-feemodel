@@ -4,13 +4,22 @@ import unittest
 import threading
 from copy import deepcopy
 from time import sleep
+from random import seed
+
+from feemodel.tests.pseudoproxy import install
+install()
+
 from feemodel.util import save_obj, load_obj
 from feemodel.estimate import PoolsEstimator
+from feemodel.config import datadir
 
+from feemodel.tests.config import memblock_dbfile as dbfile, poolsref
+
+seed(0)
+savefile = os.path.join(datadir, '_test_tmp.pickle')
+if os.path.exists(savefile):
+    os.remove(savefile)
 logging.basicConfig(level=logging.DEBUG)
-dbfile = 'data/test.db'
-pe_ref_file = "data/pe_ref.pickle"
-savefile = 'data/tmp.pickle'
 
 blockrange = (333931, 333954)
 
@@ -24,40 +33,38 @@ def delayed_stop(stopflag, delay):
 
 
 class PoolEstimateTest(unittest.TestCase):
-    def setUp(self):
-        self.pe = pe
 
     def test_basic(self):
-        self.pe.print_pools()
-        pools = self.pe.get()
-        print(self.pe)
+        print("pools is: ")
+        pe.print_pools()
+        print(pe)
+        pools = pe.get_pools()
         print(pools)
-        pe_ref = load_obj(pe_ref_file)
-        print("pe_ref is: ")
-        pe_ref.print_pools()
-        self.assertEqual(pe_ref, self.pe)
+        print("poolsref is: ")
+        poolsref.print_pools()
+        self.assertEqual(poolsref, pe)
 
     def test_saveload(self):
-        save_obj(self.pe, savefile)
+        save_obj(pe, savefile)
         pe_load = load_obj(savefile)
-        self.assertEqual(pe_load, self.pe)
+        self.assertEqual(pe_load, pe)
 
     def test_redorange(self):
-        pe_tmp = deepcopy(self.pe)
+        pe_tmp = deepcopy(pe)
         pe_tmp.start(blockrange, dbfile=dbfile)
-        self.assertEqual(pe_tmp, self.pe)
+        self.assertEqual(pe_tmp, pe)
 
     def test_smallrange(self):
-        pe_tmp = deepcopy(self.pe)
+        pe_tmp = deepcopy(pe)
         pe_tmp.start((333931, 333940), dbfile=dbfile)
-        self.assertNotEqual(pe_tmp, self.pe)
+        self.assertNotEqual(pe_tmp, pe)
 
     def test_stop(self):
         stopflag = threading.Event()
-        self.pe = PoolsEstimator()
+        pe = PoolsEstimator()
         stopthread = threading.Thread(target=delayed_stop, args=(stopflag, 1))
         stopthread.start()
-        self.assertRaises(StopIteration, self.pe.start, blockrange,
+        self.assertRaises(StopIteration, pe.start, blockrange,
                           stopflag=stopflag, dbfile=dbfile)
         stopthread.join()
 

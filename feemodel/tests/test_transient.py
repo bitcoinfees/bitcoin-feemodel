@@ -4,16 +4,15 @@ import logging
 from time import sleep, time
 from bisect import bisect
 from math import log
-from random import choice
-from feemodel.tests.testproxy import TestMempool, TestPoolsOnline, TestTxOnline
-from feemodel.util import load_obj
+from random import choice, seed
+seed(0)
+
+from feemodel.tests.pseudoproxy import install
+install()
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
-
-dbfile = 'data/test.db'
-refpools = load_obj('data/pe_ref.pickle')
-reftxsource = load_obj('data/tr_ref.pickle')
-statsref = load_obj('data/transientstats_ref.pickle')
+from feemodel.tests.config import (memblock_dbfile as dbfile, poolsref, txref,
+                                   transientref as statsref)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -21,9 +20,9 @@ logging.basicConfig(level=logging.DEBUG)
 class TransientSimTests(unittest.TestCase):
     def test_A(self):
         transientonline = TransientOnline(
-            TestMempool(),
-            TestPoolsOnline(refpools),
-            TestTxOnline(reftxsource))
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref))
         with transientonline.context_start():
             while transientonline.stats is None:
                 sleep(1)
@@ -38,7 +37,8 @@ class TransientSimTests(unittest.TestCase):
             statsref.waitpercentiles[WAIT_MEDIAN_IDX].print_fn()
 
             print("Comparing expected waits with ref:")
-            for wait, waitref in zip(stats.expectedwaits.waits, statsref.expectedwaits.waits):
+            for wait, waitref in zip(stats.expectedwaits.waits,
+                                     statsref.expectedwaits.waits):
                 logdiff = abs(log(wait) - log(waitref))
                 print("wait/waitref is {}.".format(wait/waitref))
                 self.assertLess(logdiff, 0.1)
@@ -68,7 +68,8 @@ class TransientSimTests(unittest.TestCase):
                 for pctl in [0.05, 0.5, 0.9]:
                     wait_idx = bisect(WAIT_PERCENTILE_PTS, pctl) - 1
                     wait = stats.waitpercentiles[wait_idx](feerate)
-                    print("{} wait for feerate of {} is {}.".format(pctl, feerate, wait))
+                    print("{} wait for feerate of {} is {}.".
+                          format(pctl, feerate, wait))
                     blocktime = currtime + wait
                     pval = txpredict.calc_pval(blocktime)
                     self.assertAlmostEqual(pval, 1-pctl)
@@ -77,7 +78,77 @@ class TransientSimTests(unittest.TestCase):
             self.assertIsNone(txpredict)
 
     def test_B(self):
-        pass
+        '''Test iter constraints.'''
+        # Test maxtime (equiv. update_time) and update loop.
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=1,
+            miniters=0,
+            maxiters=10000)
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertIsNotNone(stats)
+            self.assertLess(stats.timespent, 1.1)
+            transientonline.stats = None
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertIsNotNone(stats)
+
+        # Test miniters
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=1,
+            miniters=1000,
+            maxiters=10000)
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(1)
+            stats = transientonline.stats
+            self.assertEqual(stats.numiters, 1000)
+
+
+class PseudoMempool(object):
+    '''A pseudo TxMempool'''
+
+    def __init__(self):
+        from feemodel.txmempool import MemBlock
+        self.b = MemBlock.read(333931, dbfile=dbfile)
+        for entry in self.b.entries.values():
+            assert all([txid in self.b.entries for txid in entry.depends])
+
+    def get_entries(self):
+        return self.b.entries
+
+
+class PseudoPoolsOnline(object):
+
+    def __init__(self, poolsestimate):
+        self.poolsestimate = poolsestimate
+
+    def get_pools(self):
+        return self.poolsestimate
+
+    def __nonzero__(self):
+        return bool(self.poolsestimate)
+
+
+class PseudoTxOnline(object):
+
+    def __init__(self, txrate_estimator):
+        self.txrate_estimator = txrate_estimator
+
+    def get_txsource(self):
+        return self.txrate_estimator
+
+    def __nonzero__(self):
+        return bool(self.txrate_estimator)
 
 
 if __name__ == '__main__':

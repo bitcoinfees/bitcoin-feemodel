@@ -5,6 +5,8 @@ from random import random
 from bisect import bisect, bisect_left
 from itertools import groupby
 
+from tabulate import tabulate
+
 from feemodel.util import DataSample
 
 
@@ -82,6 +84,7 @@ class SimTxSource(object):
 
             feerates_bin.reverse()
             byterates_bin.reverse()
+            # TODO: remove duplicate feerates
             return feerates_bin, byterates_bin
 
             # txs = [entry.tx for entry in self._txsample]
@@ -117,6 +120,16 @@ class SimTxSource(object):
         d = DataSample([tx[1]*self.txrate for tx in self._txsample])
         d.calc_stats()
         return d.mean, d.std / len(self._txsample)**0.5
+
+    def print_rates(self):
+        if not self:
+            print("No txsample.")
+        feerates, byterates = self.get_byterates()
+        headers = ['Feerate', 'Cumulative byterate']
+        table = zip(feerates, byterates)
+        print(tabulate(table, headers=headers))
+        mean_byterate, std = self.calc_mean_byterate()
+        print("Mean byterate (std): {} ({})".format(mean_byterate, std))
 
     def __repr__(self):
         return "SimTxSource(samplesize: {}, txrate: {})".format(

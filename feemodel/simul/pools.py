@@ -89,7 +89,7 @@ class SimPools(object):
 
         return blockgenfn()
 
-    def get(self):
+    def get_pools(self):
         return {name: deepcopy(pool) for name, pool in self.__pools}
 
     def update(self, pools):

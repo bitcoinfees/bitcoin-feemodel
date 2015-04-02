@@ -5,16 +5,18 @@ import unittest
 import logging
 import os
 from math import exp
-from random import random, expovariate
-from feemodel.app.predict import Prediction, pvals_blocks_to_keep
-from feemodel.txmempool import MemBlock, get_mempool
-from feemodel.util import load_obj
+from random import random, expovariate, seed
 
+from feemodel.app.predict import Prediction, pvals_blocks_to_keep
+from feemodel.txmempool import MemBlock
+from feemodel.tests.config import (memblock_dbfile as dbfile,
+                                   transientref as transientstats)
+from feemodel.config import datadir
+
+seed(0)
 logging.basicConfig(level=logging.DEBUG)
 
-dbfile = 'data/test.db'
-pvals_dbfile = 'data/_tmp.db'
-transientstats = load_obj('data/transientstats_ref.pickle')
+pvals_dbfile = os.path.join(datadir, '_tmp_pvals.db')
 
 HALFLIFE = 1000
 
@@ -27,8 +29,9 @@ class PredictTests(unittest.TestCase):
     def setUp(self):
         self.pred = Prediction(HALFLIFE)
         self.b = MemBlock.read(333931, dbfile=dbfile)
+        extra_entries = MemBlock.read(333932, dbfile=dbfile).entries
         self.pred.update_predictions(self.b.entries, transientstats)
-        self.pred.update_predictions(get_mempool(), transientstats)
+        self.pred.update_predictions(extra_entries, transientstats)
 
     def test_A(self):
         pred = self.pred

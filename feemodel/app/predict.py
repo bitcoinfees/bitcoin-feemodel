@@ -157,14 +157,16 @@ class Prediction(object):
         totalcount = sum(self.pvalcounts)
         if not totalcount:
             return
-        self.pval_ecdf = []
+        pval_ecdf = []
         d = []
         cumsum = 0.
         for idx, count in enumerate(self.pvalcounts):
             cumsum += count
             p = cumsum / totalcount
-            self.pval_ecdf.append(p)
+            pval_ecdf.append(p)
             d.append(abs(p - (idx+1)/NUM_PVAL_POINTS))
+        # TODO: make these assignments atomic, for proper access
+        self.pval_ecdf = pval_ecdf
         self.pdistance = max(d)
 
     @classmethod

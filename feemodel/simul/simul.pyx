@@ -174,7 +174,7 @@ cdef class SimDepends(object):
 
     def __init__(self, depends):
         self._depends = set(depends) if depends else set()
-        self._depends_bak = set(depends)
+        self._depends_bak = set(self._depends)
 
     cdef remove(self, dependency):
         self._depends.remove(dependency)

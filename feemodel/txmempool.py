@@ -199,6 +199,7 @@ class TxMempool(StoppableThread):
 
     def get_status(self):
         runtime = int(time() - self.starttime)
+        # TODO: use self.best_height for this.
         currheight = proxy.getblockcount()
         numhistory = len(MemBlock.get_heights())
         if self.rawmempool:

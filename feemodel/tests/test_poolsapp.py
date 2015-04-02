@@ -7,27 +7,36 @@ import os
 import shutil
 import threading
 from time import sleep, time
+from random import seed
+
+from feemodel.tests.pseudoproxy import install
+install()
+
 from feemodel.config import datadir
 from feemodel.util import save_obj, get_hashesperblock
-import feemodel.app.pools
 from feemodel.app.pools import PoolsOnlineEstimator
 
+from feemodel.tests.config import memblock_dbfile as dbfile
+
+seed(0)
 logging.basicConfig(level=logging.DEBUG)
 
-dbfile = 'data/test.db'
 savedir = os.path.join(datadir, 'pools/.test')
 if os.path.exists(savedir):
     shutil.rmtree(savedir)
 
 _timestamp = None
-feemodel.app.pools.MIN_BLOCKS = 1
 
 
 class PoolsOnlineTests(unittest.TestCase):
     def test_A(self):
         print("Test A:")
         poolsonline = PoolsOnlineEstimator(
-            2016, 60, dbfile=dbfile, savedir=savedir)
+            2016,
+            update_period=60,
+            minblocks=1,
+            dbfile=dbfile,
+            savedir=savedir)
         t = poolsonline.update_async(333953)
         self.assertIsNotNone(t)
         self.assertFalse(poolsonline)
@@ -52,7 +61,11 @@ class PoolsOnlineTests(unittest.TestCase):
         save_obj(1, os.path.join(savedir, 'pe0000000.pickle'))
         update_period = int(time()) - _timestamp + 1
         poolsonline = PoolsOnlineEstimator(
-            2016, update_period, dbfile=dbfile, savedir=savedir)
+            2016,
+            update_period=update_period,
+            minblocks=1,
+            dbfile=dbfile,
+            savedir=savedir)
         self.assertTrue(poolsonline)
         sleep(1)
         stopflag = threading.Event()
@@ -67,7 +80,11 @@ class PoolsOnlineTests(unittest.TestCase):
 
         # test that we keep blockmap even if pools are outdated
         poolsonline = PoolsOnlineEstimator(
-            2016, 0, dbfile=dbfile, savedir=savedir)
+            2016,
+            update_period=0,
+            minblocks=1,
+            dbfile=dbfile,
+            savedir=savedir)
         self.assertFalse(poolsonline)
         self.assertTrue(poolsonline.get_pools().blockmap)
         t = poolsonline.update_async(333953)
@@ -82,7 +99,11 @@ class PoolsOnlineTests(unittest.TestCase):
         print("Test C:")
         # Test small window
         poolsonline = PoolsOnlineEstimator(
-            5, 1, dbfile=dbfile, savedir=savedir)
+            5,
+            update_period=1,
+            minblocks=1,
+            dbfile=dbfile,
+            savedir=savedir)
         t = poolsonline.update_async(333953)
         t.join()
         self.assertEqual(min(poolsonline.get_pools().blockmap.keys()),
@@ -94,7 +115,11 @@ class PoolsOnlineTests(unittest.TestCase):
         print("Test D:")
         # Test that blockrate is updated at retarget boundaries
         poolsonline = PoolsOnlineEstimator(
-            2016, 60, dbfile=dbfile, savedir=savedir)
+            2016,
+            update_period=60,
+            minblocks=1,
+            dbfile=dbfile,
+            savedir=savedir)
         t = poolsonline.update_async(333953)
         t.join()
         blockrate_ref = poolsonline.get_pools().blockrate
