@@ -94,7 +94,10 @@ class BlockingProxy(Proxy):
     '''Thread-safe version of bitcoin.rpc.Proxy.
 
     In addition, if there was a connection related exception, close the
-    connection before re-raising.
+    connection before re-raising. This enables one to continue using the
+    same proxy object after the exception (if, for e.g. Bitcoin Core goes
+    offline momentarily) - otherwise it might not work. This is a hack -
+    I'm not sure what is the right way to enable this behavior.
     '''
 
     def __init__(self):

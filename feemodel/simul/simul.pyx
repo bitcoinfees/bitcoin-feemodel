@@ -94,7 +94,7 @@ cdef class SimMempool(object):
         DEF MAXFEE = 2100000000000000
         cdef:
             int maxblocksize, blocksize, blocksize_ltd, newtxsize
-            double minfeerate, sfr, newtxfeerate
+            long long minfeerate, sfr, newtxfeerate
             tuple newtx, deptx
             list dependants
             SimDepends depends
