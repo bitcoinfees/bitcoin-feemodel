@@ -91,10 +91,10 @@ cdef class SimMempool(object):
         self._nodeps.extend(newtxs)
 
     cdef _process_block(self, simblock):
-        DEF MAXFEE = 2100000000
+        DEF MAXFEE = 2100000000000000
         cdef:
-            int maxblocksize, minfeerate, blocksize, sfr, blocksize_ltd
-            int newtxfeerate, newtxsize
+            int maxblocksize, blocksize, blocksize_ltd, newtxsize
+            double minfeerate, sfr, newtxfeerate
             tuple newtx, deptx
             list dependants
             SimDepends depends
@@ -132,6 +132,8 @@ cdef class SimMempool(object):
                         for txid in dependants:
                             deptx, depends = self._havedeps[txid]
                             depends.remove(newtxid)
+                            # TODO: use the return value of depends.remove
+                            #       instead of bool(depends)
                             if not depends:
                                 local_insort(self._nodeps, deptx)
                                 del self._havedeps[txid]
