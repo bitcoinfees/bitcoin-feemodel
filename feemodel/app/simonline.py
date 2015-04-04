@@ -69,8 +69,7 @@ class SimOnline(TxMempool):
             self.save_predicts()
 
     def get_predictstats(self):
-        with self.predict_lock:
-            return self.prediction.get_stats()
+        return self.prediction.get_stats()
 
     def get_transientstats(self):
         return self.transient.stats.get_stats()

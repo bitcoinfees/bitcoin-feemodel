@@ -10,7 +10,6 @@ from time import sleep, time
 from random import seed
 
 from feemodel.tests.pseudoproxy import install
-install()
 
 from feemodel.config import datadir
 from feemodel.util import save_obj, get_hashesperblock
@@ -18,6 +17,7 @@ from feemodel.app.pools import PoolsOnlineEstimator
 
 from feemodel.tests.config import memblock_dbfile as dbfile
 
+install()
 seed(0)
 logging.basicConfig(level=logging.DEBUG)
 

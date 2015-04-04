@@ -7,7 +7,6 @@ from time import sleep
 from random import seed
 
 from feemodel.tests.pseudoproxy import install
-install()
 
 from feemodel.util import save_obj, load_obj
 from feemodel.estimate import PoolsEstimator
@@ -15,6 +14,7 @@ from feemodel.config import datadir
 
 from feemodel.tests.config import memblock_dbfile as dbfile, poolsref
 
+install()
 seed(0)
 savefile = os.path.join(datadir, '_test_tmp.pickle')
 if os.path.exists(savefile):

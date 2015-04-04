@@ -3,8 +3,11 @@
 from bitcoin.core import CBlock
 from bitcoin.rpc import JSONRPCException
 
+import feemodel.util
 from feemodel.util import load_obj
-from feemodel.tests.config import blockdata
+import feemodel.txmempool
+from feemodel.txmempool import MemBlock
+from feemodel.tests.config import blockdata, memblock_dbfile as dbfile
 
 
 class PseudoProxy(object):
@@ -40,7 +43,7 @@ class PseudoProxy(object):
             raise JSONRPCException
         return self._blocks[blockhash]
 
-    def getrawmempool(self):
+    def getrawmempool(self, verbose=True):
         if not self.on:
             raise JSONRPCException
         return self.rawmempool
@@ -55,11 +58,37 @@ class PseudoProxy(object):
             raise JSONRPCException
         return self.blockcount, self.rawmempool
 
+    def set_rawmempool(self, height):
+        '''Set the rawmempool from test memblock with specified height.'''
+        b = MemBlock.read(height, dbfile=dbfile)
+        self.rawmempool = rawmempool_from_mementries(b.entries)
+
 
 proxy = PseudoProxy()
 
 
 def install():
     '''Substitutes the real proxy with our pseudo one.'''
-    import feemodel.util
     feemodel.util.proxy = proxy
+    feemodel.txmempool.proxy = proxy
+
+
+def rawmempool_from_mementries(entries):
+    '''Convert mementries to rawmempool format.'''
+    rawmempool = {}
+    attrs = [
+        'currentpriority',
+        'startingpriority',
+        'fee',
+        'depends',
+        'height',
+        'size',
+        'time'
+    ]
+    for txid, entry in entries.items():
+        rawentry = {}
+        for attr in attrs:
+            rawentry[attr] = getattr(entry, attr)
+        rawmempool[txid] = rawentry
+
+    return rawmempool

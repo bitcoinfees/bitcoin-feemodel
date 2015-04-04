@@ -4,14 +4,20 @@ import os
 import logging
 from copy import deepcopy
 
-from feemodel.util import proxy
+from feemodel.config import datadir
 from feemodel.txmempool import TxMempool, MemBlock, MemEntry
+
+from feemodel.tests.config import memblock_dbfile as dbfile
+from feemodel.tests.pseudoproxy import proxy, install
+
+
+proxy.set_rawmempool(333931)
+install()
 
 keep_history = 10
 logging.basicConfig(level=logging.DEBUG)
 
-dbfile = 'data/test.db'
-tmpdbfile = 'data/tmptest.db'
+tmpdbfile = os.path.join(datadir, '_tmp_test.db')
 
 
 class WriteReadTests(unittest.TestCase):

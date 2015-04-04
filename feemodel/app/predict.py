@@ -75,6 +75,42 @@ class TxPrediction(Function):
         return attr_tuple
 
 
+class PValECDF(Function):
+    '''p-value empirical CDF.
+
+    Also calculate the predict-distance. This is the Kolmogorov-Smirnov
+    distance between the p-value empirical CDF and the uniform
+    distribution.
+
+    We're not doing a KS test however, since the transactions have
+    dependence and we don't know how to account for that.
+
+    But it's still a useful metric for gauging the model validity.
+    A pdistance of d implies that on average, when using the model
+    to give a prediction bound W of level L on the wait time w of a tx,
+    the probability P that the tx will be within the bound (i.e. w <= W)
+    satisfies abs(P - L) <= d.
+    '''
+
+    def __init__(self, pvalcounts):
+        totalcount = sum(pvalcounts)
+        if not totalcount:
+            raise ValueError("No p-values.")
+        x = []
+        y = []
+        d = []
+        cumsum = 0
+        for idx, count in enumerate(pvalcounts):
+            cumsum += count
+            p = cumsum / totalcount
+            y.append(p)
+            p_ref = (idx+1) / NUM_PVAL_POINTS
+            x.append(p_ref)
+            d.append(abs(p - p_ref))
+        self.pdistance = max(d)
+        super(PValECDF, self).__init__(x, y)
+
+
 class Prediction(object):
 
     def __init__(self, block_halflife):
@@ -82,7 +118,6 @@ class Prediction(object):
         self._alpha = 0.5**(1 / block_halflife)
         self.pvalcounts = [0.]*NUM_PVAL_POINTS
         self.pval_ecdf = None
-        self.pdistance = None
         self.predicts = {}
 
     def update_predictions(self, entries, transientstats):
@@ -127,7 +162,10 @@ class Prediction(object):
                 self._write_block(
                     block.height, newtxpredicts, dbfile, pvals_blocks_to_keep)
 
-        self._calc_pval_ecdf()
+        try:
+            self._calc_pval_ecdf()
+        except ValueError:
+            pass
 
     def _add_block_pvals(self, pvals):
         new_pvalcounts = [0.]*NUM_PVAL_POINTS
@@ -139,35 +177,8 @@ class Prediction(object):
                                     (1 - self._alpha)*new_pvalcounts[idx])
 
     def _calc_pval_ecdf(self):
-        '''Calculate the updated p-value empirical CDF.
-
-        Also calculate the predict-distance. This is the Kolmogorov-Smirnov
-        distance between the p-value empirical CDF and the uniform
-        distribution.
-
-        We're not doing a KS test however, since the transactions have
-        dependence and we don't know how to account for that.
-
-        But it's still a useful metric for gauging the model validity.
-        A pdistance of d implies that on average, when using the model
-        to give a prediction bound W of level L on the wait time w of a tx,
-        the probability P that the tx will be within the bound (i.e. w <= W)
-        satisfies abs(P - L) <= d.
-        '''
-        totalcount = sum(self.pvalcounts)
-        if not totalcount:
-            return
-        pval_ecdf = []
-        d = []
-        cumsum = 0.
-        for idx, count in enumerate(self.pvalcounts):
-            cumsum += count
-            p = cumsum / totalcount
-            pval_ecdf.append(p)
-            d.append(abs(p - (idx+1)/NUM_PVAL_POINTS))
-        # TODO: make these assignments atomic, for proper access
-        self.pval_ecdf = pval_ecdf
-        self.pdistance = max(d)
+        '''Calculate the new p-value ECDF.'''
+        self.pval_ecdf = PValECDF(self.pvalcounts)
 
     @classmethod
     def from_db(cls, block_halflife, conditions=None, dbfile=pvals_dbfile):
@@ -183,7 +194,10 @@ class Prediction(object):
             pvals = pred._read_block(
                 height, conditions=conditions, dbfile=dbfile)
             pred._add_block_pvals(pvals)
-        pred._calc_pval_ecdf()
+        try:
+            pred._calc_pval_ecdf()
+        except ValueError:
+            pass
         return pred
 
     def _write_block(self, blockheight, txpredicts, dbfile, blocks_to_keep):
@@ -270,11 +284,12 @@ class Prediction(object):
         print("Predict-distance: {}".format(self.pdistance))
 
     def get_stats(self):
-        if not self.pval_ecdf:
+        pval_ecdf = self.pval_ecdf
+        if not pval_ecdf:
             return None
         return {
-            "pval_ecdf": self.pval_ecdf,
-            "pdistance": self.pdistance}
+            "pval_ecdf": [pval_ecdf._x, pval_ecdf._y],
+            "pdistance": pval_ecdf.pdistance}
 
 
 # #class BlockScore(object):

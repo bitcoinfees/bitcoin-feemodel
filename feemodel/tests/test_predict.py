@@ -49,10 +49,10 @@ class PredictTests(unittest.TestCase):
 
         pred.process_blocks([b], dbfile=pvals_dbfile)
         pvalcount = sum(pred.pvalcounts)
-        pdistance = pred.pdistance
+        pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
         for idx, p in enumerate(pred.pval_ecdf):
-            diff = abs(p - (idx+1)/len(pred.pval_ecdf))
+            diff = abs(p[1] - (idx+1)/len(pred.pval_ecdf))
             self.assertLessEqual(diff, pdistance)
         self.assertLess(pdistance, 0.1)
 
@@ -70,7 +70,7 @@ class PredictTests(unittest.TestCase):
         for i in range(N):
             pred.process_blocks([b])
 
-        newpdistance = pred.pdistance
+        newpdistance = pred.pval_ecdf.pdistance
         self.assertAlmostEqual(newpdistance, pdistance)
         newpvalcount = sum(pred.pvalcounts)
         self.assertAlmostEqual(newpvalcount, pvalcount*0.5**(N/HALFLIFE))
@@ -84,10 +84,10 @@ class PredictTests(unittest.TestCase):
             if txpredict:
                 txpredict.entrytime = blocktime
         pred.process_blocks([b], dbfile=pvals_dbfile)
-        pdistance = pred.pdistance
+        pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
-        self.assertEqual(pred.pval_ecdf[-2], 0)
+        self.assertEqual(pred.pval_ecdf(0.99), 0)
 
     def test_C(self):
         # inf wait time
@@ -97,10 +97,10 @@ class PredictTests(unittest.TestCase):
             if txpredict:
                 txpredict.entrytime = -float("inf")
         pred.process_blocks([b], dbfile=pvals_dbfile)
-        pdistance = pred.pdistance
+        pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
-        self.assertEqual(pred.pval_ecdf[0], 1)
+        self.assertEqual(pred.pval_ecdf(0.01), 1)
 
     def test_D(self):
         # empty block entries
@@ -136,7 +136,7 @@ class PredictTests(unittest.TestCase):
         pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
         for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf):
             self.assertAlmostEqual(p, p_db)
-        self.assertEqual(pred_db.pdistance, pred.pdistance)
+        self.assertEqual(pred_db.pval_ecdf.pdistance, pred.pval_ecdf.pdistance)
 
         # Check the circular db deletes
         heights = pred._get_heights(dbfile=pvals_dbfile)
@@ -155,9 +155,10 @@ class PredictTests(unittest.TestCase):
             [333931+pvals_blocks_to_keep-1, 333931+pvals_blocks_to_keep])
         pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
         self.assertTrue(any([
-            abs(p-p_db) >= 0.00001
+            abs(p[1]-p_db[1]) >= 0.00001
             for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf)]))
-        self.assertNotAlmostEqual(pred.pdistance, pred_db.pdistance)
+        self.assertNotAlmostEqual(pred.pval_ecdf.pdistance,
+                                  pred_db.pval_ecdf.pdistance)
 
     def tearDown(self):
         if os.path.exists(pvals_dbfile):
@@ -173,8 +174,8 @@ class GeneralTests(unittest.TestCase):
             p = [expovariate_pval(expovariate(1)) for i in xrange(300)]
             pred._add_block_pvals(p)
         pred._calc_pval_ecdf()
-        print("pdistance is {}.".format(pred.pdistance))
-        self.assertLess(pred.pdistance, 0.01)
+        print("pdistance is {}.".format(pred.pval_ecdf.pdistance))
+        self.assertLess(pred.pval_ecdf.pdistance, 0.01)
 
 
 def expovariate_pval(r):

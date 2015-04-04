@@ -7,7 +7,6 @@ from math import log
 from random import choice, seed
 
 from feemodel.tests.pseudoproxy import install
-install()
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
 from feemodel.tests.config import (memblock_dbfile as dbfile, poolsref, txref,
@@ -15,6 +14,7 @@ from feemodel.tests.config import (memblock_dbfile as dbfile, poolsref, txref,
 
 logging.basicConfig(level=logging.DEBUG)
 
+install()
 seed(0)
 
 
