@@ -5,7 +5,7 @@ import logging
 from copy import deepcopy
 
 from feemodel.config import datadir
-from feemodel.txmempool import TxMempool, MemBlock, MemEntry
+from feemodel.txmempool import TxMempool, MemBlock
 
 from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.tests.pseudoproxy import proxy, install
@@ -29,23 +29,11 @@ class WriteReadTests(unittest.TestCase):
 
     def test_writeread(self):
         '''Tests that mempool entry is unchanged upon write/read.'''
-        rawmempool = proxy.getrawmempool(verbose=True)
-        entries = {
-            txid: MemEntry(rawentry) for txid, rawentry in rawmempool.items()
-        }
-        for entry in entries.values():
-            entry.inblock = False
-            entry.leadtime = 0
-            entry.isconflict = False
-        memblock = MemBlock()
-        memblock.entries = entries
-        memblock.height = 1000
-        memblock.size = 1000
-        memblock.time = 1000
+        memblock = MemBlock.read(333931, dbfile=dbfile)
         memblock.write(dbfile=tmpdbfile, keep_history=2016)
-        memblock_read = MemBlock.read(1000, dbfile=tmpdbfile)
+        memblock_read = MemBlock.read(333931, dbfile=tmpdbfile)
         print(memblock_read)
-        self.assertEqual(memblock_read.entries, entries)
+        self.assertEqual(memblock_read, memblock)
 
     def test_writereadempty(self):
         '''Tests write/read of empty entries dict'''
@@ -70,7 +58,7 @@ class WriteReadTests(unittest.TestCase):
     def test_duplicate_writes(self):
         block = MemBlock.read(333931, dbfile=dbfile)
         block.write(tmpdbfile, 100)
-        self.assertRaises(Exception, block.write, tmpdbfile, 100)
+        self.assertRaises(sqlite3.IntegrityError, block.write, tmpdbfile, 100)
         self.db = sqlite3.connect(tmpdbfile)
         txlist = self.db.execute('SELECT * FROM txs WHERE blockheight=?',
                                  (333931,))
