@@ -5,7 +5,6 @@ from time import sleep, time
 from bisect import bisect
 from math import log
 from random import choice, seed
-seed(0)
 
 from feemodel.tests.pseudoproxy import install
 install()
@@ -15,6 +14,8 @@ from feemodel.tests.config import (memblock_dbfile as dbfile, poolsref, txref,
                                    transientref as statsref)
 
 logging.basicConfig(level=logging.DEBUG)
+
+seed(0)
 
 
 class TransientSimTests(unittest.TestCase):

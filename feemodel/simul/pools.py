@@ -31,7 +31,7 @@ class SimBlock(object):
         self._txs = val
 
     def __repr__(self):
-        return "SimBlock{height: %d, numtxs: %d, size: %s, sfr: %.0f" % (
+        return "SimBlock(height: %d, numtxs: %d, size: %s, sfr: %.0f)" % (
             self.height, len(self._txs), self.size, self.sfr)
 
 

@@ -145,7 +145,7 @@ cdef class SimMempool(object):
         rejected_entries.reverse()
         self._nodeps.extend(rejected_entries)
 
-        simblock.sfr = sfr if blocksize_ltd else minfeerate
+        simblock.sfr = sfr + 1 if blocksize_ltd else minfeerate
         simblock.is_sizeltd = bool(blocksize_ltd)
         simblock.size = blocksize
         simblock.txs = blocktxs

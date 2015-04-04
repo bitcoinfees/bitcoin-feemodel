@@ -119,33 +119,22 @@ cdef _calc_stranding_single(list txs):
     '''
     cdef:
         int idx
-        int cumk = 0
+        int k = 0
         int maxk = 0
         int maxidx = len(txs) - 1
     sfr = float("inf")
-    # cumk = 0
-    # maxk = 0
-    # maxidx = len(txs) - 1
 
     for idx in range(maxidx+1):
         tx = txs[idx]
         if tx[1] is True:
-            cumk += 1
+            k += 1
         else:
-            cumk += -1
+            k += -1
         if idx < maxidx and txs[idx+1][0] == tx[0]:
             continue
-        if cumk > maxk:
-            maxk = cumk
+        if k > maxk:
+            maxk = k
             sfr = tx[0]
-
-    # for idx, tx in enumerate(txs):
-    #     cumk += 1 if tx[1] else -1
-    #     if idx < maxidx and txs[idx+1][0] == tx[0]:
-    #         continue
-    #     if cumk > maxk:
-    #         maxk = cumk
-    #         sfr = tx[0]
 
     return sfr
 

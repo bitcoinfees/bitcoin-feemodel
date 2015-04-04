@@ -174,7 +174,7 @@ class CustomMempoolTests(unittest.TestCase):
                   (simblock.poolinfo[1].maxblocksize,
                    simblock.poolinfo[1].minfeerate))
             self.assertEqual(len(simblock.txs), 1)
-            self.assertEqual(simblock.sfr, 100000)
+            self.assertEqual(simblock.sfr, 100001)
             self.assertEqual(len(self.sim.mempool.entries), 999)
             break
 
@@ -200,7 +200,7 @@ class CustomMempoolTests(unittest.TestCase):
                   (simblock.poolinfo[1].maxblocksize,
                    simblock.poolinfo[1].minfeerate))
             self.assertEqual(len(simblock.txs), 401)
-            self.assertEqual(simblock.sfr, 1000)
+            self.assertEqual(simblock.sfr, 1001)
             self.assertEqual(len(self.sim.mempool.entries), 599)
             break
 
@@ -216,15 +216,26 @@ class CustomMempoolTests(unittest.TestCase):
         init_mempool.append(SimEntry('1000', SimTx(1001, 2000)))
         for simblock in self.sim.run(init_entries=init_mempool):
             if simblock.height == 0:
-                self.assertEqual(simblock.sfr, 1001)
-                self.assertEqual(max([tx.feerate for tx in simblock.txs]), 9999)
+                self.assertEqual(simblock.sfr, 1002)
+                self.assertEqual(max([tx.feerate for tx in simblock.txs]),
+                                 9999)
                 self.assertEqual(len(simblock.txs), 500)
                 self.assertEqual(len(self.sim.mempool.entries), 501)
             elif simblock.height == 1:
-                self.assertEqual(simblock.sfr, 10000)
+                self.assertEqual(simblock.sfr, 10001)
                 self.assertEqual(len(simblock.txs), 375)
                 self.assertEqual(len(self.sim.mempool.entries), 501-375)
                 self.assertEqual(simblock.size, 750000)
+            elif simblock.height == 2:
+                self.assertEqual(simblock.sfr, 20000)
+                self.assertEqual(len(simblock.txs), 0)
+                self.assertEqual(len(self.sim.mempool.entries), 501-375)
+                self.assertEqual(simblock.size, 0)
+            elif simblock.height == 3:
+                self.assertEqual(simblock.sfr, 1000)
+                self.assertEqual(len(simblock.txs), 501-375)
+                self.assertEqual(len(self.sim.mempool.entries), 0)
+                self.assertEqual(simblock.size, 2000*(501-375))
             else:
                 break
 

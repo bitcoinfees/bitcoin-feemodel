@@ -2,8 +2,7 @@ import unittest
 from feemodel.txmempool import MemBlock
 from feemodel.stranding import (tx_preprocess, calc_stranding_feerate,
                                 _calc_min_leadtime)
-
-dbfile = 'data/test.db'
+from feemodel.tests.config import memblock_dbfile as dbfile
 
 txs_refA = [
     (11000, True),
@@ -49,6 +48,13 @@ txs_refF = [
 ]
 txs_refF *= 100
 
+txs_refG = [
+    (11000, True),
+    (11000, False)
+]
+txs_refH = txs_refG + [(10000, True)]
+
+
 
 # FIXME: new defaults for tx_preprocess (no more remove_zero option,
 #        and remove high priority by default, plus < minrelaytxfee =>
@@ -86,6 +92,8 @@ class SFRTests(unittest.TestCase):
         self.check_sfr(txs_refD, float("inf"))
         self.check_sfr(txs_refE, 998)
         self.check_sfr(txs_refF, 0)
+        self.check_sfr(txs_refG, float("inf"))
+        self.check_sfr(txs_refH, 10000)
 
     def check_sfr(self, txs, target):
         stats = calc_stranding_feerate(txs, bootstrap=True)
