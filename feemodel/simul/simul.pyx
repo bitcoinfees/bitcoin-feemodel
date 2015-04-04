@@ -141,6 +141,8 @@ cdef class SimMempool(object):
             else:
                 rejected_entries.append(newtx)
                 break
+        # Reverse makes the sorting a bit faster
+        rejected_entries.reverse()
         self._nodeps.extend(rejected_entries)
 
         simblock.sfr = sfr if blocksize_ltd else minfeerate
