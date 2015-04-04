@@ -313,6 +313,12 @@ class Function(object):
         table = zip(self._x, self._y)
         print(tabulate(table, headers=headers))
 
+    def __len__(self):
+        return len(self._y)
+
+    def __iter__(self):
+        return iter(zip(self._x, self._y))
+
 
 # TODO: deprecate this
 class Table(object):

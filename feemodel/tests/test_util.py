@@ -1,14 +1,14 @@
 import unittest
 from random import random, seed
 
-from feemodel.tests.pseudoproxy import install
-install()
-
 from feemodel.util import get_coinbase_info
 from feemodel.util import round_random, DataSample, interpolate
 from feemodel.util import Function
 
+from feemodel.tests.pseudoproxy import install
+
 # TODO: poisson sampling test for simul.txsources
+install()
 seed(0)
 
 
