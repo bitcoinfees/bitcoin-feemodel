@@ -5,7 +5,7 @@ from math import log, exp
 from copy import deepcopy
 from bisect import bisect_left
 from feemodel.util import Table
-from feemodel.simul import SimTx
+from feemodel.simul.txsources import TxPtrArray
 
 default_blockrate = 1./600
 hard_maxblocksize = 1000000
@@ -20,11 +20,26 @@ class SimBlock(object):
         self.poolinfo = poolinfo
         self.sfr = float("inf")
         self.is_sizeltd = None
-        self.txs = None
+        self.txs = []
 
     @property
     def txs(self):
-        return [SimTx(tx[0], tx[1]) for tx in self._txs]
+        '''Get the block transactions as a SimTx list.
+
+        For efficiency, we keep the txs as a TxPtrArray (as assigned in
+        simul.SimMempool._process_block), and only instantiate the SimTxs
+        the first time you access it.
+
+        Take note that if the simul.Simul instance that produced this SimBlock
+        becomes unreferenced, the memory to which TxPtrArray points will
+        become deallocated, and this property will return garbage.
+
+        TL;DR - if you want to access this property, make sure you maintain
+        a reference to the Simul instance.
+        '''
+        if isinstance(self._txs, TxPtrArray):
+            self._txs = self._txs.get_simtxs()
+        return self._txs
 
     @txs.setter
     def txs(self, val):

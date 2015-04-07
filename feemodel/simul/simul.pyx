@@ -17,7 +17,7 @@ rate_ratio_thresh = 0.9
 
 cdef class Simul:
 
-    cdef readonly object pools, tx_source, cap, stablefeerate
+    cdef readonly object pools, tx_source, cap, stablefeerate, txgen
     cdef public SimMempool mempool
 
     def __init__(self, pools, tx_source):
@@ -35,26 +35,21 @@ cdef class Simul:
         if init_entries is None:
             init_entries = []
         self.mempool = SimMempool(init_entries)
-        txgen = self.tx_source.get_c_txgen(feeratethresh=self.stablefeerate)
+        self.txgen = self.tx_source.get_c_txgen(feeratethresh=self.stablefeerate)
         for simblock in self.pools.blockgen():
-            # newtxs = self.tx_source.generate_txs(simblock.interval)
-            # newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
-            # Add new txs to the txqueue.
-            txgen(self.mempool.txqueue, simblock.interval)
+            # Add new txs to the txqueue
+            self.txgen(self.mempool.txqueue, simblock.interval)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
-
             yield simblock
 
 
 cdef class SimMempool:
 
     cdef:
-        TxPriorityQueue txqueue
-        TxPriorityQueue txqueue_bak
-        dict depmap
         TxStruct *init_array
-
+        TxPriorityQueue txqueue, txqueue_bak
+        dict depmap
         object init_entries
 
     def __cinit__(self, init_entries):
@@ -73,44 +68,49 @@ cdef class SimMempool:
             self.init_array[idx].feerate = entry.tx.feerate
             self.init_array[idx].size = entry.tx.size
             self.init_array[idx].txid = entry.txid
-            # tx = (entry.tx.feerate, entry.tx.size, entry.txid)
             if not entry.depends:
                 self.txqueue.append(&self.init_array[idx])
             else:
-                # orphantx = OrphanTx(&self.init_array[idx], entry.depends)
                 orphantx = OrphanTx(entry.depends)
                 orphantx.set_tx(&self.init_array[idx])
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
                     assert dep in txids
                     _depmap[dep].append(orphantx)
-                    # _depmap[dep].append(entry.txid)
         self.depmap = dict(_depmap)
         # For resetting the mempool to initial state.
         self.txqueue_bak = copy(self.txqueue)
-        # print("Printing txqueue_bak:")
-        # for idx in range(1, len(self.txqueue_bak)):
-        #     print("feerate/size: {}/{}".
-        #           format(self.txqueue_bak.txs[idx].feerate, self.txqueue_bak.txs[idx].size))
 
     @property
     def entries(self):
-        entries = []
-        entries.extend(
-            [SimEntry(tx[2], SimTx(tx[0], tx[1])) for tx in self._nodeps])
-        entries.extend(
-            [SimEntry(txid, SimTx(entry[0][0], entry[0][1]), entry[1])
-             for txid, entry in self._havedeps.items()])
-        return entries
+        cdef OrphanTx orphantx
+        cdef TxStruct *tx
+        entries = {}
+        orphans = set()
+        for orphan_list in self.depmap.values():
+            for orphantx in orphan_list:
+                if orphantx.depends:
+                    orphans.add(orphantx)
+
+        for orphantx in orphans:
+            pass
+            # tx = orphantx.tx
+            # entries[tx.txid] = SimEntry()
+
+        # entries = []
+        # entries.extend(
+        #     [SimEntry(tx[2], SimTx(tx[0], tx[1])) for tx in self._nodeps])
+        # entries.extend(
+        #     [SimEntry(txid, SimTx(entry[0][0], entry[0][1]), entry[1])
+        #      for txid, entry in self._havedeps.items()])
+        # return entries
 
     def reset(self):
         cdef OrphanTx orphantx
         self.txqueue = copy(self.txqueue_bak)
         for dependants in self.depmap.values():
             for orphantx in dependants:
-                # print("feerate/size: {}/{}".format(orphantx.tx.feerate, orphantx.tx.size))
                 orphantx.depends.reset()
-        # print("Finished resetting.")
 
     cdef _process_block(self, simblock):
         DEF MAXFEE = 2100000000000000
@@ -129,8 +129,7 @@ cdef class SimMempool:
 
         self.txqueue.heapify()
         rejected_entries = TxPtrArray(init_size=len(self.txqueue))
-        # blocktxs = []
-        # while self._nodeps:
+        blocktxs = TxPtrArray(init_size=len(self.txqueue))
         while self.txqueue.size > 1:
             newtx = self.txqueue.heappop()
             if newtx.feerate >= minfeerate:
@@ -144,10 +143,9 @@ cdef class SimMempool:
                         if newtx.feerate < sfr:
                             sfr = newtx.feerate
 
-                    # blocktxs.append(newtx)
+                    blocktxs.append(newtx)
                     blocksize = newblocksize
 
-                    # dependants = self._depmap.get(newtxid)
                     if newtx.txid is NULL:
                         continue
                     dependants = self.depmap.get(newtx.txid)
@@ -157,14 +155,6 @@ cdef class SimMempool:
                         orphantx.depends.remove(newtx.txid)
                         if not orphantx.depends:
                             self.txqueue.heappush(orphantx.tx)
-                        # for txid in dependants:
-                        #     deptx, depends = self._havedeps[txid]
-                        #     depends.remove(newtxid)
-                        #     # TODO: use the return value of depends.remove
-                        #     #       instead of bool(depends)
-                        #     if not depends:
-                        #         local_insort(self._nodeps, deptx)
-                        #         del self._havedeps[txid]
                 else:
                     rejected_entries.append(newtx)
                     blocksize_ltd += 1
@@ -176,11 +166,30 @@ cdef class SimMempool:
         simblock.sfr = sfr + 1 if blocksize_ltd else minfeerate
         simblock.is_sizeltd = bool(blocksize_ltd)
         simblock.size = blocksize
-        # simblock.txs = blocktxs
-        # print("height/size/sfr: {}/{}/{}".format(simblock.height, simblock.size, simblock.sfr))
+        simblock.txs = blocktxs
 
     def __dealloc__(self):
         free(self.init_array)
+
+
+# #class SimEntry(SimTx):
+# #
+# #    def __init__(self, feerate, size, depends):
+# #        self.txid = txid
+# #        self.tx = simtx
+# #        if isinstance(depends, SimDepends):
+# #            self.depends = depends
+# #        else:
+# #            self.depends = SimDepends(depends)
+# #
+# #    @classmethod
+# #    def from_mementry(cls, txid, entry):
+# #        return cls(txid, SimTx(entry.feerate, entry.size),
+# #                   depends=entry.depends)
+# #
+# #    def __repr__(self):
+# #        return "SimEntry({}, {}, {})".format(
+# #            self.txid, repr(self.tx), repr(self.depends))
 
 
 class SimEntry(object):
@@ -304,6 +313,6 @@ cdef class TxPriorityQueue(TxPtrArray):
 
     def __copy__(self):
         newqueue = TxPriorityQueue()
-        newqueue.clear()
-        newqueue.extend(self.txs, self.size)
+        newqueue._resize(self.totalsize)
+        newqueue.extend(&self.txs[1], self.size-1)
         return newqueue

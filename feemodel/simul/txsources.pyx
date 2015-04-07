@@ -53,6 +53,7 @@ class SimTxSource(object):
         return txgen
 
     def get_c_txgen(self, feeratethresh=0):
+        # TODO: test the feerate thresh / stable feerate
         if not self._txsample:
             raise ValueError("No txs.")
         txsample_array = TxSampleArray([
@@ -66,21 +67,6 @@ class SimTxSource(object):
             txsample_array.sample(txs, numtxs)
 
         return txgen
-
-    # #def generate_txs(self, time_interval):
-    # #    cdef:
-    # #        int i
-    # #        int numtxs
-
-    # #    if not self._txsample:
-    # #        raise ValueError("No txs.")
-    # #    numtxs = poisson_sample(self.txrate*time_interval)
-    # #    samplesize = len(self._txsample)
-    # #    txsample = self._txsample
-    # #    localrandom = random
-
-    # #    return [txsample[int(localrandom()*samplesize)]
-    # #            for i in range(numtxs)]
 
     def get_txsample(self):
         return [SimTx(tx[0], tx[1]) for tx in self._txsample]
@@ -217,10 +203,12 @@ cdef class TxPtrArray:
         self.txs = <TxStruct **>realloc(self.txs, newtotalsize*sizeof(TxStruct *))
         self.totalsize = newtotalsize
 
-    def print_txs(self):
-        for idx in range(self.size):
-            tx = self.txs[idx]
-            print("feerate/size: {}/{}".format(tx.feerate, tx.size))
+    def get_simtxs(self):
+        simtxs = [
+            SimTx(self.txs[idx].feerate, self.txs[idx].size)
+            for idx in range(self.size)
+            if self.txs[idx] is not NULL]
+        return simtxs
 
     def __len__(self):
         '''Array size.'''
