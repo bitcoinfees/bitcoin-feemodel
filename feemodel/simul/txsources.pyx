@@ -1,5 +1,11 @@
 from __future__ import division
 
+from libc.stdlib cimport rand, srand, RAND_MAX
+from libc.time cimport time
+from cpython.mem cimport (PyMem_Malloc as malloc,
+                          PyMem_Realloc as realloc,
+                          PyMem_Free as free)
+
 from math import sqrt, cos, exp, log, pi
 from random import random, normalvariate
 from bisect import bisect, bisect_left
@@ -8,6 +14,11 @@ from itertools import groupby
 from tabulate import tabulate
 
 from feemodel.util import DataSample
+
+DEF OVERALLOCATE = 1.2  # This better be > 1.
+assert OVERALLOCATE > 1
+
+srand(time(NULL))
 
 
 class SimTx(object):
@@ -26,19 +37,50 @@ class SimTxSource(object):
                           for simtx in txsample]
         self.txrate = txrate
 
-    def generate_txs(self, time_interval):
-        cdef:
-            int i
-            int numtxs
+    def get_txgen(self, feeratethresh=0):
+        '''Python wrapper for get_c_txgen.'''
+        c_txgen = self.get_c_txgen(feeratethresh)
+        txs = TxPtrArray()
 
+        def txgen(time_interval):
+            newtxs = []
+            txs.clear()
+            c_txgen(txs, time_interval)
+            for i in range(txs.size):
+                newtxs.append(SimTx(txs.txs[i].feerate, txs.txs[i].size))
+            return newtxs
+
+        return txgen
+
+    def get_c_txgen(self, feeratethresh=0):
         if not self._txsample:
             raise ValueError("No txs.")
-        numtxs = poisson_sample(self.txrate*time_interval)
-        samplesize = len(self._txsample)
-        txsample = self._txsample
-        localrandom = random
+        txsample_array = TxSampleArray([
+            SimTx(tx[0], tx[1]) for tx in self._txsample
+            if tx[0] >= feeratethresh])
+        modtxrate = len(txsample_array) / len(self._txsample) * self.txrate
 
-        return [txsample[int(localrandom()*samplesize)] for i in range(numtxs)]
+        def txgen(TxPtrArray txs, time_interval):
+            '''Put the new samples in txs.'''
+            numtxs = poisson_sample(modtxrate*time_interval)
+            txsample_array.sample(txs, numtxs)
+
+        return txgen
+
+    # #def generate_txs(self, time_interval):
+    # #    cdef:
+    # #        int i
+    # #        int numtxs
+
+    # #    if not self._txsample:
+    # #        raise ValueError("No txs.")
+    # #    numtxs = poisson_sample(self.txrate*time_interval)
+    # #    samplesize = len(self._txsample)
+    # #    txsample = self._txsample
+    # #    localrandom = random
+
+    # #    return [txsample[int(localrandom()*samplesize)]
+    # #            for i in range(numtxs)]
 
     def get_txsample(self):
         return [SimTx(tx[0], tx[1]) for tx in self._txsample]
@@ -87,30 +129,6 @@ class SimTxSource(object):
             # TODO: remove duplicate feerates
             return feerates_bin, byterates_bin
 
-            # txs = [entry.tx for entry in self._txsample]
-            # byteratesmap = defaultdict(float)
-            # for tx in txs:
-            #     byteratesmap[tx.feerate] += tx.size*txrate/n
-            # byterates = sorted(byteratesmap.items(), reverse=True)
-            # cumbyterates = []
-            # cumbyterate = 0.
-            # for byterate in byterates:
-            #     cumbyterate += byterate[1]
-            #     cumbyterates.append((byterate[0], cumbyterate))
-            # feerates, byterates = zip(*cumbyterates)
-            # totalbyterate = byterates[-1]
-            # byteratetargets = [i/R*totalbyterate for i in range(1, R+1)]
-            # feerates_bin = []
-            # byterates_bin = []
-            # for target in byteratetargets:
-            #     idx = bisect_left(byterates, target)
-            #     feerates_bin.append(feerates[idx])
-            #     byterates_bin.append(byterates[idx])
-
-            # feerates_bin.reverse()
-            # byterates_bin.reverse()
-            # return feerates_bin, byterates_bin
-
     def calc_mean_byterate(self):
         '''Calculate the mean byterate.
 
@@ -137,6 +155,88 @@ class SimTxSource(object):
 
     def __nonzero__(self):
         return bool(len(self._txsample))
+
+
+cdef class TxSampleArray:
+
+    def __cinit__(self, txsample):
+        self.size = len(txsample)
+        self.txsample = <TxStruct *>malloc(self.size*sizeof(TxStruct))
+        for idx, tx in enumerate(txsample):
+            self.txsample[idx].feerate = tx.feerate
+            self.txsample[idx].size = tx.size
+            self.txsample[idx].txid = NULL
+        self._randlimit = RAND_MAX - (RAND_MAX % self.size)
+
+    cdef void sample(self, TxPtrArray txs, int l):
+        cdef int newsize
+        newsize = txs.size + l
+        if newsize >= txs.totalsize:
+            txs._resize(<int>((newsize+1)*OVERALLOCATE))
+        for idx in range(l):
+            ridx = randindex(self.size, self._randlimit)
+            txs.append(&self.txsample[ridx])
+
+    def __len__(self):
+        return self.size
+
+    def __dealloc__(self):
+        free(self.txsample)
+
+
+cdef class TxPtrArray:
+
+    def __cinit__(self, int init_size=0):
+        self.size = 0
+        self._resize(init_size)
+
+    cdef void append(self, TxStruct *tx):
+        '''Append to the array.'''
+        if self.size == self.totalsize:
+            self._resize(<int>((self.size+1)*OVERALLOCATE))
+        self.txs[self.size] = tx
+        self.size += 1
+
+    cdef void extend(self, TxStruct **txs, int size):
+        '''Extend the array.'''
+        cdef int newsize
+        newsize = self.size + size
+        if newsize >= self.totalsize:
+            self._resize(<int>((newsize+1)*OVERALLOCATE))
+        for idx in range(size):
+            self.txs[self.size] = txs[idx]
+            self.size += 1
+
+    cdef void clear(self):
+        '''Clear the array..'''
+        self._resize(0)
+        self.size = 0
+
+    cdef void _resize(self, int newtotalsize):
+        # print("resizing from {} to {}.".format(self.totalsize, newtotalsize))
+        self.txs = <TxStruct **>realloc(self.txs, newtotalsize*sizeof(TxStruct *))
+        self.totalsize = newtotalsize
+
+    def print_txs(self):
+        for idx in range(self.size):
+            tx = self.txs[idx]
+            print("feerate/size: {}/{}".format(tx.feerate, tx.size))
+
+    def __len__(self):
+        '''Array size.'''
+        return self.size
+
+    def __dealloc__(self):
+        free(self.txs)
+
+
+cdef int randindex(int N, int randlimit):
+    '''get a random index in the range [0, N-1].'''
+    cdef int r
+    r = RAND_MAX
+    while r >= randlimit:
+        r = rand()
+    return r % N
 
 
 cdef poisson_sample(l):

@@ -1,5 +1,10 @@
 from __future__ import division
 
+from feemodel.simul.txsources cimport TxStruct, TxPtrArray
+from cpython.mem cimport (PyMem_Malloc as malloc,
+                          PyMem_Realloc as realloc,
+                          PyMem_Free as free)
+
 from collections import defaultdict
 from copy import copy
 from bisect import insort
@@ -10,7 +15,7 @@ from feemodel.simul.txsources import SimTx
 rate_ratio_thresh = 0.9
 
 
-cdef class Simul(object):
+cdef class Simul:
 
     cdef readonly object pools, tx_source, cap, stablefeerate
     cdef public SimMempool mempool
@@ -30,45 +35,63 @@ cdef class Simul(object):
         if init_entries is None:
             init_entries = []
         self.mempool = SimMempool(init_entries)
+        txgen = self.tx_source.get_c_txgen(feeratethresh=self.stablefeerate)
         for simblock in self.pools.blockgen():
-            newtxs = self.tx_source.generate_txs(simblock.interval)
-            newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
-            self.mempool._add_txs(newtxs)
+            # newtxs = self.tx_source.generate_txs(simblock.interval)
+            # newtxs = filter(lambda tx: tx[0] >= self.stablefeerate, newtxs)
+            # Add new txs to the txqueue.
+            txgen(self.mempool.txqueue, simblock.interval)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
 
             yield simblock
 
 
-cdef class SimMempool(object):
+cdef class SimMempool:
 
     cdef:
-        list _nodeps, _nodeps_bak
-        dict _havedeps, _havedeps_bak, _depmap
+        TxPriorityQueue txqueue
+        TxPriorityQueue txqueue_bak
+        dict depmap
+        TxStruct *init_array
+
+        object init_entries
+
+    def __cinit__(self, init_entries):
+        self.init_array = <TxStruct *>malloc(len(init_entries)*sizeof(TxStruct))
 
     def __init__(self, init_entries):
-        self._nodeps = []
-        self._havedeps = {}
+        self.init_entries = init_entries  # Preserve the txid string references
+        self.txqueue = TxPriorityQueue()
+
         _depmap = defaultdict(list)
 
         txids = [entry.txid for entry in init_entries]
         # Assert that there are no duplicate txids.
         assert len(set(txids)) == len(txids)
-        for entry in init_entries:
-            tx = (entry.tx.feerate, entry.tx.size, entry.txid)
+        for idx, entry in enumerate(init_entries):
+            self.init_array[idx].feerate = entry.tx.feerate
+            self.init_array[idx].size = entry.tx.size
+            self.init_array[idx].txid = entry.txid
+            # tx = (entry.tx.feerate, entry.tx.size, entry.txid)
             if not entry.depends:
-                self._nodeps.append(tx)
+                self.txqueue.append(&self.init_array[idx])
             else:
-                self._havedeps[entry.txid] = (tx, entry.depends)
+                # orphantx = OrphanTx(&self.init_array[idx], entry.depends)
+                orphantx = OrphanTx(entry.depends)
+                orphantx.set_tx(&self.init_array[idx])
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
                     assert dep in txids
-                    _depmap[dep].append(entry.txid)
-
+                    _depmap[dep].append(orphantx)
+                    # _depmap[dep].append(entry.txid)
+        self.depmap = dict(_depmap)
         # For resetting the mempool to initial state.
-        self._nodeps_bak = self._nodeps[:]
-        self._havedeps_bak = copy(self._havedeps)
-        self._depmap = dict(_depmap)
+        self.txqueue_bak = copy(self.txqueue)
+        # print("Printing txqueue_bak:")
+        # for idx in range(1, len(self.txqueue_bak)):
+        #     print("feerate/size: {}/{}".
+        #           format(self.txqueue_bak.txs[idx].feerate, self.txqueue_bak.txs[idx].size))
 
     @property
     def entries(self):
@@ -81,76 +104,83 @@ cdef class SimMempool(object):
         return entries
 
     def reset(self):
-        cdef SimDepends depends
-        self._nodeps = self._nodeps_bak[:]
-        self._havedeps = copy(self._havedeps_bak)
-        for _dum, depends in self._havedeps.itervalues():
-            depends.reset()
-
-    cdef _add_txs(self, list newtxs):
-        self._nodeps.extend(newtxs)
+        cdef OrphanTx orphantx
+        self.txqueue = copy(self.txqueue_bak)
+        for dependants in self.depmap.values():
+            for orphantx in dependants:
+                # print("feerate/size: {}/{}".format(orphantx.tx.feerate, orphantx.tx.size))
+                orphantx.depends.reset()
+        # print("Finished resetting.")
 
     cdef _process_block(self, simblock):
         DEF MAXFEE = 2100000000000000
         cdef:
-            int maxblocksize, blocksize, blocksize_ltd, newtxsize
-            long long minfeerate, sfr, newtxfeerate
-            tuple newtx, deptx
-            list dependants
-            SimDepends depends
-        local_insort = insort
+            int newblocksize, maxblocksize, blocksize, blocksize_ltd
+            long long minfeerate, sfr
+            TxStruct *newtx
+            OrphanTx orphantx
 
-        _poolmfr = simblock.poolinfo[1].minfeerate
-        minfeerate = _poolmfr if _poolmfr != float("inf") else MAXFEE
-        maxblocksize = simblock.poolinfo[1].maxblocksize
+        pool = simblock.poolinfo[1]
+        minfeerate = min(pool.minfeerate, MAXFEE)
+        maxblocksize = pool.maxblocksize
         sfr = MAXFEE
         blocksize = 0
         blocksize_ltd = 0
 
-        self._nodeps.sort()
-        rejected_entries = []
-        blocktxs = []
-        while self._nodeps:
-            newtx = self._nodeps.pop()
-            newtxfeerate, newtxsize, newtxid = newtx
-            if newtxfeerate >= minfeerate:
-                newblocksize = newtxsize + blocksize
+        self.txqueue.heapify()
+        rejected_entries = TxPtrArray(init_size=len(self.txqueue))
+        # blocktxs = []
+        # while self._nodeps:
+        while self.txqueue.size > 1:
+            newtx = self.txqueue.heappop()
+            if newtx.feerate >= minfeerate:
+                newblocksize = newtx.size + blocksize
                 if newblocksize <= maxblocksize:
                     if blocksize_ltd > 0:
                         blocksize_ltd -= 1
                     else:
                         # FIXME: SFR setting must be changed to match
                         #        stranding.py's definition
-                        if newtxfeerate < sfr:
-                            sfr = newtxfeerate
+                        if newtx.feerate < sfr:
+                            sfr = newtx.feerate
 
-                    blocktxs.append(newtx)
+                    # blocktxs.append(newtx)
                     blocksize = newblocksize
 
-                    dependants = self._depmap.get(newtxid)
-                    if dependants is not None:
-                        for txid in dependants:
-                            deptx, depends = self._havedeps[txid]
-                            depends.remove(newtxid)
-                            # TODO: use the return value of depends.remove
-                            #       instead of bool(depends)
-                            if not depends:
-                                local_insort(self._nodeps, deptx)
-                                del self._havedeps[txid]
+                    # dependants = self._depmap.get(newtxid)
+                    if newtx.txid is NULL:
+                        continue
+                    dependants = self.depmap.get(newtx.txid)
+                    if dependants is None:
+                        continue
+                    for orphantx in dependants:
+                        orphantx.depends.remove(newtx.txid)
+                        if not orphantx.depends:
+                            self.txqueue.heappush(orphantx.tx)
+                        # for txid in dependants:
+                        #     deptx, depends = self._havedeps[txid]
+                        #     depends.remove(newtxid)
+                        #     # TODO: use the return value of depends.remove
+                        #     #       instead of bool(depends)
+                        #     if not depends:
+                        #         local_insort(self._nodeps, deptx)
+                        #         del self._havedeps[txid]
                 else:
                     rejected_entries.append(newtx)
                     blocksize_ltd += 1
             else:
                 rejected_entries.append(newtx)
                 break
-        # Reverse makes the sorting a bit faster
-        rejected_entries.reverse()
-        self._nodeps.extend(rejected_entries)
+        self.txqueue.extend(rejected_entries.txs, rejected_entries.size)
 
         simblock.sfr = sfr + 1 if blocksize_ltd else minfeerate
         simblock.is_sizeltd = bool(blocksize_ltd)
         simblock.size = blocksize
-        simblock.txs = blocktxs
+        # simblock.txs = blocktxs
+        # print("height/size/sfr: {}/{}/{}".format(simblock.height, simblock.size, simblock.sfr))
+
+    def __dealloc__(self):
+        free(self.init_array)
 
 
 class SimEntry(object):
@@ -172,7 +202,7 @@ class SimEntry(object):
             self.txid, repr(self.tx), repr(self.depends))
 
 
-cdef class SimDepends(object):
+cdef class SimDepends:
 
     cdef set _depends, _depends_bak
 
@@ -180,11 +210,10 @@ cdef class SimDepends(object):
         self._depends = set(depends) if depends else set()
         self._depends_bak = set(self._depends)
 
-    cdef remove(self, dependency):
+    cdef void remove(self, dependency):
         self._depends.remove(dependency)
-        return bool(self._depends)
 
-    cdef reset(self):
+    cdef void reset(self):
         self._depends = set(self._depends_bak)
 
     def repr(self):
@@ -195,3 +224,86 @@ cdef class SimDepends(object):
 
     def __nonzero__(self):
         return bool(self._depends)
+
+
+cdef class OrphanTx:
+    '''Analogue of COrphan in miner.cpp.'''
+
+    cdef:
+        TxStruct *tx
+        public SimDepends depends
+
+    def __init__(self, SimDepends depends):
+        self.depends = depends
+
+    cdef set_tx(self, TxStruct *tx):
+        self.tx = tx
+
+
+cdef class TxPriorityQueue(TxPtrArray):
+    '''1-based indexing, max-heap.'''
+
+    def __init__(self, int init_size=0):
+        self.append(NULL)
+
+    cdef void _siftdown(self, int idx):
+        cdef:
+            int left, right, largerchild
+            TxStruct *tmp
+
+        while idx < self.size:
+            left = 2*idx
+            right = left + 1
+
+            if left < self.size:
+                if right < self.size and self.txs[right].feerate > self.txs[left].feerate:
+                    largerchild = right
+                else:
+                    largerchild = left
+                if self.txs[largerchild].feerate > self.txs[idx].feerate:
+                    tmp = self.txs[idx]
+                    self.txs[idx] = self.txs[largerchild]
+                    self.txs[largerchild] = tmp
+                    idx = largerchild
+                    continue
+                break
+            break
+
+    cdef void heapify(self):
+        startidx = self.size // 2
+        for idx in range(startidx, 0, -1):
+            self._siftdown(idx)
+
+    cdef TxStruct* heappop(self):
+        '''Extract the max.'''
+        cdef TxStruct* besttx
+        if self.size > 1:
+            besttx = self.txs[1]
+            self.size -= 1
+            if self.size > 1:
+                self.txs[1] = self.txs[self.size]
+                self._siftdown(1)
+            return besttx
+        return NULL
+
+    cdef void heappush(self, TxStruct *tx):
+        '''Push TxStruct * onto heap.'''
+        cdef int idx, parent
+        self.append(tx)
+
+        idx = self.size - 1
+        while idx > 1:
+            parent = idx // 2
+            if self.txs[idx].feerate > self.txs[parent].feerate:
+                tmp = self.txs[idx]
+                self.txs[idx] = self.txs[parent]
+                self.txs[parent] = tmp
+                idx = parent
+            else:
+                break
+
+    def __copy__(self):
+        newqueue = TxPriorityQueue()
+        newqueue.clear()
+        newqueue.extend(self.txs, self.size)
+        return newqueue

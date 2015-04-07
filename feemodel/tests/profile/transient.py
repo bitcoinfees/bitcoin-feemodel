@@ -31,7 +31,7 @@ stopflag = multiprocessing.Event()
 #     sim, init_entries=init_entries, stopflag=stopflag)
 print("Starting transientsim.")
 cProfile.run("waittimes, realtime, numiters = transientsim("
-             "sim, init_entries=init_entries, multiprocess=None, stopflag=stopflag)")
+             "sim, init_entries=init_entries, multiprocess=1, stopflag=stopflag)")
 print("Completed in {}s with {} iters.".format(realtime, numiters))
 
 print("Feerate\tMean wait")

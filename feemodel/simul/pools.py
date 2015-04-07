@@ -98,7 +98,6 @@ class SimPools(object):
             key=lambda p: p[1], reverse=True)
         totalhashrate = sum([pool.hashrate for name, pool in poolitems])
         if not totalhashrate:
-            # TODO: consider using custom error to make explicit
             raise ValueError("No pools.")
 
         self.__poolsidx = []

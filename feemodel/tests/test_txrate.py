@@ -70,6 +70,7 @@ class ExpEstimatorTest(unittest.TestCase):
 
 
 class SamplingTest(unittest.TestCase):
+    '''Generate and re-estimate.'''
     pass
 
 

@@ -74,6 +74,7 @@ class TxSourceTests(unittest.TestCase):
                             for idx in range(len(byterates_binned))]
         for actual, target in zip(self.tx_byterates, byterates_target):
             self.assertAlmostEqual(actual, target)
+        # Test getting back the sample
         txs = self.tx_source.get_txsample()
         source2 = SimTxSource(txs, self.tx_source.txrate)
         _dum, byterates2 = source2.get_byterates(self.feerates)

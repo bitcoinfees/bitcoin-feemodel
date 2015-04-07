@@ -105,7 +105,7 @@ class TransientSimTests(unittest.TestCase):
             PseudoMempool(),
             PseudoPoolsOnline(poolsref),
             PseudoTxOnline(txref),
-            update_period=1,
+            update_period=0,
             miniters=1000,
             maxiters=10000)
         with transientonline.context_start():
