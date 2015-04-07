@@ -1,7 +1,7 @@
 from __future__ import division
 
 from math import sqrt, cos, exp, log, pi
-from random import random
+from random import random, normalvariate
 from bisect import bisect, bisect_left
 from itertools import groupby
 
@@ -159,14 +159,5 @@ cdef poisson_sample(l):
 
 
 cdef poisson_approx(l):
-    # box-muller
-    # cdef:
-    #     float u = random()
-    #     float v = random()
-    #     float z
-    u = random()
-    v = random()
-    z = pow(-2*log(u), 0.5)*cos(2*pi*v)
-
-    # return int(round(z*sqrt(l) + l))
-    return int(round(z*pow(l, 0.5) + l))
+    '''Normal approximation.'''
+    return int(normalvariate(l, l**0.5))
