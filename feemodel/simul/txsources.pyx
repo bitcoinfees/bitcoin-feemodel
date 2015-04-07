@@ -193,6 +193,16 @@ cdef class TxPtrArray:
             self.txs[self.size] = txs[idx]
             self.size += 1
 
+    cdef TxStruct* pop(self):
+        '''Pop the last element.
+
+        Do not do any resizing.
+        '''
+        if self.size == 0:
+            return NULL
+        self.size -= 1
+        return self.txs[self.size]
+
     cdef void clear(self):
         '''Clear the array..'''
         self._resize(0)
@@ -219,9 +229,13 @@ cdef class TxPtrArray:
 
 
 cdef int randindex(int N, int randlimit):
-    '''get a random index in the range [0, N-1].'''
+    '''Get a random index in the range [0, N-1].'''
     cdef int r
     r = RAND_MAX
+    # randlimit is always RAND_MAX - (RAND_MAX % N); we however pass it as an
+    # argument to avoid having to recompute it every time. Its purpose is to
+    # ensure the resulting R.V. has a uniform distribution over
+    # {0, 1, ..., N-1}.
     while r >= randlimit:
         r = rand()
     return r % N

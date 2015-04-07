@@ -24,5 +24,6 @@ cdef class TxPtrArray:
 
     cdef void append(self, TxStruct *tx)
     cdef void extend(self, TxStruct **txs, int size)
+    cdef TxStruct* pop(self)
     cdef void clear(self)
     cdef void _resize(self, int newtotalsize)

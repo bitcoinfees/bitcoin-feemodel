@@ -288,9 +288,8 @@ cdef class TxPriorityQueue(TxPtrArray):
         cdef TxStruct* besttx
         if self.size > 1:
             besttx = self.txs[1]
-            self.size -= 1
-            if self.size > 1:
-                self.txs[1] = self.txs[self.size]
+            if self.size > 2:
+                self.txs[1] = self.pop()
                 self._siftdown(1)
             return besttx
         return NULL
