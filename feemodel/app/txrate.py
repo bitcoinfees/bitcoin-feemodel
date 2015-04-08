@@ -6,7 +6,7 @@ import logging
 from copy import copy
 from time import time
 from feemodel.estimate import ExpEstimator
-from feemodel.config import history_file
+from feemodel.config import memblock_dbfile
 
 default_halflife = 3600  # 1 hour
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TxRateOnlineEstimator(object):
 
-    def __init__(self, halflife=default_halflife, dbfile=history_file):
+    def __init__(self, halflife=default_halflife, dbfile=memblock_dbfile):
         self.dbfile = dbfile
         self.txrate_estimator = ExpEstimator(halflife)
         self.prevtxids = None

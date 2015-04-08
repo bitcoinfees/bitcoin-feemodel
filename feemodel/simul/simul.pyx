@@ -6,7 +6,6 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Free as free)
 
 from collections import defaultdict
-from copy import copy
 from bisect import insort
 
 from feemodel.simul.stats import Capacity
@@ -25,6 +24,7 @@ cdef class Simul:
         self.tx_source = tx_source
         # TODO: check edge conditions for feerates
         self.cap = Capacity(pools, tx_source)
+        # TODO: use all the tx points to calc stablefeerate
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "
@@ -33,7 +33,7 @@ cdef class Simul:
 
     def run(self, init_entries=None):
         if init_entries is None:
-            init_entries = []
+            init_entries = {}
         self.mempool = SimMempool(init_entries)
         self.txgen = self.tx_source.get_c_txgen(feeratethresh=self.stablefeerate)
         for simblock in self.pools.blockgen():
@@ -50,24 +50,26 @@ cdef class SimMempool:
         TxStruct *init_array
         TxPriorityQueue txqueue, txqueue_bak
         dict depmap
-        object init_entries
+        list init_txids
 
     def __cinit__(self, init_entries):
         self.init_array = <TxStruct *>malloc(len(init_entries)*sizeof(TxStruct))
 
     def __init__(self, init_entries):
-        self.init_entries = init_entries  # Preserve the txid string references
+        txids = init_entries.keys()
+        # Assert that there are no duplicate txids.
+        assert len(set(txids)) == len(txids)
+        # Keep a reference to the txid string objects,
+        # for the char * in TxStruct
+        self.init_txids = txids
         self.txqueue = TxPriorityQueue()
 
         _depmap = defaultdict(list)
-
-        txids = [entry.txid for entry in init_entries]
-        # Assert that there are no duplicate txids.
-        assert len(set(txids)) == len(txids)
-        for idx, entry in enumerate(init_entries):
-            self.init_array[idx].feerate = entry.tx.feerate
-            self.init_array[idx].size = entry.tx.size
-            self.init_array[idx].txid = entry.txid
+        for idx, entryitem in enumerate(init_entries.items()):
+            txid, entry = entryitem
+            self.init_array[idx].feerate = entry.feerate
+            self.init_array[idx].size = entry.size
+            self.init_array[idx].txid = txid
             if not entry.depends:
                 self.txqueue.append(&self.init_array[idx])
             else:
@@ -79,10 +81,10 @@ cdef class SimMempool:
                     _depmap[dep].append(orphantx)
         self.depmap = dict(_depmap)
         # For resetting the mempool to initial state.
-        self.txqueue_bak = copy(self.txqueue)
+        self.txqueue_bak = TxPriorityQueue()
+        self.txqueue.txs_copy(self.txqueue_bak)
 
-    @property
-    def entries(self):
+    def get_entries(self):
         cdef OrphanTx orphantx
         cdef TxStruct *tx
         entries = {}
@@ -93,21 +95,19 @@ cdef class SimMempool:
                     orphans.add(orphantx)
 
         for orphantx in orphans:
-            pass
-            # tx = orphantx.tx
-            # entries[tx.txid] = SimEntry()
+            tx = orphantx.tx
+            entries[tx.txid] = SimEntry(
+                tx.feerate, tx.size, list(orphantx.depends))
 
-        # entries = []
-        # entries.extend(
-        #     [SimEntry(tx[2], SimTx(tx[0], tx[1])) for tx in self._nodeps])
-        # entries.extend(
-        #     [SimEntry(txid, SimTx(entry[0][0], entry[0][1]), entry[1])
-        #      for txid, entry in self._havedeps.items()])
-        # return entries
+        for idx, simtx in enumerate(self.txqueue.get_simtxs()):
+            entries[str(idx)] = SimEntry(
+                simtx.feerate, simtx.size, [])
+
+        return entries
 
     def reset(self):
         cdef OrphanTx orphantx
-        self.txqueue = copy(self.txqueue_bak)
+        self.txqueue_bak.txs_copy(self.txqueue)
         for dependants in self.depmap.values():
             for orphantx in dependants:
                 orphantx.depends.reset()
@@ -128,8 +128,9 @@ cdef class SimMempool:
         blocksize_ltd = 0
 
         self.txqueue.heapify()
-        rejected_entries = TxPtrArray(init_size=len(self.txqueue))
-        blocktxs = TxPtrArray(init_size=len(self.txqueue))
+        rejected_entries = TxPtrArray(maxsize=len(self.txqueue))
+        blocktxs = TxPtrArray(maxsize=len(self.txqueue))
+
         while self.txqueue.size > 1:
             newtx = self.txqueue.heappop()
             if newtx.feerate >= minfeerate:
@@ -172,43 +173,17 @@ cdef class SimMempool:
         free(self.init_array)
 
 
-# #class SimEntry(SimTx):
-# #
-# #    def __init__(self, feerate, size, depends):
-# #        self.txid = txid
-# #        self.tx = simtx
-# #        if isinstance(depends, SimDepends):
-# #            self.depends = depends
-# #        else:
-# #            self.depends = SimDepends(depends)
-# #
-# #    @classmethod
-# #    def from_mementry(cls, txid, entry):
-# #        return cls(txid, SimTx(entry.feerate, entry.size),
-# #                   depends=entry.depends)
-# #
-# #    def __repr__(self):
-# #        return "SimEntry({}, {}, {})".format(
-# #            self.txid, repr(self.tx), repr(self.depends))
+class SimEntry(SimTx):
 
-
-class SimEntry(object):
-    def __init__(self, txid, simtx, depends=None):
-        self.txid = txid
-        self.tx = simtx
-        if isinstance(depends, SimDepends):
-            self.depends = depends
-        else:
-            self.depends = SimDepends(depends)
-
-    @classmethod
-    def from_mementry(cls, txid, entry):
-        return cls(txid, SimTx(entry.feerate, entry.size),
-                   depends=entry.depends)
+    def __init__(self, feerate, size, depends=None):
+        super(SimEntry, self).__init__(feerate, size)
+        if depends is None:
+            depends = []
+        self.depends = depends
 
     def __repr__(self):
-        return "SimEntry({}, {}, {})".format(
-            self.txid, repr(self.tx), repr(self.depends))
+        return "SimEntry({}, depends:{})".format(
+            super(SimEntry, self).__repr__(), self.depends)
 
 
 cdef class SimDepends:
@@ -225,7 +200,7 @@ cdef class SimDepends:
     cdef void reset(self):
         self._depends = set(self._depends_bak)
 
-    def repr(self):
+    def __repr__(self):
         return "SimDepends({})".format(self._depends)
 
     def __iter__(self):
@@ -242,17 +217,22 @@ cdef class OrphanTx:
         TxStruct *tx
         public SimDepends depends
 
-    def __init__(self, SimDepends depends):
-        self.depends = depends
+    def __init__(self, list depends):
+        assert depends
+        self.depends = SimDepends(depends)
 
     cdef set_tx(self, TxStruct *tx):
         self.tx = tx
 
 
 cdef class TxPriorityQueue(TxPtrArray):
-    '''1-based indexing, max-heap.'''
+    '''1-based indexing, max-heap.
 
-    def __init__(self, int init_size=0):
+    First element is always NULL. So the actual size of the heap is
+    self.size - 1.
+    '''
+
+    def __init__(self, int maxsize=0):
         self.append(NULL)
 
     cdef void _siftdown(self, int idx):
@@ -288,9 +268,8 @@ cdef class TxPriorityQueue(TxPtrArray):
         cdef TxStruct* besttx
         if self.size > 1:
             besttx = self.txs[1]
-            if self.size > 2:
-                self.txs[1] = self.pop()
-                self._siftdown(1)
+            self.txs[1] = self.pop()
+            self._siftdown(1)
             return besttx
         return NULL
 
@@ -309,9 +288,3 @@ cdef class TxPriorityQueue(TxPtrArray):
                 idx = parent
             else:
                 break
-
-    def __copy__(self):
-        newqueue = TxPriorityQueue()
-        newqueue._resize(self.totalsize)
-        newqueue.extend(&self.txs[1], self.size-1)
-        return newqueue

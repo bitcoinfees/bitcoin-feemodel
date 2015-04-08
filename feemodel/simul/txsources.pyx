@@ -15,13 +15,14 @@ from tabulate import tabulate
 
 from feemodel.util import DataSample
 
-DEF OVERALLOCATE = 1.2  # This better be > 1.
+DEF OVERALLOCATE = 1.25  # This better be > 1.
 assert OVERALLOCATE > 1
 
 srand(time(NULL))
 
 
 class SimTx(object):
+
     def __init__(self, feerate, size):
         self.feerate = feerate
         self.size = size
@@ -157,7 +158,7 @@ cdef class TxSampleArray:
     cdef void sample(self, TxPtrArray txs, int l):
         cdef int newsize
         newsize = txs.size + l
-        if newsize >= txs.totalsize:
+        if newsize >= txs.maxsize:
             txs._resize(<int>((newsize+1)*OVERALLOCATE))
         for idx in range(l):
             ridx = randindex(self.size, self._randlimit)
@@ -172,13 +173,13 @@ cdef class TxSampleArray:
 
 cdef class TxPtrArray:
 
-    def __cinit__(self, int init_size=0):
+    def __cinit__(self, int maxsize=0):
         self.size = 0
-        self._resize(init_size)
+        self._resize(maxsize)
 
     cdef void append(self, TxStruct *tx):
         '''Append to the array.'''
-        if self.size == self.totalsize:
+        if self.size == self.maxsize:
             self._resize(<int>((self.size+1)*OVERALLOCATE))
         self.txs[self.size] = tx
         self.size += 1
@@ -187,7 +188,7 @@ cdef class TxPtrArray:
         '''Extend the array.'''
         cdef int newsize
         newsize = self.size + size
-        if newsize >= self.totalsize:
+        if newsize >= self.maxsize:
             self._resize(<int>((newsize+1)*OVERALLOCATE))
         for idx in range(size):
             self.txs[self.size] = txs[idx]
@@ -208,10 +209,17 @@ cdef class TxPtrArray:
         self._resize(0)
         self.size = 0
 
-    cdef void _resize(self, int newtotalsize):
-        # print("resizing from {} to {}.".format(self.totalsize, newtotalsize))
-        self.txs = <TxStruct **>realloc(self.txs, newtotalsize*sizeof(TxStruct *))
-        self.totalsize = newtotalsize
+    cdef void _resize(self, int newmaxsize):
+        self.txs = <TxStruct **>realloc(self.txs, newmaxsize*sizeof(TxStruct *))
+        self.maxsize = newmaxsize
+
+    cdef txs_copy(self, TxPtrArray other):
+        '''Copy txs from self to other.'''
+        if other.maxsize <= self.size:
+            other._resize(<int>((self.size+1)*OVERALLOCATE))
+        other.size = self.size
+        for i in range(self.size):
+            other.txs[i] = self.txs[i]
 
     def get_simtxs(self):
         simtxs = [

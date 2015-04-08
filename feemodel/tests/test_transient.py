@@ -6,11 +6,12 @@ from bisect import bisect
 from math import log
 from random import choice, seed
 
-from feemodel.tests.pseudoproxy import install
+from feemodel.txmempool import MempoolState
+from feemodel.tests.pseudoproxy import install, proxy
+
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
-from feemodel.tests.config import (memblock_dbfile as dbfile, poolsref, txref,
-                                   transientref as statsref)
+from feemodel.tests.config import poolsref, txref, transientref as statsref
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -114,18 +115,32 @@ class TransientSimTests(unittest.TestCase):
             stats = transientonline.stats
             self.assertEqual(stats.numiters, 1000)
 
+    def test_C(self):
+        '''Test empty mempool.'''
+        mempool = PseudoMempool()
+        mempool.state = MempoolState(333930, {})
+        transientonline = TransientOnline(
+            mempool,
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=3,
+            miniters=0,
+            maxiters=10000)
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            print("Expected wait:")
+            stats.expectedwaits.print_fn()
+
 
 class PseudoMempool(object):
     '''A pseudo TxMempool'''
 
     def __init__(self):
-        from feemodel.txmempool import MemBlock
-        self.b = MemBlock.read(333931, dbfile=dbfile)
-        for entry in self.b.entries.values():
-            assert all([txid in self.b.entries for txid in entry.depends])
-
-    def get_entries(self):
-        return self.b.entries
+        proxy.set_rawmempool(333931)
+        proxy.blockcount = 333930
+        self.state = MempoolState(*proxy.poll_mempool())
 
 
 class PseudoPoolsOnline(object):

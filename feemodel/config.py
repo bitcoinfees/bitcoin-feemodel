@@ -57,9 +57,9 @@ def load_config(section, option, opt_type=''):
 prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
 minrelaytxfee = load_config('general', 'minrelaytxfee', opt_type='int')
 
-history_file = os.path.join(datadir, load_config('txmempool', 'history_file'))
+memblock_dbfile = os.path.join(datadir, 'memblocks.db')
 poll_period = load_config('txmempool', 'poll_period', opt_type='int')
-keep_history = load_config('txmempool', 'keep_history', opt_type='int')
+blocks_to_keep = load_config('txmempool', 'blocks_to_keep', opt_type='int')
 
 windowfillthresh = load_config('app', 'windowfillthresh', opt_type='float')
 applogfile = os.path.join(datadir, load_config('app', 'applogfile'))

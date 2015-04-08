@@ -6,17 +6,15 @@ from feemodel.txmempool import MemBlock
 from feemodel.simul.transient import transient_multiproc as transientsim
 from feemodel.simul import Simul, SimEntry
 from feemodel.util import load_obj, DataSample
+from feemodel.tests.config import memblock_dbfile as dbfile, poolsref, txref
 
-dbfile = '../data/test.db'
-refpools = load_obj('../data/pe_ref.pickle')
-reftxsource = load_obj('../data/tr_ref.pickle')
-refpools.print_pools()
+poolsref.print_pools()
 
-b = MemBlock.read(333931, dbfile=dbfile)
-init_entries = [SimEntry.from_mementry(txid, entry)
-                for txid, entry in b.entries.items()]
+init_entries = MemBlock.read(333931, dbfile=dbfile).entries
+# init_entries = [SimEntry.from_mementry(txid, entry)
+#                 for txid, entry in b.entries.items()]
 
-sim = Simul(refpools, reftxsource)
+sim = Simul(poolsref, txref)
 stopflag = multiprocessing.Event()
 
 # try:

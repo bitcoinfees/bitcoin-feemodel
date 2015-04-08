@@ -6,7 +6,7 @@ from bisect import bisect
 
 from feemodel.config import minrelaytxfee
 from feemodel.util import StoppableThread, DataSample
-from feemodel.simul import Simul, SimEntry
+from feemodel.simul import Simul
 from feemodel.simul.stats import WaitFn
 from feemodel.simul.transient import transient_multiproc as transientsim
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
@@ -71,8 +71,7 @@ class TransientOnline(StoppableThread):
         pools = self.poolsonline.get_pools()
         # TODO: catch unstable error
         sim = Simul(pools, tx_source)
-        init_entries = [SimEntry.from_mementry(txid, entry)
-                        for txid, entry in self.mempool.get_entries().items()]
+        init_entries = self.mempool.state.get_entries()
         waittimes, timespent, numiters = transientsim(
             sim,
             init_entries=init_entries,
@@ -80,10 +79,8 @@ class TransientOnline(StoppableThread):
             maxiters=self.maxiters,
             maxtime=self.update_period,
             stopflag=self.get_stop_object())
-        mempoolsizes = self._calc_mempoolsizes(init_entries,
-                                               sorted(waittimes.keys()))
-        mempoolsize_with_fee = sum([entry.tx.size for entry in init_entries
-                                    if entry.tx.feerate >= minrelaytxfee])
+        mempoolsizes, mempoolsize_with_fee = self._calc_mempoolsizes(
+            init_entries, sorted(waittimes.keys()))
 
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
@@ -105,12 +102,12 @@ class TransientOnline(StoppableThread):
         '''
         mempoolsize_with_fee = 0
         sizebins = [0]*len(feerates)
-        for entry in entries:
-            fidx = bisect(feerates, entry.tx.feerate)
+        for entry in entries.values():
+            fidx = bisect(feerates, entry.feerate)
             if fidx:
-                sizebins[fidx-1] += entry.tx.size
-            if entry.tx.feerate >= minrelaytxfee:
-                mempoolsize_with_fee += entry.tx.size
+                sizebins[fidx-1] += entry.size
+            if entry.feerate >= minrelaytxfee:
+                mempoolsize_with_fee += entry.size
         mempoolsizes = [sum(sizebins[idx:]) for idx in range(len(sizebins))]
         return mempoolsizes, mempoolsize_with_fee
 

@@ -5,7 +5,7 @@ import threading
 import os
 from time import time
 from copy import deepcopy, copy
-from feemodel.config import datadir, history_file, DIFF_RETARGET_INTERVAL
+from feemodel.config import datadir, memblock_dbfile, DIFF_RETARGET_INTERVAL
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import MemBlock
 from feemodel.estimate.pools import PoolsEstimator
@@ -22,7 +22,7 @@ class PoolsOnlineEstimator(object):
     def __init__(self, window,
                  update_period=default_update_period,
                  minblocks=default_minblocks,
-                 dbfile=history_file,
+                 dbfile=memblock_dbfile,
                  savedir=default_savedir):
         self.window = window
         self.update_period = update_period

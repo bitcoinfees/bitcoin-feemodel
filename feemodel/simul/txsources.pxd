@@ -20,10 +20,11 @@ cdef class TxPtrArray:
     cdef:
         TxStruct **txs
         int size
-        int totalsize
+        int maxsize
 
     cdef void append(self, TxStruct *tx)
     cdef void extend(self, TxStruct **txs, int size)
     cdef TxStruct* pop(self)
+    cdef txs_copy(self, TxPtrArray other)
     cdef void clear(self)
-    cdef void _resize(self, int newtotalsize)
+    cdef void _resize(self, int newmaxsize)

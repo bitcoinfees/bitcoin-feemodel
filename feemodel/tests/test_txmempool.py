@@ -2,19 +2,18 @@ import unittest
 import sqlite3
 import os
 import logging
-from copy import deepcopy
 
 from feemodel.config import datadir
-from feemodel.txmempool import TxMempool, MemBlock
+from feemodel.txmempool import TxMempool, MemBlock, MempoolState
 
 from feemodel.tests.config import memblock_dbfile as dbfile
-from feemodel.tests.pseudoproxy import proxy, install
-
+from feemodel.tests.pseudoproxy import (proxy, install,
+                                        rawmempool_from_mementries)
 
 proxy.set_rawmempool(333931)
 install()
 
-keep_history = 10
+blocks_to_keep = 10
 logging.basicConfig(level=logging.DEBUG)
 
 tmpdbfile = os.path.join(datadir, '_tmp_test.db')
@@ -30,7 +29,7 @@ class WriteReadTests(unittest.TestCase):
     def test_writeread(self):
         '''Tests that mempool entry is unchanged upon write/read.'''
         memblock = MemBlock.read(333931, dbfile=dbfile)
-        memblock.write(dbfile=tmpdbfile, keep_history=2016)
+        memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
         memblock_read = MemBlock.read(333931, dbfile=tmpdbfile)
         print(memblock_read)
         self.assertEqual(memblock_read, memblock)
@@ -39,9 +38,15 @@ class WriteReadTests(unittest.TestCase):
         '''Tests write/read of empty entries dict'''
         memblock = MemBlock.read(self.test_blockheight, dbfile=dbfile)
         memblock.entries = {}
-        memblock.write(dbfile=tmpdbfile, keep_history=2016)
+        memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
         memblock_read = MemBlock.read(self.test_blockheight, dbfile=tmpdbfile)
         self.assertEqual(memblock_read, memblock)
+
+    def test_write_uninitialized(self):
+        '''Test write of uninitialized MemBlock.'''
+        memblock = MemBlock()
+        with self.assertRaises(ValueError):
+            memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
 
     def test_deletehistory(self):
         '''Test that history is deleted according to retention policy.'''
@@ -50,10 +55,10 @@ class WriteReadTests(unittest.TestCase):
 
         for memblock in memblocks:
             if memblock:
-                memblock.write(dbfile=tmpdbfile, keep_history=keep_history)
+                memblock.write(dbfile=tmpdbfile, blocks_to_keep=blocks_to_keep)
 
         block_list = MemBlock.get_heights(dbfile=tmpdbfile)
-        self.assertEqual(len(block_list), keep_history)
+        self.assertEqual(len(block_list), blocks_to_keep)
 
     def test_duplicate_writes(self):
         block = MemBlock.read(333931, dbfile=dbfile)
@@ -67,7 +72,7 @@ class WriteReadTests(unittest.TestCase):
         block_read = MemBlock.read(333931, dbfile=tmpdbfile)
         self.assertEqual(block, block_read)
 
-    def read_uninitialized(self):
+    def test_read_uninitialized(self):
         '''Read from a db that has not been initialized.'''
         block = MemBlock.read(333931, dbfile='nonsense.db')
         self.assertIsNone(block)
@@ -84,73 +89,75 @@ class WriteReadTests(unittest.TestCase):
 class ProcessBlocksTest(unittest.TestCase):
     def setUp(self):
         self.test_blockheight = 333931
-        self.memblock = MemBlock.read(self.test_blockheight,
-                                      dbfile=dbfile)
-        for entry in self.memblock.entries.values():
-            entry.leadtime = None
+        self.memblockref = MemBlock.read(self.test_blockheight,
+                                         dbfile=dbfile)
+        for entry in self.memblockref.entries.values():
+            # This test data was from an old version where leadtime was not
+            # an integer.
+            entry.leadtime = int(entry.leadtime)
             entry.isconflict = False
-
-        self.blockheight_range = range(self.test_blockheight,
-                                       self.test_blockheight+1)
-
-        self.entries = deepcopy(self.memblock.entries)
-        for entry in self.entries.values():
-            entry.isconflict = None
-            entry.inblock = None
+        self.testrawmempool = rawmempool_from_mementries(
+            self.memblockref.entries)
+        self.mempool = TxMempool()
 
     def test_process_blocks(self):
-        processed_memblock = TxMempool.process_blocks(
-            TxMempool(), self.blockheight_range, self.entries,
-            set(self.entries), 1)[0]
-        processed_memblock.time = self.memblock.time
-        for entry in processed_memblock.entries.values():
-            entry.leadtime = None
-        self.assertEqual(processed_memblock, self.memblock)
+        prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
+        newstate = MempoolState(self.test_blockheight, self.testrawmempool)
+        memblocks = self.mempool.process_blocks(
+            prevstate, newstate, self.memblockref.time)
+        self.assertEqual(memblocks[0], self.memblockref)
 
     def test_process_empty_mempool(self):
-        self.memblock.entries = {}
-        processed_memblock = TxMempool.process_blocks(
-            TxMempool(), self.blockheight_range, {}, set(), 1)[0]
-        processed_memblock.time = self.memblock.time
-        self.assertEqual(processed_memblock, self.memblock)
+        self.memblockref.entries = {}
+        prevstate = MempoolState(self.test_blockheight-1, {})
+        newstate = MempoolState(self.test_blockheight, {})
+        memblocks = self.mempool.process_blocks(
+            prevstate, newstate, self.memblockref.time)
+        self.assertEqual(memblocks[0], self.memblockref)
 
     def test_multipleblocks(self):
         print("\nMultiple blocks test\n====================")
-        memblocks = TxMempool.process_blocks(
-            TxMempool(), range(self.test_blockheight, self.test_blockheight+2),
-            self.entries, set(self.entries), 1)
-        previnblock = None
-        for m in memblocks:
-            self.assertTrue(all([not entry.isconflict
-                                 for entry in m.entries.values()]))
-            if previnblock:
-                print("Checking for no inblock overlap...")
-                self.assertFalse(set(previnblock) & set(m.entries))
+        prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
+        newstate = MempoolState(self.test_blockheight+2, self.testrawmempool)
+        memblocks = self.mempool.process_blocks(
+            prevstate, newstate, self.memblockref.time)
 
-            previnblock = [entry for entry in m.entries.values()
+        previnblock = None
+        for b in memblocks:
+            self.assertTrue(all([not entry.isconflict
+                                 for entry in b.entries.values()]))
+            if previnblock:
+                # Check that inblock txs are removed from entries before
+                # next block is processed.
+                print("Checking for no inblock overlap...")
+                self.assertFalse(set(previnblock) & set(b.entries))
+
+            previnblock = [txid for txid, entry in b.entries.items()
                            if entry.inblock]
-            print m
+            print b
+        print("{} entries remaining.".format(len(b.entries)))
         print("====================")
 
     def test_multipleblocks_conflicts(self):
         print("\nMultiple blocks conflicts test\n====================")
-        memblocks = TxMempool.process_blocks(
-            TxMempool(), range(self.test_blockheight, self.test_blockheight+2),
-            self.entries, set(), 1)
-        for idx, m in enumerate(memblocks):
+        prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
+        newstate = MempoolState(self.test_blockheight+2, {})
+        memblocks = self.mempool.process_blocks(
+            prevstate, newstate, self.memblockref.time)
+        for idx, b in enumerate(memblocks):
+            self.assertTrue(all([
+                not entry.isconflict for entry in b.entries.values()
+                if entry.inblock]))
             if idx == 0:
-                conflicts = [txid for txid, entry in m.entries.items()
+                conflicts = [txid for txid, entry in b.entries.items()
                              if entry.isconflict]
-                for txid in conflicts:
-                    self.assertFalse(entry.inblock)
-            elif idx == len(memblocks) - 1:
-                self.assertTrue(all([
-                    entry.inblock for entry in m.entries.values()]))
+                print("{} conflicts.".format(len(conflicts)))
             else:
-                self.assertTrue([txid not in m.entries for txid in conflicts])
-                self.assertTrue(all([not entry.isconflict
-                                     for entry in m.entries.values()]))
-            print m
+                self.assertFalse(set(conflicts) & set(b.entries))
+                if idx == len(memblocks)-1:
+                    self.assertTrue(
+                        all([entry.inblock for entry in b.entries.values()]))
+            print b
         print("====================")
 
 
