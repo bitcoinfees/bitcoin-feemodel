@@ -16,7 +16,7 @@ rate_ratio_thresh = 0.9
 
 cdef class Simul:
 
-    cdef readonly object pools, tx_source, cap, stablefeerate, txgen
+    cdef readonly object pools, tx_source, cap, stablefeerate, tx_emitter
     cdef public SimMempool mempool
 
     def __init__(self, pools, tx_source):
@@ -35,10 +35,10 @@ cdef class Simul:
         if init_entries is None:
             init_entries = {}
         self.mempool = SimMempool(init_entries)
-        self.txgen = self.tx_source.get_c_txgen(feeratethresh=self.stablefeerate)
-        for simblock in self.pools.blockgen():
+        self.tx_emitter = self.tx_source.get_emit_fn(feeratethresh=self.stablefeerate)
+        for simblock, blockinterval in self.pools.get_blockgen():
             # Add new txs to the txqueue
-            self.txgen(self.mempool.txqueue, simblock.interval)
+            self.tx_emitter(self.mempool.txqueue, blockinterval)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
             yield simblock
@@ -56,12 +56,12 @@ cdef class SimMempool:
         self.init_array = <TxStruct *>malloc(len(init_entries)*sizeof(TxStruct))
 
     def __init__(self, init_entries):
-        txids = init_entries.keys()
+        init_txids = init_entries.keys()
         # Assert that there are no duplicate txids.
-        assert len(set(txids)) == len(txids)
+        assert len(set(init_txids)) == len(init_txids)
         # Keep a reference to the txid string objects,
-        # for the char * in TxStruct
-        self.init_txids = txids
+        # for the sake of the char pointers in *init_array
+        self.init_txids = init_txids
         self.txqueue = TxPriorityQueue()
 
         _depmap = defaultdict(list)
@@ -77,7 +77,7 @@ cdef class SimMempool:
                 orphantx.set_tx(&self.init_array[idx])
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
-                    assert dep in txids
+                    assert dep in init_txids
                     _depmap[dep].append(orphantx)
         self.depmap = dict(_depmap)
         # For resetting the mempool to initial state.
@@ -100,7 +100,7 @@ cdef class SimMempool:
                 tx.feerate, tx.size, list(orphantx.depends))
 
         for idx, simtx in enumerate(self.txqueue.get_simtxs()):
-            entries[str(idx)] = SimEntry(
+            entries['_'+str(idx)] = SimEntry(
                 simtx.feerate, simtx.size, [])
 
         return entries
@@ -120,16 +120,15 @@ cdef class SimMempool:
             TxStruct *newtx
             OrphanTx orphantx
 
-        pool = simblock.poolinfo[1]
-        minfeerate = min(pool.minfeerate, MAXFEE)
-        maxblocksize = pool.maxblocksize
+        minfeerate = min(simblock.pool.minfeerate, MAXFEE)
+        maxblocksize = simblock.pool.maxblocksize
         sfr = MAXFEE
         blocksize = 0
         blocksize_ltd = 0
 
         self.txqueue.heapify()
-        rejected_entries = TxPtrArray(maxsize=len(self.txqueue))
-        blocktxs = TxPtrArray(maxsize=len(self.txqueue))
+        rejected_entries = TxPtrArray(maxsize=self.txqueue.size)
+        blocktxs = TxPtrArray(maxsize=self.txqueue.size)
 
         while self.txqueue.size > 1:
             newtx = self.txqueue.heappop()
@@ -152,6 +151,7 @@ cdef class SimMempool:
                     dependants = self.depmap.get(newtx.txid)
                     if dependants is None:
                         continue
+                    # TODO: don't use a list for dependants but a cdef class
                     for orphantx in dependants:
                         orphantx.depends.remove(newtx.txid)
                         if not orphantx.depends:
@@ -187,6 +187,7 @@ class SimEntry(SimTx):
 
 
 cdef class SimDepends:
+    # TODO: get rid of this class; integrate with OrphanTx
 
     cdef set _depends, _depends_bak
 

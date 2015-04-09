@@ -34,33 +34,17 @@ class SimTx(object):
 class SimTxSource(object):
 
     def __init__(self, txsample, txrate):
-        self._txsample = [(simtx.feerate, simtx.size, '')
-                          for simtx in txsample]
+        self.txsample = txsample
         self.txrate = txrate
 
-    def get_txgen(self, feeratethresh=0):
-        '''Python wrapper for get_c_txgen.'''
-        c_txgen = self.get_c_txgen(feeratethresh)
-        txs = TxPtrArray()
-
-        def txgen(time_interval):
-            newtxs = []
-            txs.clear()
-            c_txgen(txs, time_interval)
-            for i in range(txs.size):
-                newtxs.append(SimTx(txs.txs[i].feerate, txs.txs[i].size))
-            return newtxs
-
-        return txgen
-
-    def get_c_txgen(self, feeratethresh=0):
+    def get_emit_fn(self, feeratethresh=0):
         # TODO: test the feerate thresh / stable feerate
-        if not self._txsample:
+        txsample_filtered = filter(lambda tx: tx.feerate >= feeratethresh,
+                                   self.txsample)
+        if not txsample_filtered:
             raise ValueError("No txs.")
-        txsample_array = TxSampleArray([
-            SimTx(tx[0], tx[1]) for tx in self._txsample
-            if tx[0] >= feeratethresh])
-        modtxrate = len(txsample_array) / len(self._txsample) * self.txrate
+        txsample_array = TxSampleArray(txsample_filtered)
+        modtxrate = len(txsample_filtered) / len(self.txsample) * self.txrate
 
         def txgen(TxPtrArray txs, time_interval):
             '''Put the new samples in txs.'''
@@ -69,21 +53,18 @@ class SimTxSource(object):
 
         return txgen
 
-    def get_txsample(self):
-        return [SimTx(tx[0], tx[1]) for tx in self._txsample]
-
     def get_byterates(self, feerates=None):
         '''Get reverse cumulative byterate as a function of feerate.'''
-        if not self._txsample:
+        if not self.txsample:
             raise ValueError("No txs.")
-        n = len(self._txsample)
+        n = len(self.txsample)
         if feerates:
             feerates.sort()
             ratebins = [0.]*len(feerates)
-            for txfeerate, txsize, _dum in self._txsample:
-                fidx = bisect(feerates, txfeerate)
+            for tx in self.txsample:
+                fidx = bisect(feerates, tx.feerate)
                 if fidx:
-                    ratebins[fidx-1] += txsize
+                    ratebins[fidx-1] += tx.size
             byterates = [sum(ratebins[idx:])*self.txrate/n
                          for idx in range(len(ratebins))]
             return feerates, byterates
@@ -92,13 +73,16 @@ class SimTxSource(object):
             # is ~ 0.1 of the total.
             R = 10  # 1 / 0.1
             txrate = self.txrate
-            self._txsample.sort(reverse=True)
+
+            def keyfunc(tx):
+                return tx.feerate
+
+            self.txsample.sort(key=keyfunc, reverse=True)
             feerates = []
             byterates = []
             cumbyterate = 0.
-            for feerate, feegroup in groupby(self._txsample,
-                                             lambda tx: tx[0]):
-                cumbyterate += sum([tx[1] for tx in feegroup])*txrate/n
+            for feerate, feegroup in groupby(self.txsample, keyfunc):
+                cumbyterate += sum([tx.size for tx in feegroup])*txrate/n
                 feerates.append(feerate)
                 byterates.append(cumbyterate)
 
@@ -122,9 +106,9 @@ class SimTxSource(object):
         Returns the mean byterate with its standard error, computed using a
         normal approximation.
         '''
-        d = DataSample([tx[1]*self.txrate for tx in self._txsample])
+        d = DataSample([tx.size*self.txrate for tx in self.txsample])
         d.calc_stats()
-        return d.mean, d.std / len(self._txsample)**0.5
+        return d.mean, d.std / len(self.txsample)**0.5
 
     def print_rates(self):
         if not self:
@@ -138,10 +122,10 @@ class SimTxSource(object):
 
     def __repr__(self):
         return "SimTxSource(samplesize: {}, txrate: {})".format(
-            len(self._txsample), self.txrate)
+            len(self.txsample), self.txrate)
 
     def __nonzero__(self):
-        return bool(len(self._txsample))
+        return bool(len(self.txsample))
 
 
 cdef class TxSampleArray:
