@@ -228,7 +228,7 @@ cdef class OrphanTx:
 cdef class TxPriorityQueue(TxPtrArray):
     '''1-based indexing, max-heap.
 
-    First element is always NULL. So the actual size of the heap is
+    Index 0 is always NULL. So the actual size of the heap is
     self.size - 1.
     '''
 
@@ -240,11 +240,10 @@ cdef class TxPriorityQueue(TxPtrArray):
             int left, right, largerchild
             TxStruct *tmp
 
-        while idx < self.size:
+        while True:
             left = 2*idx
-            right = left + 1
-
             if left < self.size:
+                right = left + 1
                 if right < self.size and self.txs[right].feerate > self.txs[left].feerate:
                     largerchild = right
                 else:
