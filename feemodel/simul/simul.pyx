@@ -14,6 +14,19 @@ from feemodel.simul.txsources import SimTx
 rate_ratio_thresh = 0.9
 
 
+class SimEntry(SimTx):
+
+    def __init__(self, feerate, size, depends=None):
+        super(SimEntry, self).__init__(feerate, size)
+        if depends is None:
+            depends = []
+        self.depends = depends
+
+    def __repr__(self):
+        return "SimEntry({}, depends:{})".format(
+            super(SimEntry, self).__repr__(), self.depends)
+
+
 cdef class Simul:
 
     cdef:
@@ -79,7 +92,7 @@ cdef class SimMempool:
                 self.txqueue.append(&self.init_array[idx])
             else:
                 orphantx = OrphanTx(entry.depends)
-                orphantx.set_tx(&self.init_array[idx])
+                orphantx.tx = &self.init_array[idx]
                 for dep in entry.depends:
                     # Assert that there are no hanging dependencies
                     assert dep in init_txids
@@ -105,8 +118,7 @@ cdef class SimMempool:
                 tx.feerate, tx.size, list(orphantx.depends))
 
         for idx, simtx in enumerate(self.txqueue.get_simtxs()):
-            entries['_'+str(idx)] = SimEntry(
-                simtx.feerate, simtx.size, [])
+            entries['_'+str(idx)] = SimEntry(simtx.feerate, simtx.size, [])
 
         return entries
 
@@ -115,7 +127,7 @@ cdef class SimMempool:
         self.txqueue_bak.txs_copy(self.txqueue)
         for dependants in self.depmap.values():
             for orphantx in dependants:
-                orphantx.depends.reset()
+                orphantx.reset_deps()
 
     cdef _process_block(self, simblock):
         DEF MAXFEE = 2100000000000000
@@ -178,57 +190,20 @@ cdef class SimMempool:
         free(self.init_array)
 
 
-class SimEntry(SimTx):
-
-    def __init__(self, feerate, size, depends=None):
-        super(SimEntry, self).__init__(feerate, size)
-        if depends is None:
-            depends = []
-        self.depends = depends
-
-    def __repr__(self):
-        return "SimEntry({}, depends:{})".format(
-            super(SimEntry, self).__repr__(), self.depends)
-
-
-cdef class SimDepends:
-    # TODO: get rid of this class; integrate with OrphanTx
-
-    cdef set _depends, _depends_bak
-
-    def __init__(self, depends):
-        self._depends = set(depends) if depends else set()
-        self._depends_bak = set(self._depends)
-
-    cdef void remove(self, dependency):
-        self._depends.remove(dependency)
-
-    cdef void reset(self):
-        self._depends = set(self._depends_bak)
-
-    def __repr__(self):
-        return "SimDepends({})".format(self._depends)
-
-    def __iter__(self):
-        return iter(self._depends)
-
-    def __nonzero__(self):
-        return bool(self._depends)
-
-
 cdef class OrphanTx:
     '''Analogue of COrphan in miner.cpp.'''
 
     cdef:
         TxStruct *tx
-        public SimDepends depends
+        set depends, _depends_bak
 
     def __init__(self, list depends):
         assert depends
-        self.depends = SimDepends(depends)
+        self.depends = set(depends)
+        self._depends_bak = set(depends)
 
-    cdef set_tx(self, TxStruct *tx):
-        self.tx = tx
+    cdef void reset_deps(self):
+        self.depends = set(self._depends_bak)
 
 
 cdef class TxPriorityQueue(TxPtrArray):
