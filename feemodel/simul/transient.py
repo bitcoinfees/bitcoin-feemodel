@@ -11,7 +11,6 @@ def transientsim(sim, feepoints=None, init_entries=None,
     if not feepoints:
         feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
     numiters = 0
-    simtime = 0.
     stranded = set(feepoints)
     waittimes = defaultdict(list)
     starttime = time()
@@ -20,13 +19,11 @@ def transientsim(sim, feepoints=None, init_entries=None,
     for block in sim.run(init_entries=init_entries):
         if stopflag and stopflag.is_set():
             raise StopIteration
-        simtime += block.interval
         stranding_feerate = block.sfr
 
         for feerate in list(stranded):
             if feerate >= stranding_feerate:
-                # waittimes[feerate].add_datapoints([simtime])
-                waittimes[feerate].append(simtime)
+                waittimes[feerate].append(sim.simtime)
                 stranded.remove(feerate)
 
         if not stranded:
@@ -36,7 +33,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
                     numiters >= miniters and elapsedrealtime > maxtime):
                 break
             else:
-                simtime = 0.
+                sim.simtime = 0.
                 stranded = set(feepoints)
                 sim.mempool.reset()
 

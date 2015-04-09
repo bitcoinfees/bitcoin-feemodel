@@ -12,9 +12,7 @@ hard_maxblocksize = 1000000
 
 
 class SimBlock(object):
-    def __init__(self, blockheight, blocktime, poolname, pool):
-        self.height = blockheight
-        self.time = blocktime
+    def __init__(self, poolname, pool):
         self.poolname = poolname
         self.pool = pool
         self.size = 0
@@ -90,15 +88,11 @@ class SimPools(object):
             raise ValueError("No pools.")
 
         def blockgenfn():
-            simtime = 0.
-            blockheight = 0
             while True:
                 poolidx = bisect_left(self.__poolsidx, random())
                 poolname, pool = self.__pools[poolidx]
                 blockinterval = expovariate(self.blockrate)
-                simtime += blockinterval
-                simblock = SimBlock(blockheight, simtime, poolname, pool)
-                blockheight += 1
+                simblock = SimBlock(poolname, pool)
                 yield simblock, blockinterval
 
         return blockgenfn()

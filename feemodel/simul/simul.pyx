@@ -16,28 +16,33 @@ rate_ratio_thresh = 0.9
 
 cdef class Simul:
 
-    cdef readonly object pools, tx_source, cap, stablefeerate, tx_emitter
-    cdef public SimMempool mempool
+    cdef:
+        readonly object pools, txsource, cap, stablefeerate, tx_emitter
+        public float simtime
+        public SimMempool mempool
 
-    def __init__(self, pools, tx_source):
+    def __init__(self, pools, txsource):
         self.pools = pools
-        self.tx_source = tx_source
+        self.txsource = txsource
         # TODO: check edge conditions for feerates
-        self.cap = Capacity(pools, tx_source)
+        self.cap = Capacity(pools, txsource)
         # TODO: use all the tx points to calc stablefeerate
         self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "
                              "processing for all feerates.")
         self.mempool = None
+        self.simtime = 0.
 
     def run(self, init_entries=None):
         if init_entries is None:
             init_entries = {}
         self.mempool = SimMempool(init_entries)
-        self.tx_emitter = self.tx_source.get_emit_fn(feeratethresh=self.stablefeerate)
+        self.tx_emitter = self.txsource.get_emit_fn(feeratethresh=self.stablefeerate)
+        self.simtime = 0.
         for simblock, blockinterval in self.pools.get_blockgen():
-            # Add new txs to the txqueue
+            self.simtime += blockinterval
+            # Add new txs from the tx source to the queue
             self.tx_emitter(self.mempool.txqueue, blockinterval)
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)

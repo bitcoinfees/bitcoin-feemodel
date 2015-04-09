@@ -53,8 +53,9 @@ class PoolSimTests(unittest.TestCase):
     def test_randompool(self):
         numiters = 10000
         poolnames = []
-        for simblock, blockinterval in self.simpools.get_blockgen():
-            if simblock.height >= numiters:
+        for idx, (simblock, blockinterval) in enumerate(
+                self.simpools.get_blockgen()):
+            if idx >= numiters:
                 break
             poolnames.append(simblock.poolname)
 
@@ -122,20 +123,21 @@ class TxSourceTests(unittest.TestCase):
         derivedsource = SimTxSource(simtxs, txrate)
         _dum, byterates = derivedsource.get_byterates(self.feerates)
         # print("Derived byterates are {}.".format(byterates))
-        for idx, ratetuple in enumerate(zip(byterates, self.ref_byterates)):
-            test, target = ratetuple
+        for idx, (test, target) in enumerate(
+                zip(byterates, self.ref_byterates)):
             if idx > 1:
                 diff = abs(test - target)
                 self.assertLess(diff, 10)
 
         # Test inf thresh
         emitted = TxPtrArray()
-        with self.assertRaises(ValueError):
-            tx_emitter = self.tx_source.get_emit_fn(feeratethresh=float("inf"))
+        tx_emitter = self.tx_source.get_emit_fn(feeratethresh=float("inf"))
+        tx_emitter(emitted, t)
+        self.assertEqual(len(emitted), 0)
 
     def test_zero_interval(self):
         emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn(feeratethresh=2001)
+        tx_emitter = self.tx_source.get_emit_fn()
         tx_emitter(emitted, 0)
         self.assertEqual(len(emitted), 0)
 
@@ -156,6 +158,11 @@ class TxSourceTests(unittest.TestCase):
             self.tx_source.get_byterates()
         with self.assertRaises(ValueError):
             self.tx_source.calc_mean_byterate()
+        self.tx_source = SimTxSource([], 0)
+        emitted = TxPtrArray()
+        tx_emitter = self.tx_source.get_emit_fn()
+        tx_emitter(emitted, 600)
+        self.assertEqual(len(emitted), 0)
 
 
 class BasicSimTest(unittest.TestCase):
@@ -169,14 +176,14 @@ class BasicSimTest(unittest.TestCase):
     def test_basic(self):
         print("Basic Sim: the stable feerate is %d." % self.sim.stablefeerate)
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock in self.sim.run():
-            if simblock.height >= 50:
+        for idx, simblock in enumerate(self.sim.run()):
+            if idx >= 50:
                 break
             mempoolsize = sum([entry.size for entry in
                                self.sim.mempool.get_entries().values()])
-            print("%d\t%d\t%d\t%.0f\t%d" %
-                  (simblock.height, len(simblock.txs),
-                   simblock.size, simblock.sfr, mempoolsize))
+            print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
+                                            simblock.size, simblock.sfr,
+                                            mempoolsize))
 
         self.sim.cap.print_cap()
 
@@ -186,16 +193,17 @@ class BasicSimTest(unittest.TestCase):
             entry.size = 9927
         print("With init mempool:")
         print("Height\tNumtxs\tSize\tSFR\tMPsize")
-        for simblock in self.sim.run(init_entries=self.init_entries):
-            if simblock.height >= 50:
+        for idx, simblock in enumerate(
+                self.sim.run(init_entries=self.init_entries)):
+            if idx >= 50:
                 break
             mempoolsize = sum([entry.size for entry in
                                self.sim.mempool.get_entries().values()])
             self.assertEqual(simblock.size,
                              sum([tx.size for tx in simblock.txs]))
-            print("%d\t%d\t%d\t%.0f\t%d" %
-                  (simblock.height, len(simblock.txs),
-                   simblock.size, simblock.sfr, mempoolsize))
+            print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
+                                            simblock.size, simblock.sfr,
+                                            mempoolsize))
         self.sim.cap.print_cap()
 
     def test_degenerate_pools(self):
@@ -283,24 +291,25 @@ class CustomMempoolTests(unittest.TestCase):
 
         init_entries['1000'] = SimEntry(1001, 2000)
         # init_mempool.append(SimEntry('1000', SimTx(1001, 2000)))
-        for simblock in self.sim.run(init_entries=init_entries):
-            if simblock.height == 0:
+        for idx, simblock in enumerate(
+                self.sim.run(init_entries=init_entries)):
+            if idx == 0:
                 self.assertEqual(simblock.sfr, 1002)
                 self.assertEqual(max([tx.feerate for tx in simblock.txs]),
                                  9999)
                 self.assertEqual(len(simblock.txs), 500)
                 self.assertEqual(len(self.sim.mempool.get_entries()), 501)
-            elif simblock.height == 1:
+            elif idx == 1:
                 self.assertEqual(simblock.sfr, 10001)
                 self.assertEqual(len(simblock.txs), 375)
                 self.assertEqual(len(self.sim.mempool.get_entries()), 501-375)
                 self.assertEqual(simblock.size, 750000)
-            elif simblock.height == 2:
+            elif idx == 2:
                 self.assertEqual(simblock.sfr, 20000)
                 self.assertEqual(len(simblock.txs), 0)
                 self.assertEqual(len(self.sim.mempool.get_entries()), 501-375)
                 self.assertEqual(simblock.size, 0)
-            elif simblock.height == 3:
+            elif idx == 3:
                 self.assertEqual(simblock.sfr, 1000)
                 self.assertEqual(len(simblock.txs), 501-375)
                 self.assertEqual(len(self.sim.mempool.get_entries()), 0)
@@ -317,16 +326,14 @@ class PseudoPools(SimPools):
 
     def get_blockgen(self):
         def blockgenfn():
-            simtime = 0.
-            blockheight = 0
             numpools = len(self._SimPools__pools)
+            idx = 0
             while True:
-                poolname, pool = self._SimPools__pools[blockheight % numpools]
+                poolname, pool = self._SimPools__pools[idx % numpools]
                 blockinterval = 600
-                simtime += blockinterval
-                simblock = SimBlock(blockheight, simtime, poolname, pool)
-                blockheight += 1
+                simblock = SimBlock(poolname, pool)
                 yield simblock, blockinterval
+                idx += 1
         return blockgenfn()
 
 

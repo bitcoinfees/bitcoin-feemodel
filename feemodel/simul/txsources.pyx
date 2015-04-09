@@ -38,17 +38,20 @@ class SimTxSource(object):
         self.txrate = txrate
 
     def get_emit_fn(self, feeratethresh=0):
-        # TODO: test the feerate thresh / stable feerate
+        if self.txrate and not self.txsample:
+            raise ValueError("Non-zero txrate with empty txsample.")
         txsample_filtered = filter(lambda tx: tx.feerate >= feeratethresh,
                                    self.txsample)
-        if not txsample_filtered:
-            raise ValueError("No txs.")
         txsample_array = TxSampleArray(txsample_filtered)
-        modtxrate = len(txsample_filtered) / len(self.txsample) * self.txrate
+        if self.txrate:
+            filtered_txrate = (len(txsample_filtered) / len(self.txsample) *
+                               self.txrate)
+        else:
+            filtered_txrate = 0
 
         def txgen(TxPtrArray txs, time_interval):
             '''Put the new samples in txs.'''
-            numtxs = poisson_sample(modtxrate*time_interval)
+            numtxs = poisson_sample(filtered_txrate*time_interval)
             txsample_array.sample(txs, numtxs)
 
         return txgen
@@ -137,10 +140,17 @@ cdef class TxSampleArray:
             self.txsample[idx].feerate = tx.feerate
             self.txsample[idx].size = tx.size
             self.txsample[idx].txid = NULL
-        self._randlimit = RAND_MAX - (RAND_MAX % self.size)
+        if self.size:
+            self._randlimit = RAND_MAX - (RAND_MAX % self.size)
+        else:
+            self._randlimit = RAND_MAX
 
     cdef void sample(self, TxPtrArray txs, int l):
         cdef int newsize
+
+        if not self.size:
+            return
+
         newsize = txs.size + l
         if newsize >= txs.maxsize:
             txs._resize(<int>((newsize+1)*OVERALLOCATE))
