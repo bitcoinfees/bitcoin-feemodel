@@ -1,11 +1,6 @@
 from __future__ import division
 
-from feemodel.simul.txsources cimport (TxStruct, TxPtrArray, TxArray,
-                                       txarray_init, txarray_deinit, txarray_append,
-                                       txarray_resize, txptrarray_init,
-                                       txptrarray_resize, txptrarray_copy,
-                                       txptrarray_append, txptrarray_extend,
-                                       txptrarray_deinit)
+from feemodel.simul.txsources cimport *
 from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Realloc as realloc,
                           PyMem_Free as free)
