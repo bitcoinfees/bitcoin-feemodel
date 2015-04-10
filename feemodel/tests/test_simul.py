@@ -8,9 +8,10 @@ from random import seed
 from feemodel.txmempool import MemBlock
 from feemodel.simul import (SimPool, SimPools, Simul, SimTx, SimTxSource,
                             SimEntry)
-from feemodel.simul.txsources import TxPtrArray
+# from feemodel.simul.txsources import TxPtrArray
 from feemodel.simul.pools import SimBlock
 from feemodel.tests.config import memblock_dbfile as dbfile
+from feemodel.simul.simul import SimMempool
 
 seed(0)
 
@@ -86,18 +87,18 @@ class TxSourceTests(unittest.TestCase):
 
     def test_emitter(self):
         t = 10000.
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn(feeratethresh=2000)
+        mempool = SimMempool({})
+        tx_emitter = self.tx_source.get_emitter(mempool, feeratethresh=2000)
         # Emit txs over an interval of t seconds.
-        tx_emitter(emitted, t)
+        tx_emitter(t)
+        simtxs = mempool.get_entries().values()
 
         # Compare the tx rate.
-        txrate = len(emitted) / t
+        txrate = len(simtxs) / t
         diff = abs(txrate - ref_txrate)
         self.assertLess(diff, 0.01)
 
         # Check that byterates match.
-        simtxs = emitted.get_simtxs()
         derivedsource = SimTxSource(simtxs, txrate)
         _dum, byterates = derivedsource.get_byterates(self.feerates)
         for test, target in zip(byterates, self.ref_byterates):
@@ -106,20 +107,21 @@ class TxSourceTests(unittest.TestCase):
 
     def test_feerate_threshold(self):
         t = 10000.
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn(feeratethresh=2001)
+        # emitted = TxPtrArray()
+        mempool = SimMempool({})
+        tx_emitter = self.tx_source.get_emitter(mempool, feeratethresh=2001)
         # Emit txs over an interval of t seconds.
-        tx_emitter(emitted, t)
+        tx_emitter(t)
+        simtxs = mempool.get_entries().values()
 
         # Compare the tx rate.
-        txrate = len(emitted) / t
+        txrate = len(simtxs) / t
         # We filtered out 1 out of 3 SimTxs by using feeratethresh = 2001
         ref_txrate_mod = ref_txrate * 2 / 3
         diff = abs(txrate - ref_txrate_mod)
         self.assertLess(diff, 0.01)
 
         # Check that byterates match.
-        simtxs = emitted.get_simtxs()
         derivedsource = SimTxSource(simtxs, txrate)
         _dum, byterates = derivedsource.get_byterates(self.feerates)
         # print("Derived byterates are {}.".format(byterates))
@@ -130,39 +132,40 @@ class TxSourceTests(unittest.TestCase):
                 self.assertLess(diff, 10)
 
         # Test inf thresh
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn(feeratethresh=float("inf"))
-        tx_emitter(emitted, t)
-        self.assertEqual(len(emitted), 0)
+        mempool.reset()
+        tx_emitter = self.tx_source.get_emitter(mempool,
+                                                feeratethresh=float("inf"))
+        tx_emitter(t)
+        self.assertEqual(len(mempool.get_entries()), 0)
 
     def test_zero_interval(self):
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn()
-        tx_emitter(emitted, 0)
-        self.assertEqual(len(emitted), 0)
+        mempool = SimMempool({})
+        tx_emitter = self.tx_source.get_emitter(mempool)
+        tx_emitter(0)
+        self.assertEqual(len(mempool.get_entries()), 0)
 
     def test_zero_txrate(self):
         self.tx_source = SimTxSource(ref_txsample, 0)
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn()
-        tx_emitter(emitted, 600)
-        self.assertEqual(len(emitted), 0)
+        mempool = SimMempool({})
+        tx_emitter = self.tx_source.get_emitter(mempool)
+        tx_emitter(600)
+        self.assertEqual(len(mempool.get_entries()), 0)
         # TODO: fix the display when printing with zero txrate
         self.tx_source.print_rates()
 
     def test_empty_txsample(self):
+        mempool = SimMempool({})
         self.tx_source = SimTxSource([], ref_txrate)
         with self.assertRaises(ValueError):
-            self.tx_source.get_emit_fn()
+            self.tx_source.get_emitter(mempool)
         with self.assertRaises(ValueError):
             self.tx_source.get_byterates()
         with self.assertRaises(ValueError):
             self.tx_source.calc_mean_byterate()
         self.tx_source = SimTxSource([], 0)
-        emitted = TxPtrArray()
-        tx_emitter = self.tx_source.get_emit_fn()
-        tx_emitter(emitted, 600)
-        self.assertEqual(len(emitted), 0)
+        tx_emitter = self.tx_source.get_emitter(mempool)
+        tx_emitter(600)
+        self.assertEqual(len(mempool.get_entries()), 0)
 
 
 class BasicSimTest(unittest.TestCase):
@@ -241,6 +244,7 @@ class CustomMempoolTests(unittest.TestCase):
         }
         init_entries['0'] = SimEntry(100000, 1000000)
         for simblock in self.sim.run(init_entries=init_entries):
+            print(simblock)
             print('MBS: %d, MFR: %d' % (simblock.pool.maxblocksize,
                                         simblock.pool.minfeerate))
             self.assertEqual(len(simblock.txs), 1)

@@ -5,6 +5,7 @@ from libc.time cimport time
 from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Realloc as realloc,
                           PyMem_Free as free)
+from feemodel.simul.simul cimport SimMempool
 
 from math import sqrt, cos, exp, log, pi
 from random import random, normalvariate
@@ -15,9 +16,8 @@ from tabulate import tabulate
 
 from feemodel.util import DataSample
 
-DEF OVERALLOCATE = 1.25  # This better be > 1.
+DEF OVERALLOCATE = 2  # This better be > 1.
 assert OVERALLOCATE > 1
-
 srand(time(NULL))
 
 
@@ -37,7 +37,7 @@ class SimTxSource(object):
         self.txsample = txsample
         self.txrate = txrate
 
-    def get_emit_fn(self, feeratethresh=0):
+    def get_emitter(self, SimMempool mempool not None, feeratethresh=0):
         if self.txrate and not self.txsample:
             raise ValueError("Non-zero txrate with empty txsample.")
         txsample_filtered = filter(lambda tx: tx.feerate >= feeratethresh,
@@ -49,12 +49,12 @@ class SimTxSource(object):
         else:
             filtered_txrate = 0
 
-        def txgen(TxPtrArray txs, time_interval):
+        def tx_emitter(time_interval):
             '''Put the new samples in txs.'''
             numtxs = poisson_sample(filtered_txrate*time_interval)
-            txsample_array.sample(txs, numtxs)
+            txsample_array.sample(&mempool.txqueue, numtxs)
 
-        return txgen
+        return tx_emitter
 
     def get_byterates(self, feerates=None):
         '''Get reverse cumulative byterate as a function of feerate.'''
@@ -134,100 +134,113 @@ class SimTxSource(object):
 cdef class TxSampleArray:
 
     def __cinit__(self, txsample):
-        self.size = len(txsample)
-        self.txsample = <TxStruct *>malloc(self.size*sizeof(TxStruct))
-        for idx, tx in enumerate(txsample):
-            self.txsample[idx].feerate = tx.feerate
-            self.txsample[idx].size = tx.size
-            self.txsample[idx].txid = NULL
-        if self.size:
-            self._randlimit = RAND_MAX - (RAND_MAX % self.size)
+        cdef TxStruct tx
+        self.txsample = txarray_init(len(txsample))
+        for idx, simtx in enumerate(txsample):
+            tx.feerate = simtx.feerate
+            tx.size = simtx.size
+            tx.txid = NULL
+            txarray_append(&self.txsample, tx)
+        if self.txsample.size:
+            self._randlimit = RAND_MAX - (RAND_MAX % self.txsample.size)
         else:
             self._randlimit = RAND_MAX
 
-    cdef void sample(self, TxPtrArray txs, int l):
-        cdef int newsize
-
-        if not self.size:
+    cdef void sample(self, TxPtrArray *txs, int num):
+        cdef int newarraysize
+        cdef int samplesize
+        samplesize = self.txsample.size
+        if not samplesize:
             return
-
-        newsize = txs.size + l
-        if newsize >= txs.maxsize:
-            txs._resize(<int>((newsize+1)*OVERALLOCATE))
-        for idx in range(l):
-            ridx = randindex(self.size, self._randlimit)
-            txs.append(&self.txsample[ridx])
-
-    def __len__(self):
-        return self.size
-
-    def __dealloc__(self):
-        free(self.txsample)
-
-
-cdef class TxPtrArray:
-
-    def __cinit__(self, int maxsize=0):
-        self.size = 0
-        self._resize(maxsize)
-
-    cdef void append(self, TxStruct *tx):
-        '''Append to the array.'''
-        if self.size == self.maxsize:
-            self._resize(<int>((self.size+1)*OVERALLOCATE))
-        self.txs[self.size] = tx
-        self.size += 1
-
-    cdef void extend(self, TxStruct **txs, int size):
-        '''Extend the array.'''
-        cdef int newsize
-        newsize = self.size + size
-        if newsize >= self.maxsize:
-            self._resize(<int>((newsize+1)*OVERALLOCATE))
-        for idx in range(size):
-            self.txs[self.size] = txs[idx]
-            self.size += 1
-
-    cdef TxStruct* pop(self):
-        '''Pop the last element.
-
-        Do not do any resizing.
-        '''
-        if self.size == 0:
-            return NULL
-        self.size -= 1
-        return self.txs[self.size]
-
-    cdef void clear(self):
-        '''Clear the array..'''
-        self._resize(0)
-        self.size = 0
-
-    cdef void _resize(self, int newmaxsize):
-        self.txs = <TxStruct **>realloc(self.txs, newmaxsize*sizeof(TxStruct *))
-        self.maxsize = newmaxsize
-
-    cdef txs_copy(self, TxPtrArray other):
-        '''Copy txs from self to other.'''
-        if other.maxsize <= self.size:
-            other._resize(<int>((self.size+1)*OVERALLOCATE))
-        other.size = self.size
-        for i in range(self.size):
-            other.txs[i] = self.txs[i]
-
-    def get_simtxs(self):
-        simtxs = [
-            SimTx(self.txs[idx].feerate, self.txs[idx].size)
-            for idx in range(self.size)
-            if self.txs[idx] is not NULL]
-        return simtxs
+        newarraysize = txs.size + num
+        if newarraysize > txs.maxsize:
+            txptrarray_resize(txs, newarraysize)
+        for idx in range(num):
+            ridx = randindex(samplesize, self._randlimit)
+            txptrarray_append(txs, &self.txsample.txs[ridx])
 
     def __len__(self):
-        '''Array size.'''
-        return self.size
+        return self.txsample.size
 
     def __dealloc__(self):
-        free(self.txs)
+        txarray_deinit(&self.txsample)
+
+
+# ====================
+# TxArray functions
+# ====================
+cdef TxArray txarray_init(int maxsize):
+    cdef TxArray a
+    a.size = 0
+    a.maxsize = maxsize
+    a.txs = <TxStruct *>malloc(maxsize*sizeof(TxStruct))
+    return a
+
+
+cdef void txarray_append(TxArray *a, TxStruct tx):
+    if a.size == a.maxsize:
+        txarray_resize(a, <int>((a.size+1)*OVERALLOCATE))
+    a.txs[a.size] = tx
+    a.size += 1
+
+
+cdef void txarray_resize(TxArray *a, int newmaxsize):
+    a.maxsize = newmaxsize
+    if a.size > newmaxsize:
+        a.size = newmaxsize
+    a.txs = <TxStruct *>realloc(a.txs, newmaxsize*sizeof(TxStruct))
+
+
+cdef void txarray_deinit(TxArray *a):
+    free(a.txs)
+
+
+# ====================
+# TxPtrArray functions
+# ====================
+cdef TxPtrArray txptrarray_init(int maxsize):
+    cdef TxPtrArray a
+    a.size = 0
+    a.maxsize = maxsize
+    a.txs = <TxStruct **>malloc(maxsize*sizeof(TxStruct *))
+    return a
+
+
+cdef void txptrarray_append(TxPtrArray *a, TxStruct *tx):
+    if a.size == a.maxsize:
+        txptrarray_resize(a, <int>((a.size+1)*OVERALLOCATE))
+    a.txs[a.size] = tx
+    a.size += 1
+
+
+cdef void txptrarray_extend(TxPtrArray *a, TxPtrArray *b):
+    """Extend array a by the elements in array b."""
+    cdef int newsize
+    newsize = a.size + b.size
+    if newsize >= a.maxsize:
+        txptrarray_resize(a, <int>((newsize+1)*OVERALLOCATE))
+    for idx in range(b.size):
+        a.txs[a.size] = b.txs[idx]
+        a.size += 1
+
+
+cdef void txptrarray_resize(TxPtrArray *a, int newmaxsize):
+    a.maxsize = newmaxsize
+    if a.size > newmaxsize:
+        a.size = newmaxsize
+    a.txs = <TxStruct **>realloc(a.txs, newmaxsize*sizeof(TxStruct *))
+
+
+cdef void txptrarray_copy(TxPtrArray *source, TxPtrArray *dest):
+    if dest.maxsize < source.size:
+        txptrarray_resize(dest, source.size)
+    dest.size = source.size
+    for i in range(source.size):
+        dest.txs[i] = source.txs[i]
+
+
+cdef void txptrarray_deinit(TxPtrArray *a):
+    free(a.txs)
 
 
 cdef int randindex(int N, int randlimit):

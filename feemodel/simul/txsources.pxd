@@ -1,30 +1,44 @@
 cdef struct TxStruct:
     unsigned long long feerate
     unsigned int size
-    # Take care to maintain elsewhere a reference to the Python string.
     char *txid
+
+
+cdef struct TxArray:
+    TxStruct *txs
+    int size
+    int maxsize
+
+
+cdef struct TxPtrArray:
+    TxStruct **txs
+    int size
+    int maxsize
 
 
 cdef class TxSampleArray:
 
     cdef:
-        TxStruct* txsample
-        int size
+        TxArray txsample
         int _randlimit
 
-    cdef void sample(self, TxPtrArray txs, int l)
+    cdef void sample(self, TxPtrArray *txs, int l)
 
 
-cdef class TxPtrArray:
+# ====================
+# TxArray functions
+# ====================
+cdef TxArray txarray_init(int maxsize)
+cdef void txarray_append(TxArray *a, TxStruct tx)
+cdef void txarray_resize(TxArray *a, int newmaxsize)
+cdef void txarray_deinit(TxArray *a)
 
-    cdef:
-        TxStruct **txs
-        int size
-        int maxsize
-
-    cdef void append(self, TxStruct *tx)
-    cdef void extend(self, TxStruct **txs, int size)
-    cdef TxStruct* pop(self)
-    cdef txs_copy(self, TxPtrArray other)
-    cdef void clear(self)
-    cdef void _resize(self, int newmaxsize)
+# ====================
+# TxPtrArray functions
+# ====================
+cdef TxPtrArray txptrarray_init(int maxsize)
+cdef void txptrarray_append(TxPtrArray *a, TxStruct *tx)
+cdef void txptrarray_extend(TxPtrArray *a, TxPtrArray *b)
+cdef void txptrarray_resize(TxPtrArray *a, int newmaxsize)
+cdef void txptrarray_copy(TxPtrArray *source, TxPtrArray *dest)
+cdef void txptrarray_deinit(TxPtrArray *a)
