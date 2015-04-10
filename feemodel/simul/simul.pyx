@@ -94,7 +94,7 @@ cdef class SimMempool:
                     _depmap[dep].append(orphantx)
         self.depmap = dict(_depmap)
         # For resetting the mempool to initial state.
-        txptrarray_copy(&self.txqueue, &self.txqueue_bak)
+        txptrarray_copy(self.txqueue, &self.txqueue_bak)
 
     def get_entries(self):
         cdef OrphanTx orphantx
@@ -120,7 +120,7 @@ cdef class SimMempool:
 
     def reset(self):
         cdef OrphanTx orphantx
-        txptrarray_copy(&self.txqueue_bak, &self.txqueue)
+        txptrarray_copy(self.txqueue_bak, &self.txqueue)
         for dependants in self.depmap.values():
             for orphantx in dependants:
                 orphantx.reset_deps()
@@ -175,7 +175,7 @@ cdef class SimMempool:
             else:
                 txptrarray_append(&self.rejected_entries, newtx)
                 break
-        txptrarray_extend(&self.txqueue, &self.rejected_entries)
+        txptrarray_extend(&self.txqueue, self.rejected_entries)
 
         simblock.sfr = sfr + 1 if blocksize_ltd else minfeerate
         simblock.is_sizeltd = bool(blocksize_ltd)
@@ -183,10 +183,10 @@ cdef class SimMempool:
         simblock.txs = blocktxs
 
     def __dealloc__(self):
-        txarray_deinit(&self.init_array)
-        txptrarray_deinit(&self.txqueue)
-        txptrarray_deinit(&self.txqueue_bak)
-        txptrarray_deinit(&self.rejected_entries)
+        txarray_deinit(self.init_array)
+        txptrarray_deinit(self.txqueue)
+        txptrarray_deinit(self.txqueue_bak)
+        txptrarray_deinit(self.rejected_entries)
 
 
 cdef class BlockTxs:
@@ -209,7 +209,33 @@ cdef class BlockTxs:
         return self.txs.size
 
     def __dealloc__(self):
-        txptrarray_deinit(&self.txs)
+        txptrarray_deinit(self.txs)
+
+
+# #cdef struct OrphanTx:
+# #    TxStruct *tx
+# #    int *depends
+# #    int *removed
+# #
+# #
+# #cdef orphantx_init(TxStruct *tx, list depends):
+# #    cdef:
+# #        OrphanTx orphan
+# #        int n
+# #    orphan.tx = tx
+# #    n = len(depends)
+# #    orphan.depends = <int *>malloc(n*sizeof(int))
+# #    orphan.removed = <int *>malloc(n*sizeof(int))
+# #    return orphan
+# #
+# #
+# #cdef orphantx_deinit(OrphanTx orphan):
+# #    free(orphan.depends)
+# #    free(orphan.removed)
+# #
+# #
+# #cdef orphantx_removedep(OrphanTx orphan, int dep):
+# #    pass
 
 
 cdef class OrphanTx:

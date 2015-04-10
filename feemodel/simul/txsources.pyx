@@ -163,7 +163,7 @@ cdef class TxSampleArray:
         return self.txsample.size
 
     def __dealloc__(self):
-        txarray_deinit(&self.txsample)
+        txarray_deinit(self.txsample)
 
 
 # ====================
@@ -191,7 +191,7 @@ cdef void txarray_resize(TxArray *a, int newmaxsize):
     a.txs = <TxStruct *>realloc(a.txs, newmaxsize*sizeof(TxStruct))
 
 
-cdef void txarray_deinit(TxArray *a):
+cdef void txarray_deinit(TxArray a):
     free(a.txs)
 
 
@@ -213,7 +213,7 @@ cdef void txptrarray_append(TxPtrArray *a, TxStruct *tx):
     a.size += 1
 
 
-cdef void txptrarray_extend(TxPtrArray *a, TxPtrArray *b):
+cdef void txptrarray_extend(TxPtrArray *a, TxPtrArray b):
     """Extend array a by the elements in array b."""
     cdef int newsize
     newsize = a.size + b.size
@@ -231,7 +231,7 @@ cdef void txptrarray_resize(TxPtrArray *a, int newmaxsize):
     a.txs = <TxStruct **>realloc(a.txs, newmaxsize*sizeof(TxStruct *))
 
 
-cdef void txptrarray_copy(TxPtrArray *source, TxPtrArray *dest):
+cdef void txptrarray_copy(TxPtrArray source, TxPtrArray *dest):
     if dest.maxsize < source.size:
         txptrarray_resize(dest, source.size)
     dest.size = source.size
@@ -239,7 +239,7 @@ cdef void txptrarray_copy(TxPtrArray *source, TxPtrArray *dest):
         dest.txs[i] = source.txs[i]
 
 
-cdef void txptrarray_deinit(TxPtrArray *a):
+cdef void txptrarray_deinit(TxPtrArray a):
     free(a.txs)
 
 
