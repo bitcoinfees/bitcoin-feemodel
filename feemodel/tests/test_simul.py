@@ -238,6 +238,8 @@ class CustomMempoolTests(unittest.TestCase):
         self.sim = Simul(pools, tx_source)
 
     def test_A(self):
+        print("Test A:")
+        print("=======")
         init_entries = {
             str(i): SimEntry(100000, 250, depends=['0'])
             for i in range(1, 1000)
@@ -253,6 +255,8 @@ class CustomMempoolTests(unittest.TestCase):
             break
 
     def test_B(self):
+        print("Test B:")
+        print("=======")
         init_entries = {
             str(i): SimEntry(100000, 250, depends=['0'])
             for i in range(1, 1000)
@@ -267,6 +271,8 @@ class CustomMempoolTests(unittest.TestCase):
             break
 
     def test_C(self):
+        print("Test C:")
+        print("=======")
         init_entries = {
             str(i): SimEntry(100000, 250, depends=['0'])
             for i in range(1, 1000)
@@ -281,6 +287,8 @@ class CustomMempoolTests(unittest.TestCase):
             break
 
     def test_D(self):
+        print("Test D:")
+        print("=======")
         # Chain of txs
         init_entries = {
             str(i): SimEntry(10500-i, 2000, depends=[str(i+1)])
@@ -288,7 +296,7 @@ class CustomMempoolTests(unittest.TestCase):
         }
         # init_mempool = [SimEntry(str(i), SimTx(10500-i, 2000), [str(i+1)])
         #                 for i in range(1000)]
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             # Hanging dependency
             for simblock in self.sim.run(init_entries=init_entries):
                 break

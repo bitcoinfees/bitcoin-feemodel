@@ -139,7 +139,6 @@ cdef class TxSampleArray:
         for idx, simtx in enumerate(txsample):
             tx.feerate = simtx.feerate
             tx.size = simtx.size
-            tx.txid = NULL
             txarray_append(&self.txsample, tx)
         if self.txsample.size:
             self._randlimit = RAND_MAX - (RAND_MAX % self.txsample.size)

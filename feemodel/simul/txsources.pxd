@@ -1,7 +1,6 @@
 cdef struct TxStruct:
     unsigned long long feerate
     unsigned int size
-    char *txid
 
 
 cdef struct TxArray:

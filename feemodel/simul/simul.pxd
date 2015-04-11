@@ -1,4 +1,24 @@
-from feemodel.simul.txsources cimport TxArray, TxPtrArray
+from feemodel.simul.txsources cimport *
+
+
+cdef struct OrphanTx:
+    int txindex
+    int *depends
+    int *removed
+    int numdeps
+    int maxdeps
+
+
+cdef struct OrphanTxPtrArray:
+    # Fixed size array of pointers to orphan txs.
+    OrphanTx **otxptrs
+    int size
+
+
+cdef struct OrphanTxArray:
+    # Fixed size array of orphan txs.
+    OrphanTx *otxs
+    int size
 
 
 cdef class Simul:
@@ -16,7 +36,10 @@ cdef class SimMempool:
     cdef:
         TxArray init_array
         TxPtrArray txqueue, txqueue_bak, rejected_entries
-        dict depmap
-        list init_txids
+        OrphanTxPtrArray *orphanmap
+        OrphanTxArray orphans
+        list txidlist
 
-    cdef _process_block(self, simblock)
+    cdef void _process_block(self, simblock)
+    cdef void _process_deps(self, TxStruct *newtx)
+    cdef void _reset_orphan_deps(self)

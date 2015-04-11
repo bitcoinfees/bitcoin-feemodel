@@ -11,8 +11,6 @@ from feemodel.tests.config import memblock_dbfile as dbfile, poolsref, txref
 poolsref.print_pools()
 
 init_entries = MemBlock.read(333931, dbfile=dbfile).entries
-# init_entries = [SimEntry.from_mementry(txid, entry)
-#                 for txid, entry in b.entries.items()]
 
 sim = Simul(poolsref, txref)
 stopflag = multiprocessing.Event()
