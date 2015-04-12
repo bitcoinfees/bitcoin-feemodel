@@ -489,6 +489,28 @@ def interpolate(x0, x, y):
         return y0, idx
 
 
+def cumsum_gen(seq, base=0, mapfn=None):
+    """Cumulative sum generator.
+
+    Returns a generator that yields the cumulative sum of a given sequence.
+
+    base is the object that you begin summing from.
+
+    mapfn is a function that is applied to each element of the sequeunce prior
+    to the summation.
+    """
+    def identity(x):
+        return x
+
+    if mapfn is None:
+        mapfn = identity
+
+    cumsum = base
+    for item in seq:
+        cumsum += mapfn(item)
+        yield cumsum
+
+
 # TODO: Deprecate this and itertimer
 def try_wrap(fn):
     '''Decorator to try a function and log all exceptions without raising.'''

@@ -43,7 +43,7 @@ class PoolsOnlineEstimator(object):
             if time() - self.poolsestimate.timestamp > self.update_period:
                 logger.info("Loaded pool estimates are outdated; "
                             "starting from scratch.")
-                self.poolsestimate.clear_pools()
+                self.poolsestimate.pools = {}
             else:
                 logger.info("Pools Estimator loaded with best height %d." %
                             bestheight)
@@ -97,6 +97,7 @@ class PoolsOnlineEstimator(object):
                 self.next_update = time() + 3600
                 return
             self.next_update = time() + self.update_period
+            # TODO: verify that we only need copy for this.
             poolsestimate = deepcopy(self.poolsestimate)
             try:
                 poolsestimate.start(
@@ -114,7 +115,7 @@ class PoolsOnlineEstimator(object):
     def _update_blockrate(self, currheight, curr_diff_interval):
         with self.lock:
             poolsestimate = copy(self.poolsestimate)
-            poolsestimate.calc_blockrate(currheight=currheight)
+            poolsestimate.calc_blockrate(height=currheight)
             self.poolsestimate = poolsestimate
             self.best_diff_interval = curr_diff_interval
             logger.info("Difficulty has changed; new blockrate is {}".

@@ -38,9 +38,8 @@ class PoolEstimateTest(unittest.TestCase):
         print("pools is: ")
         pe.print_pools()
         print(pe)
-        pools = pe.get_pools()
-        print(pools)
         print("poolsref is: ")
+        print(poolsref)
         poolsref.print_pools()
         self.assertEqual(poolsref, pe)
 

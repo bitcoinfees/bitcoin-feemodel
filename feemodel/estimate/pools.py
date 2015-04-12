@@ -19,6 +19,7 @@ MAX_TXS = 10000
 
 
 class PoolEstimate(SimPool):
+
     def __init__(self, blockheights, hashrate, maxblocksize):
         self.blockheights = blockheights
         self.hashrate = hashrate
@@ -94,12 +95,13 @@ class PoolEstimate(SimPool):
 
 
 class PoolsEstimator(SimPools):
+
     def __init__(self):
-        self.blockmap = {}
         self.pools = {}
-        self.timestamp = 0.
+        self.blockrate = None
+        self.blockmap = {}
         self.poolinfo = knownpools
-        super(PoolsEstimator, self).__init__()
+        self.timestamp = 0.
 
     def update(self):
         super(PoolsEstimator, self).update(self.pools)
@@ -110,7 +112,6 @@ class PoolsEstimator(SimPools):
         starttime = time()
         self.id_blocks(blockrangetuple, stopflag=stopflag)
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
-        self.update()
         self.calc_blockrate()
         self.timestamp = starttime
         logger.info("Finished pool estimation in %.2f seconds." %
@@ -127,7 +128,7 @@ class PoolsEstimator(SimPools):
                 blocksize = get_block_size(height)
                 numhashes = get_hashesperblock(height)
             except IndexError:
-                raise IndexError("PoolEstimator: bad block range.")
+                raise IndexError("Bad block range.")
 
             name = None
             for paddr, pattrs in self.poolinfo['payout_addresses'].items():
@@ -136,9 +137,7 @@ class PoolsEstimator(SimPools):
                     if name is None:
                         name = candidate_name
                     elif name != candidate_name:
-                        logger.warning(
-                            "PoolsEstimator: "
-                            "> 1 pools mapped to block %d" % height)
+                        logger.warning("> 1 pools mapped to block %d" % height)
 
             for ptag, pattrs in self.poolinfo['coinbase_tags'].items():
                 candidate_name = pattrs['name']
@@ -146,9 +145,7 @@ class PoolsEstimator(SimPools):
                     if name is None:
                         name = candidate_name
                     elif name != candidate_name:
-                        logger.warning(
-                            "PoolsEstimator: "
-                            "> 1 pools mapped to block %d" % height)
+                        logger.warning("> 1 pools mapped to block %d" % height)
 
             if name is None:
                 for addr in baddrs:
@@ -183,44 +180,52 @@ class PoolsEstimator(SimPools):
         _windowend = get_block_timestamp(min(self.blockmap))
         windowlen = _windowstart - _windowend
 
-        def keyfunc(blocktuple):
+        def poolname_keyfn(blocktuple):
             '''Select the pool name for itertools.groupby.'''
             return blocktuple[1][0]
 
-        blockmap_items = sorted(self.blockmap.items(), key=keyfunc)
-        for poolname, pool_blockmap_items in groupby(blockmap_items, keyfunc):
+        blockmap_items = sorted(self.blockmap.items(), key=poolname_keyfn)
+        for poolname, items_namegroup in groupby(
+                blockmap_items, poolname_keyfn):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             blockheights = []
             blocksizes = []
             totalhashes = 0.
-            for b in pool_blockmap_items:
-                blockheights.append(b[0])
-                blocksizes.append(b[1][1])
-                totalhashes += b[1][2]
-            maxblocksize = max(blocksizes) if blocksizes else 0
+            for height, (name, blocksize, numhashes) in items_namegroup:
+                blockheights.append(height)
+                blocksizes.append(blocksize)
+                totalhashes += numhashes
+            maxblocksize = max(blocksizes)
             hashrate = totalhashes / windowlen
             pool = PoolEstimate(blockheights, hashrate, maxblocksize)
             pool.estimate_minfeerate(stopflag=stopflag, dbfile=dbfile)
             logger.info("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool
 
-    def calc_blockrate(self, currheight=None):
-        if not currheight:
-            currheight = max(self.blockmap)
-        if not self.totalhashrate:
+    def calc_blockrate(self, height=None):
+        if not height:
+            height = max(self.blockmap)
+        totalhashrate = self.calc_totalhashrate()
+        if not totalhashrate:
             raise ValueError("No pools.")
-        curr_hashesperblock = get_hashesperblock(currheight)
-        self.blockrate = self.totalhashrate / curr_hashesperblock
+        curr_hashesperblock = get_hashesperblock(height)
+        self.blockrate = totalhashrate / curr_hashesperblock
 
     def print_pools(self):
-        poolitems = self._SimPools__pools
-        headers = ["Name", "Hashrate", "Prop", "MBS", "MFR", "AKN", "BKN",
-                   "MFR.mean", "MFR.std", "MFR.bias"]
+        poolitems = sorted(self.pools.items(),
+                           key=lambda poolitem: poolitem[1].hashrate,
+                           reverse=True)
+        totalhashrate = self.calc_totalhashrate()
+        if not totalhashrate:
+            print("No pools.")
+            return
+        headers = ["Name", "Hashrate (Thps)", "Prop", "MBS", "MFR",
+                   "AKN", "BKN", "MFR.mean", "MFR.std", "MFR.bias"]
         table = [[
             name,
             pool.hashrate*1e-12,
-            pool.proportion,
+            pool.hashrate/totalhashrate,
             pool.maxblocksize,
             pool.minfeerate,
             pool.mfrstats['abovekn'],
@@ -231,11 +236,12 @@ class PoolsEstimator(SimPools):
             for name, pool in poolitems]
         print(tabulate(table, headers=headers))
         print("Avg block interval is %.2f" % (1./self.blockrate,))
-        print("Total hashrate is {} Thps.".format(self.totalhashrate*1e-12))
+        print("Total hashrate is {} Thps.".format(totalhashrate*1e-12))
 
     def get_stats(self):
         if not self:
             return None
+        totalhashrate = self.calc_totalhashrate()
         basestats = {
             'timestamp': self.timestamp,
             'blockinterval': 1/self.blockrate,
@@ -243,7 +249,7 @@ class PoolsEstimator(SimPools):
         poolstats = {
             name: {
                 'hashrate': pool.hashrate,
-                'proportion': pool.proportion,
+                'proportion': pool.hashrate / totalhashrate,
                 'maxblocksize': pool.maxblocksize,
                 'minfeerate': pool.minfeerate,
                 'abovekn': pool.mfrstats['abovekn'],
@@ -252,7 +258,7 @@ class PoolsEstimator(SimPools):
                 'std': pool.mfrstats['std'],
                 'bias': pool.mfrstats['bias']
             }
-            for name, pool in self._SimPools__pools
+            for name, pool in self.pools.items()
         }
         basestats.update({'pools': poolstats})
         return basestats

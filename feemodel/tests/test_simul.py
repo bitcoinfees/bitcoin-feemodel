@@ -12,6 +12,7 @@ from feemodel.simul import (SimPool, SimPools, Simul, SimTx, SimTxSource,
 from feemodel.simul.pools import SimBlock
 from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.simul.simul import SimMempool
+from feemodel.util import cumsum_gen
 
 seed(0)
 
@@ -39,32 +40,73 @@ print("Mempool size is %d" %
 
 class PoolSimTests(unittest.TestCase):
 
-    def setUp(self):
-        self.simpools = SimPools(pools=ref_pools)
-
-    def test_basic(self):
-        self.simpools.print_pools()
-        pools = self.simpools.get_pools()
-        # Make sure the pools returned by get() is a copy
-        for pool in pools.values():
-            pool.hashrate = 10000
-        self.assertNotEqual(self.simpools.get_pools(), pools)
-        print(pools)
-
     def test_randompool(self):
+        simpools = SimPools(ref_pools)
         numiters = 10000
         poolnames = []
         for idx, (simblock, blockinterval) in enumerate(
-                self.simpools.get_blockgen()):
+                simpools.get_blockgen()):
             if idx >= numiters:
                 break
             poolnames.append(simblock.poolname)
 
         c = Counter(poolnames)
-        for name, pool in self.simpools.get_pools().items():
+        totalhashrate = sum(
+            pool.hashrate for pool in simpools.pools.values())
+        for name, pool in simpools.pools.items():
             count = float(c[name])
-            diff = abs(pool.proportion - count/numiters)
+            proportion = pool.hashrate / totalhashrate
+            diff = abs(proportion - count/numiters)
             self.assertLess(diff, 0.01)
+
+    def test_caps(self):
+        simpools = SimPools(ref_pools)
+        feerates, caps = simpools.get_capacity()
+        ref_feerates = [0, 1000, 10000, 20000]
+        ref_caps = list(cumsum_gen(
+            [0, 0.5*1000000/600, 0.3*750000/600, 0.2*500000/600]))
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(caps, ref_caps)
+
+        # Duplicate minfeerate
+        newref_pools = deepcopy(ref_pools)
+        newref_pools.update({'pool3': SimPool(0.1, 600000, 1000)})
+        newref_pools['pool1'].hashrate = 0.2
+        simpools = SimPools(newref_pools)
+        feerates, caps = simpools.get_capacity()
+        ref_feerates = [0, 1000, 10000, 20000]
+        ref_caps = list(cumsum_gen(
+            [0, 0.5*1000000/600 + 0.1*600000/600,
+             0.2*750000/600, 0.2*500000/600]))
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(caps, ref_caps)
+
+        # Inf minfeerate
+        newref_pools = deepcopy(ref_pools)
+        newref_pools['pool0'].minfeerate = float("inf")
+        simpools = SimPools(newref_pools)
+        feerates, caps = simpools.get_capacity()
+        ref_feerates = [0, 1000, 10000]
+        ref_caps = list(cumsum_gen(
+            [0, 0.5*1000000/600, 0.3*750000/600]))
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(caps, ref_caps)
+
+        # Only inf minfeerate
+        newref_pools = deepcopy(ref_pools)
+        for pool in newref_pools.values():
+            pool.minfeerate = float("inf")
+        simpools = SimPools(newref_pools)
+        feerates, caps = simpools.get_capacity()
+        ref_feerates = [0]
+        ref_caps = [0]
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(caps, ref_caps)
+
+        # Empty pools
+        simpools = SimPools({})
+        with self.assertRaises(ValueError):
+            simpools.get_capacity()
 
 
 class TxSourceTests(unittest.TestCase):
@@ -74,14 +116,23 @@ class TxSourceTests(unittest.TestCase):
         self.feerates = [0, 2000, 10999, 20000]
         byterates_binned = [
             0, 500*ref_txrate/3., 640*ref_txrate/3., 250*ref_txrate/3.]
-        self.ref_byterates = [sum(byterates_binned[idx:])
-                              for idx in range(len(byterates_binned))]
+        self.ref_byterates = list(cumsum_gen(reversed(byterates_binned)))
+        self.ref_byterates.reverse()
+        # self.ref_byterates = [sum(byterates_binned[idx:])
+        #                      for idx in range(len(byterates_binned))]
 
     def test_print_rates(self):
         self.tx_source.print_rates()
+        self.tx_source.print_rates(self.feerates)
 
     def test_get_byterates(self):
+        print("Ref byterates:")
+        for feerate, byterate in zip(self.feerates, self.ref_byterates):
+            print("{}\t{}".format(feerate, byterate))
         _dum, byterates = self.tx_source.get_byterates(self.feerates)
+        for test, target in zip(byterates, self.ref_byterates):
+            self.assertAlmostEqual(test, target)
+        _dum, byterates = self.tx_source.get_byterates()
         for test, target in zip(byterates, self.ref_byterates):
             self.assertAlmostEqual(test, target)
 
@@ -131,6 +182,19 @@ class TxSourceTests(unittest.TestCase):
                 diff = abs(test - target)
                 self.assertLess(diff, 10)
 
+        # Test thresh equality
+        mempool.reset()
+        tx_emitter = self.tx_source.get_emitter(mempool, feeratethresh=2000)
+        # Emit txs over an interval of t seconds.
+        tx_emitter(t)
+        simtxs = mempool.get_entries().values()
+
+        # Compare the tx rate.
+        txrate = len(simtxs) / t
+        # We filtered out 1 out of 3 SimTxs by using feeratethresh = 2001
+        diff = abs(txrate - ref_txrate)
+        self.assertLess(diff, 0.01)
+
         # Test inf thresh
         mempool.reset()
         tx_emitter = self.tx_source.get_emitter(mempool,
@@ -168,7 +232,7 @@ class TxSourceTests(unittest.TestCase):
         self.assertEqual(len(mempool.get_entries()), 0)
 
 
-class BasicSimTest(unittest.TestCase):
+class BasicSimTests(unittest.TestCase):
 
     def setUp(self):
         self.simpools = SimPools(pools=ref_pools)
@@ -338,10 +402,13 @@ class PseudoPools(SimPools):
 
     def get_blockgen(self):
         def blockgenfn():
-            numpools = len(self._SimPools__pools)
+            poolitems = sorted(self.pools.items(),
+                               key=lambda poolitem: poolitem[1].hashrate,
+                               reverse=True)
+            numpools = len(poolitems)
             idx = 0
             while True:
-                poolname, pool = self._SimPools__pools[idx % numpools]
+                poolname, pool = poolitems[idx % numpools]
                 blockinterval = 600
                 simblock = SimBlock(poolname, pool)
                 yield simblock, blockinterval

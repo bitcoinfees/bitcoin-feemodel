@@ -1,39 +1,10 @@
 from __future__ import division
 
 from math import ceil
-from bisect import bisect
+from bisect import bisect, bisect_left
+from tabulate import tabulate
+
 from feemodel.util import Table, Function
-
-
-class SimStats(object):
-    def __init__(self):
-        self.timestamp = 0.
-        self.timespent = None
-        self.numiters = None
-        self.cap = None
-        self.stablefeerate = None
-
-    def print_stats(self):
-        if self:
-            name = self.__class__.__name__
-            print(("{}\n" + "="*len(name)).format(name))
-            print("Num iters: %d" % self.numiters)
-            print("Time spent: %.2f" % self.timespent)
-            print("Stable feerate: %d" % self.stablefeerate)
-            self.cap.print_cap()
-
-    def get_stats(self):
-        if not self:
-            return None
-        return {
-            'timestamp': self.timestamp,
-            'timespent': self.timespent,
-            'numiters': self.numiters,
-            'cap': self.cap.__dict__,
-            'stablefeerate': self.stablefeerate}
-
-    def __nonzero__(self):
-        return bool(self.timestamp)
 
 
 class WaitFn(Function):
@@ -80,52 +51,65 @@ class WaitFn(Function):
 
 
 class Capacity(object):
-    def __init__(self, pools, tx_source):
-        self.pfeerates, self.pcap_lower, self.pcap_upper = pools.get_capacity()
-        _d, pools_txbyterates = (
-            tx_source.get_byterates(feerates=self.pfeerates))
-        feerates, txbyterates = tx_source.get_byterates()
-        byteratemap = {}
-        for feerate, byterate in zip(self.pfeerates, pools_txbyterates):
-            byteratemap[feerate] = byterate
-        for feerate, byterate in zip(feerates, txbyterates):
-            byteratemap[feerate] = byterate
 
-        self.feerates, self.tx_byterates = zip(*sorted(byteratemap.items()))
-        self.cap_lower = [self.get_cap(feerate) for feerate in self.feerates]
-        self.cap_upper = [self.get_cap(feerate, upper=True)
-                          for feerate in self.feerates]
+    def __init__(self, pools, txsource):
+        poolfeerates, caps = pools.get_capacity()
+        txfeerates, txbyterates = txsource.get_byterates()
+        self.feerates = sorted(set(poolfeerates + txfeerates))
+        self.caps = []
+        self.txbyterates = []
+        self.cap_ratios = []
+        n = len(txbyterates)
+        for feerate in self.feerates:
+            bidx = bisect_left(txfeerates, feerate)
+            pidx = bisect(poolfeerates, feerate)
+            txbyterate = txbyterates[bidx] if bidx < n else 0
+            cap = caps[pidx-1]
+            cap_ratio = txbyterate / cap if cap else float("inf")
 
-    def get_cap(self, feerate, upper=False):
-        '''Get capacity for a specified feerate.'''
-        if feerate < 0:
-            return 0
-        if upper:
-            return self.pcap_upper[bisect(self.pfeerates, feerate)-1]
-        else:
-            return self.pcap_lower[bisect(self.pfeerates, feerate)-1]
+            self.txbyterates.append(txbyterate)
+            self.caps.append(cap)
+            self.cap_ratios.append(cap_ratio)
+        if self.cap_ratios[-1]:
+            # Ensure that the last cap_ratio is always zero.
+            self.feerates.append(self.feerates[-1]+1)
+            self.caps.append(self.caps[-1])
+            self.txbyterates.append(0)
+            self.cap_ratios.append(0)
 
-    def calc_stablefeerate(self, rate_ratio_thresh):
-        stablefeerate = None
-        for idx in range(len(self.feerates)):
-            if not self.cap_lower[idx]:
-                continue
-            rate_ratio = self.tx_byterates[idx] / self.cap_lower[idx]
-            if rate_ratio <= rate_ratio_thresh:
-                stablefeerate = self.feerates[idx]
-                break
-        return stablefeerate
+    def calc_stablefeerate(self, cap_ratio_thresh):
+        idx = self.cap_ratio_index(cap_ratio_thresh)
+        return self.feerates[idx]
+
+    def cap_ratio_index(self, cap_ratio_target):
+        """Cap ratio index.
+
+        Get the lowest index such that
+        self.cap_ratio[index] <= cap_ratio_target.
+        """
+        for idx, cap_ratio in enumerate(self.cap_ratios):
+            if cap_ratio <= cap_ratio_target:
+                return idx
+        # Because we ensure in init that min(self.cap_ratios) = 0
+        raise AssertionError("This is not supposed to happen.")
 
     def print_cap(self):
-        table = Table()
-        table.add_row(("Feerate", "TxByteRate", "Cap (lower)", "Cap (upper)"))
-        for idx in range(len(self.feerates)):
-            table.add_row((
-                self.feerates[idx],
-                '%.2f' % self.tx_byterates[idx],
-                '%.2f' % self.cap_lower[idx],
-                '%.2f' % self.cap_upper[idx]))
-        table.print_table()
+        # Only print caps at 10 feerates with uniform spacing in cap_ratios
+        NUM_POINTS = 10
+        max_cap_ratio = max(
+            filter(lambda r: r < float("inf"), self.cap_ratios))
+        cap_idxs = [
+            self.cap_ratio_index(max_cap_ratio*i/NUM_POINTS)
+            for i in range(1, NUM_POINTS+1)]
+        cap_idxs.append(0)
+        cap_idxs = sorted(set(cap_idxs))
+        headers = ["Feerate", "TxByterate", "Cap"]
+        table = zip(
+            [self.feerates[idx] for idx in cap_idxs],
+            [self.txbyterates[idx] for idx in cap_idxs],
+            [self.caps[idx] for idx in cap_idxs]
+        )
+        print(tabulate(table, headers=headers))
 
 
 def get_feeclasses(cap, stablefeerate):
@@ -137,6 +121,36 @@ def get_feeclasses(cap, stablefeerate):
     feeclasses = filter(lambda feerate: feerate >= stablefeerate, feeclasses)
     return feeclasses
 
+
+# #class SimStats(object):
+# #    def __init__(self):
+# #        self.timestamp = 0.
+# #        self.timespent = None
+# #        self.numiters = None
+# #        self.cap = None
+# #        self.stablefeerate = None
+# #
+# #    def print_stats(self):
+# #        if self:
+# #            name = self.__class__.__name__
+# #            print(("{}\n" + "="*len(name)).format(name))
+# #            print("Num iters: %d" % self.numiters)
+# #            print("Time spent: %.2f" % self.timespent)
+# #            print("Stable feerate: %d" % self.stablefeerate)
+# #            self.cap.print_cap()
+# #
+# #    def get_stats(self):
+# #        if not self:
+# #            return None
+# #        return {
+# #            'timestamp': self.timestamp,
+# #            'timespent': self.timespent,
+# #            'numiters': self.numiters,
+# #            'cap': self.cap.__dict__,
+# #            'stablefeerate': self.stablefeerate}
+# #
+# #    def __nonzero__(self):
+# #        return bool(self.timestamp)
 
 # #def get_feeclasses(cap, tx_source, stablefeerate):
 # #    '''Choose suitable feerates at which to evaluate stats.'''
@@ -280,4 +294,56 @@ def get_feeclasses(cap, stablefeerate):
 # #                '%.2f' % twait.mean,
 # #                '%.2f' % (twait.mean_interval[1] - twait.mean)
 # #            ))
+# #        table.print_table()
+
+
+# #class Capacity(object):
+# #    def __init__(self, pools, tx_source):
+# #        self.pfeerates, self.pcap_lower, self.pcap_upper =
+# #                pools.get_capacity()
+# #        _d, pools_txbyterates = (
+# #            tx_source.get_byterates(feerates=self.pfeerates))
+# #        feerates, txbyterates = tx_source.get_byterates()
+# #        byteratemap = {}
+# #        for feerate, byterate in zip(self.pfeerates, pools_txbyterates):
+# #            byteratemap[feerate] = byterate
+# #        for feerate, byterate in zip(feerates, txbyterates):
+# #            byteratemap[feerate] = byterate
+# #
+# #        self.feerates, self.tx_byterates = zip(*sorted(byteratemap.items()))
+# #        self.cap_lower = [self.get_cap(feerate)
+# #                          for feerate in self.feerates]
+# #        self.cap_upper = [self.get_cap(feerate, upper=True)
+# #                          for feerate in self.feerates]
+# #
+# #    def get_cap(self, feerate, upper=False):
+# #        '''Get capacity for a specified feerate.'''
+# #        if feerate < 0:
+# #            return 0
+# #        if upper:
+# #            return self.pcap_upper[bisect(self.pfeerates, feerate)-1]
+# #        else:
+# #            return self.pcap_lower[bisect(self.pfeerates, feerate)-1]
+# #
+# #    def calc_stablefeerate(self, rate_ratio_thresh):
+# #        stablefeerate = None
+# #        for idx in range(len(self.feerates)):
+# #            if not self.cap_lower[idx]:
+# #                continue
+# #            rate_ratio = self.tx_byterates[idx] / self.cap_lower[idx]
+# #            if rate_ratio <= rate_ratio_thresh:
+# #                stablefeerate = self.feerates[idx]
+# #                break
+# #        return stablefeerate
+# #
+# #    def print_cap(self):
+# #        table = Table()
+# #        table.add_row(("Feerate", "TxByteRate",
+# #                       "Cap (lower)", "Cap (upper)"))
+# #        for idx in range(len(self.feerates)):
+# #            table.add_row((
+# #                self.feerates[idx],
+# #                '%.2f' % self.tx_byterates[idx],
+# #                '%.2f' % self.cap_lower[idx],
+# #                '%.2f' % self.cap_upper[idx]))
 # #        table.print_table()

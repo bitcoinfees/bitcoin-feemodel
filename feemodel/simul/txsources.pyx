@@ -14,12 +14,12 @@ from itertools import groupby
 
 from tabulate import tabulate
 
-from feemodel.util import DataSample
+from feemodel.util import DataSample, cumsum_gen
 
 DEF OVERALLOCATE = 2  # This better be > 1.
-assert OVERALLOCATE > 1
 srand(time(NULL))
 
+DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)
 
 class SimTx(object):
 
@@ -50,8 +50,15 @@ class SimTxSource(object):
             filtered_txrate = 0
 
         def tx_emitter(time_interval):
-            '''Put the new samples in txs.'''
-            numtxs = poisson_sample(filtered_txrate*time_interval)
+            """Emit new txs into mempool.
+
+            Number of new txs is a Poisson R.V. with expected value equal to
+            filtered_txrate * time_interval.
+
+            This is called in Simul.run once per simblock; time_interval is
+            thus the block interval.
+            """
+            numtxs = poissonvariate(filtered_txrate*time_interval)
             txsample_array.sample(&mempool.txqueue, numtxs)
 
         return tx_emitter
@@ -61,47 +68,33 @@ class SimTxSource(object):
         if not self.txsample:
             raise ValueError("No txs.")
         n = len(self.txsample)
+
+        def feerate_keyfn(simtx):
+            return simtx.feerate
+
+        def byterate_groupsum(grouptuple):
+            return sum([tx.size for tx in grouptuple[1]])*self.txrate/n
+
+        self.txsample.sort(key=feerate_keyfn, reverse=True)
+        _feerates = sorted(set(map(feerate_keyfn, self.txsample)))
+        _byterates = list(cumsum_gen(
+            groupby(self.txsample, feerate_keyfn), mapfn=byterate_groupsum))
+        _byterates.reverse()
+        if _feerates[0] != 0:
+            _feerates.insert(0, 0)
+            _byterates.insert(0, _byterates[0])
+
         if feerates:
-            feerates.sort()
-            ratebins = [0.]*len(feerates)
-            for tx in self.txsample:
-                fidx = bisect(feerates, tx.feerate)
-                if fidx:
-                    ratebins[fidx-1] += tx.size
-            byterates = [sum(ratebins[idx:])*self.txrate/n
-                         for idx in range(len(ratebins))]
-            return feerates, byterates
-        else:
-            # Choose the feerates so that the byterate in each interval
-            # is ~ 0.1 of the total.
-            R = 10  # 1 / 0.1
-            txrate = self.txrate
-
-            def keyfunc(tx):
-                return tx.feerate
-
-            self.txsample.sort(key=keyfunc, reverse=True)
-            feerates = []
+            n = len(_feerates)
             byterates = []
-            cumbyterate = 0.
-            for feerate, feegroup in groupby(self.txsample, keyfunc):
-                cumbyterate += sum([tx.size for tx in feegroup])*txrate/n
-                feerates.append(feerate)
-                byterates.append(cumbyterate)
+            for feerate in feerates:
+                bidx = bisect_left(_feerates, feerate)
+                byterates.append(_byterates[bidx] if bidx < n else 0)
+        else:
+            feerates = _feerates
+            byterates = _byterates
 
-            totalbyterate = byterates[-1]
-            byteratetargets = [i/R*totalbyterate for i in range(1, R+1)]
-            feerates_bin = []
-            byterates_bin = []
-            for target in byteratetargets:
-                idx = bisect_left(byterates, target)
-                feerates_bin.append(feerates[idx])
-                byterates_bin.append(byterates[idx])
-
-            feerates_bin.reverse()
-            byterates_bin.reverse()
-            # TODO: remove duplicate feerates
-            return feerates_bin, byterates_bin
+        return feerates, byterates
 
     def calc_mean_byterate(self):
         '''Calculate the mean byterate.
@@ -113,10 +106,10 @@ class SimTxSource(object):
         d.calc_stats()
         return d.mean, d.std / len(self.txsample)**0.5
 
-    def print_rates(self):
+    def print_rates(self, feerates=DEFAULT_PRINT_FEERATES):
         if not self:
             print("No txsample.")
-        feerates, byterates = self.get_byterates()
+        feerates, byterates = self.get_byterates(feerates=feerates)
         headers = ['Feerate', 'Cumulative byterate']
         table = zip(feerates, byterates)
         print(tabulate(table, headers=headers))
@@ -255,7 +248,7 @@ cdef int randindex(int N, int randlimit):
     return r % N
 
 
-cdef poisson_sample(l):
+cdef poissonvariate(l):
     # http://en.wikipedia.org/wiki/Poisson_distribution
     # #Generating_Poisson-distributed_random_variables
     cdef:
@@ -264,7 +257,7 @@ cdef poisson_sample(l):
         float L
 
     if l > 30:
-        return poisson_approx(l)
+        return _normal_approx(l)
     L = exp(-l)
     k = 0
     p = 1
@@ -274,6 +267,6 @@ cdef poisson_sample(l):
     return int(k - 1)
 
 
-cdef poisson_approx(l):
-    '''Normal approximation.'''
+cdef _normal_approx(l):
+    '''Normal approximation of the Poisson distribution.'''
     return int(normalvariate(l, l**0.5))

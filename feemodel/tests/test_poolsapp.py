@@ -73,7 +73,7 @@ class PoolsOnlineTests(unittest.TestCase):
         threading.Timer(1, stopflag.set).start()
         # next_update should be reached by now
         self.assertIsNotNone(t)
-        poolsonline.poolsestimate.clear_pools()
+        poolsonline.poolsestimate.pools = {}
         # test stopping
         t.join()
         self.assertFalse(poolsonline)

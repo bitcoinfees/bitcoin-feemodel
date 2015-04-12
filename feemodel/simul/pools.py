@@ -1,17 +1,18 @@
 from __future__ import division
 
 from random import random, expovariate
-from math import log, exp
-from copy import deepcopy
 from bisect import bisect_left
-from feemodel.util import Table
+from itertools import groupby
+
+from feemodel.util import cumsum_gen
 from feemodel.simul.simul import BlockTxs
 
 default_blockrate = 1./600
-hard_maxblocksize = 1000000
 
 
 class SimBlock(object):
+    # TODO: turn this into a cdef class and get rid of BlockTxs type
+
     def __init__(self, poolname, pool):
         self.poolname = poolname
         self.pool = pool
@@ -53,10 +54,10 @@ class SimPool(object):
         self.hashrate = hashrate
         self.maxblocksize = maxblocksize
         self.minfeerate = minfeerate
-        self.proportion = None
 
     def __cmp__(self, other):
-        return cmp(self.hashrate, other.hashrate)
+        # TODO: deprecate this.
+        raise NotImplementedError
 
     def __repr__(self):
         return ("SimPool{hashrate: %.2f, maxblocksize: %d, minfeerate: %.0f}" %
@@ -66,118 +67,92 @@ class SimPool(object):
         relevant_attrs = [
             'hashrate',
             'maxblocksize',
-            'minfeerate',
-            'proportion']
+            'minfeerate']
         return all([
             getattr(self, attr) == getattr(other, attr)
             for attr in relevant_attrs])
 
 
 class SimPools(object):
-    def __init__(self, pools=None, blockrate=default_blockrate):
-        self.blockrate = blockrate
-        self.totalhashrate = None
-        self.__pools = []
-        self.__poolsidx = []
 
-        if pools:
-            self.update(pools)
+    def __init__(self, pools, blockrate=default_blockrate):
+        self.pools = pools
+        self.blockrate = blockrate
+
+    def check_pools(self):
+        if not self.pools:
+            raise ValueError("No pools.")
+        if any([pool.hashrate <= 0 or
+                pool.maxblocksize < 0 or
+                pool.minfeerate < 0
+                for pool in self.pools.values()]):
+            raise ValueError("Bad pool stats.")
 
     def get_blockgen(self):
-        if not self:
-            raise ValueError("No pools.")
+        self.check_pools()
+        poolitems = sorted(self.pools.items(),
+                           key=lambda item: item[1].hashrate)
+        cumhashrates = list(
+            cumsum_gen([pool.hashrate for name, pool in poolitems]))
+        totalhashrate = cumhashrates[-1]
+        prop_table = map(lambda hashrate: hashrate/totalhashrate,
+                         cumhashrates)
 
         def blockgenfn():
             while True:
-                poolidx = bisect_left(self.__poolsidx, random())
-                poolname, pool = self.__pools[poolidx]
+                poolidx = bisect_left(prop_table, random())
+                simblock = SimBlock(*poolitems[poolidx])
                 blockinterval = expovariate(self.blockrate)
-                simblock = SimBlock(poolname, pool)
                 yield simblock, blockinterval
 
         return blockgenfn()
 
-    def get_pools(self):
-        return {name: deepcopy(pool) for name, pool in self.__pools}
-
-    def update(self, pools):
-        poolitems = sorted(
-            [(name, deepcopy(pool)) for name, pool in pools.items()],
-            key=lambda p: p[1], reverse=True)
-        totalhashrate = sum([pool.hashrate for name, pool in poolitems])
-        if not totalhashrate:
-            raise ValueError("No pools.")
-
-        self.__poolsidx = []
-        self.__pools = []
-        cumprop = 0.
-        try:
-            for name, pool in poolitems:
-                for attr in ['maxblocksize', 'minfeerate']:
-                    if getattr(pool, attr) < 0:
-                        raise ValueError("%s must be >= 0." % attr)
-                if pool.hashrate <= 0:
-                    raise ValueError("hashrate must be > 0.")
-                pool.proportion = pool.hashrate / totalhashrate
-                cumprop += pool.proportion
-                self.__poolsidx.append(cumprop)
-                self.__pools.append((name, pool))
-            assert abs(cumprop-1) < 0.0001
-        except ValueError as e:
-            self.__poolsidx = []
-            self.__pools = []
-            raise(e)
-
-        self.__poolsidx[-1] = 1.
-        self.totalhashrate = totalhashrate
-
     def get_capacity(self):
-        poolfeerates = [pool.minfeerate for name, pool in self.__pools
-                        if pool.minfeerate < float("inf")]
-        poolfeerates = sorted(set(poolfeerates + [0]))
+        self.check_pools()
+        totalhashrate = self.calc_totalhashrate()
 
-        cap_lower = [
-            sum([pool.proportion*pool.maxblocksize
-                 for name, pool in self.__pools
-                 if pool.minfeerate <= feerate])*self.blockrate
-            for feerate in poolfeerates]
+        def minfeerate_keyfn(pool):
+            return pool.minfeerate
 
-        cap_upper = [
-            sum([pool.proportion*hard_maxblocksize
-                 for name, pool in self.__pools
-                 if pool.minfeerate <= feerate])*self.blockrate
-            for feerate in poolfeerates]
+        def byterate_groupsum(grouptuple):
+            return sum([pool.hashrate*pool.maxblocksize/totalhashrate
+                        for pool in grouptuple[1]])*self.blockrate
 
-        return poolfeerates, cap_lower, cap_upper
+        pools = filter(lambda pool: pool.minfeerate < float("inf"),
+                       sorted(self.pools.values(), key=minfeerate_keyfn))
+        feerates = sorted(set(map(minfeerate_keyfn, pools)))
+        caps = list(cumsum_gen(
+            groupby(pools, minfeerate_keyfn), mapfn=byterate_groupsum))
 
-    def clear_pools(self):
-        self.__pools = []
-        self.__poolsidx = []
+        # TODO: decide if we should include feerate 0 or not.
+        if not feerates or feerates[0] != 0:
+            feerates.insert(0, 0)
+            caps.insert(0, 0)
 
-    def print_pools(self):
-        table = Table()
-        table.add_row(("Name", "Prop", "MBS", "MFR"))
-        for name, pool in self.__pools:
-            table.add_row((
-                name,
-                '%.2f' % pool.proportion,
-                pool.maxblocksize,
-                pool.minfeerate))
-        table.print_table()
-        print("Avg block interval is %.2f" % (1./self.blockrate,))
+        return feerates, caps
+
+    def calc_totalhashrate(self):
+        return sum([pool.hashrate for pool in self.pools.values()])
 
     def __nonzero__(self):
-        return bool(len(self.__pools))
+        try:
+            self.check_pools()
+        except ValueError:
+            return False
+        return True
 
     def __repr__(self):
-        elogp = -sum([p.proportion*log(p.proportion)
-                     for n, p in self.__pools])
-        numeffpools = exp(elogp)
-        return "SimPools(Num: %d, NumEffective: %.2f)" % (
-            len(self.__pools), numeffpools)
+        try:
+            feerates, caps = self.get_capacity()
+        except ValueError:
+            totalcap = 0
+        else:
+            totalcap = caps[-1]
+        return "SimPools(Num: {}, TotalCap: {})".format(len(self.pools),
+                                                        totalcap)
 
     def __eq__(self, other):
-        return self.__pools == other.__pools
+        return self.pools == other.pools
 
     # #def calc_capacities(self, tx_source):
     # #    poolfeerates = [pool.minfeerate for name, pool in self.__pools]
