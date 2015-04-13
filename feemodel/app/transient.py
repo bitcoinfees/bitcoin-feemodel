@@ -3,6 +3,7 @@ from __future__ import division
 import logging
 from time import time
 from bisect import bisect
+from math import ceil
 
 from feemodel.config import minrelaytxfee
 from feemodel.util import StoppableThread, DataSample
@@ -67,35 +68,66 @@ class TransientOnline(StoppableThread):
 
     def update(self):
         self._updating = True
+
         tx_source = self.txonline.get_txsource()
         pools = self.poolsonline.get_pools()
-        # TODO: catch unstable error
         sim = Simul(pools, tx_source)
+        feepoints = self.calc_feepoints(sim)
         init_entries = self.mempool.state.get_entries()
-        waittimes, timespent, numiters = transientsim(
+
+        feepoints, waittimes, timespent, numiters = transientsim(
             sim,
+            feepoints=feepoints,
             init_entries=init_entries,
             miniters=self.miniters,
             maxiters=self.maxiters,
             maxtime=self.update_period,
             stopflag=self.get_stop_object())
-        mempoolsizes, mempoolsize_with_fee = self._calc_mempoolsizes(
-            init_entries, sorted(waittimes.keys()))
+
+        mempoolsize, mempoolsize_with_fee = self._calc_mempoolsize(
+            init_entries, feepoints)
 
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
                     (timespent, numiters, mempoolsize_with_fee))
         # Warn if we reached miniters
-        if numiters == self.miniters:
+        if numiters <= self.miniters*1.1:
             logger.warning("Transient sim took %.2fs to do %d iters." %
                            (timespent, numiters))
 
-        self.stats = TransientStats(waittimes, timespent, numiters, sim,
-                                    mempoolsizes, mempoolsize_with_fee)
+        self.stats = TransientStats(feepoints, waittimes, timespent, numiters,
+                                    sim, mempoolsize, mempoolsize_with_fee)
         self._updating = False
 
+    def calc_feepoints(self, sim):
+        """Get feepoints at which to evaluate wait times.
+
+        The feepoints are chosen so that the wait times are approximately
+        evenly spaced, 1 min apart. This is done by linear interpolation
+        of previous wait times.
+
+        If not stats have been computed yet, return None (i.e. use the
+        default feepoints computed by transientsim)
+        """
+        d = 60  # 1 min wait between feepoints
+        if not self.stats:
+            return None
+        waitfn = self.stats.expectedwaits
+        minwait = waitfn._y[-1]
+        maxwait = waitfn._y[0]
+        feepoints = [
+            int(waitfn.inv(wait))
+            for wait in range(int(ceil(minwait)), int(ceil(maxwait))+d, d)]
+        minfeepoint = sim.stablefeerate
+        maxfeepoint = sim.cap.feerates[sim.cap.cap_ratio_index(0.05)]
+        feepoints.extend([minfeepoint, maxfeepoint])
+        feepoints = filter(
+            lambda feerate: minfeepoint <= feerate <= maxfeepoint,
+            sorted(set(feepoints)))
+        return feepoints
+
     @staticmethod
-    def _calc_mempoolsizes(entries, feerates):
+    def _calc_mempoolsize(entries, feerates):
         '''Calculate the reverse cumulative (wrt feerate) mempool size.
 
         feerates is assumed sorted.
@@ -108,13 +140,13 @@ class TransientOnline(StoppableThread):
                 sizebins[fidx-1] += entry.size
             if entry.feerate >= minrelaytxfee:
                 mempoolsize_with_fee += entry.size
-        mempoolsizes = [sum(sizebins[idx:]) for idx in range(len(sizebins))]
-        return mempoolsizes, mempoolsize_with_fee
+        mempoolsize = [sum(sizebins[idx:]) for idx in range(len(sizebins))]
+        return mempoolsize, mempoolsize_with_fee
 
 
 class TransientStats(object):
-    def __init__(self, waittimes, timespent, numiters, sim,
-                 mempoolsize, mempoolsize_with_fee):
+    def __init__(self, feepoints, waittimes, timespent, numiters,
+                 sim, mempoolsize, mempoolsize_with_fee):
         self.timestamp = time()
         self.timespent = timespent
         self.numiters = numiters
@@ -123,25 +155,22 @@ class TransientStats(object):
         self.mempoolsize = mempoolsize
         self.mempoolsize_with_fee = mempoolsize_with_fee
 
-        feerates = []
         expectedwaits = []
         expectedwaits_err = []
         waitpercentiles = []
-        for feerate, waitsample in sorted(waittimes.items()):
+        for waitsample in waittimes:
             waitdata = DataSample(waitsample)
             waitdata.calc_stats()
-            feerates.append(feerate)
             expectedwaits.append(waitdata.mean)
             expectedwaits_err.append(waitdata.mean_interval[1]-waitdata.mean)
             waitpercentiles.append(
                 [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
-        self.feerates = feerates
-        self.expectedwaits = WaitFn(feerates, expectedwaits,
+        self.feerates = feepoints
+        self.expectedwaits = WaitFn(feepoints, expectedwaits,
                                     expectedwaits_err)
-        self.waitpercentiles = [
-            WaitFn(feerates, w)
-            for w in zip(*waitpercentiles)]
+        self.waitpercentiles = [WaitFn(feepoints, w)
+                                for w in zip(*waitpercentiles)]
 
     def predict(self, feerate, currtime):
         '''Predict the wait time of a transaction with specified feerate.

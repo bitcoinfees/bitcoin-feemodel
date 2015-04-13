@@ -6,6 +6,7 @@ from bisect import bisect
 from math import log
 from random import choice, seed
 from pprint import pprint
+from copy import deepcopy
 
 from feemodel.txmempool import MempoolState
 from feemodel.tests.pseudoproxy import install, proxy
@@ -15,14 +16,16 @@ from feemodel.simul.transient import transientsim
 from feemodel.simul.simul import Simul
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
-from feemodel.tests.config import poolsref, txref, transientwaitsref as waitsref
+from feemodel.tests.config import (poolsref, txref,
+                                   transientwaitsref as waitsref)
 from feemodel.tests.test_simul import init_entries
 
 logging.basicConfig(level=logging.DEBUG)
 install()
 
 
-class TransientSimTests(unittest.TestCase):
+class TransientRefCmp(unittest.TestCase):
+    """Compare the wait times with the reference test data."""
 
     def test_A(self):
         sim = Simul(poolsref, txref)
@@ -47,6 +50,94 @@ class TransientSimTests(unittest.TestCase):
             logdiff = abs(log(avgwait) - log(avgwaitref))
             print("avgwait/avgwaitref is {}.".format(avgwait/avgwaitref))
             self.assertLess(logdiff, 0.1)
+
+
+class TransientOnlineTests(unittest.TestCase):
+
+    def test_A(self):
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=3,
+            miniters=0,
+            maxiters=float("inf"))
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertIsNotNone(stats)
+            print("First stats:")
+            print("===========")
+            print("Expected wait:")
+            stats.expectedwaits.print_fn()
+            print("Stablefeerate is {}".format(stats.stablefeerate))
+            print("Cap:")
+            stats.cap.print_cap()
+
+            for i in range(2):
+                while transientonline.stats.timestamp == stats.timestamp:
+                    sleep(0.1)
+                stats = transientonline.stats
+                print("#{} stats:".format(i+1))
+                print("=============")
+                stats.expectedwaits.print_fn()
+
+    def test_B(self):
+        # Crazy high tx rate.
+        txref_high = deepcopy(txref)
+        txref_high.txrate = 1e6
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref_high),
+            update_period=3,
+            miniters=0,
+            maxiters=float("inf"))
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertIsNotNone(stats)
+            print("Crazy high txrate:")
+            print("===========")
+            print("Expected wait:")
+            stats.expectedwaits.print_fn()
+            print("Stablefeerate is {}".format(stats.stablefeerate))
+            print("Cap:")
+            stats.cap.print_cap()
+
+        # Moderately high tx rate.
+        txref_high = deepcopy(txref)
+        txref_high.txrate = 100
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref_high),
+            update_period=3,
+            miniters=0,
+            maxiters=float("inf"))
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertIsNotNone(stats)
+            print("Moderately high txrate:")
+            print("===========")
+            print("Expected wait:")
+            stats.expectedwaits.print_fn()
+            print("Stablefeerate is {}".format(stats.stablefeerate))
+            print("Cap:")
+            stats.cap.print_cap()
+
+    def test_C(self):
+        # Test iter limits.
+        pass
+
+
+class TransientStatPredictTests(unittest.TestCase):
+    """Testing of predict method on transient stats."""
+    pass
 
 # #class TransientSimTests(unittest.TestCase):
 # #

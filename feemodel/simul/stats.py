@@ -4,7 +4,7 @@ from math import ceil
 from bisect import bisect, bisect_left
 from tabulate import tabulate
 
-from feemodel.util import Table, Function
+from feemodel.util import Function
 
 
 class WaitFn(Function):
@@ -31,7 +31,7 @@ class WaitFn(Function):
         return super(WaitFn, self).__call__(feerate, use_upper=True)
 
     def inv(self, wait):
-        '''Inverse of self.__call__.
+        '''Return the feerate for a specified wait time.
 
         If wait is smaller than all available wait datapoints, returns None.
         If larger, return the boundary value of the function.
@@ -39,15 +39,10 @@ class WaitFn(Function):
         return super(WaitFn, self).inv(wait, use_upper=True)
 
     def print_fn(self):
-        table = Table()
-        table.add_row(('Feerate', 'Wait', 'Error'))
-        for idx in range(len(self.feerates)):
-            table.add_row((
-                self.feerates[idx],
-                '%.2f' % self.waits[idx],
-                '%.2f' % self.errors[idx] if self.errors else '-'
-            ))
-        table.print_table()
+        headers = ['Feerate', 'Wait', 'Error']
+        errors = map(lambda err: err if err else '-', self.errors)
+        table = zip(self.feerates, self.waits, errors)
+        print(tabulate(table, headers=headers))
 
 
 class Capacity(object):
@@ -106,6 +101,7 @@ class Capacity(object):
         print(tabulate(table, headers=headers))
 
 
+# TODO: deprecate this.
 def get_feeclasses(cap, stablefeerate):
     '''Choose suitable feerates at which to evaluate stats.'''
     quantize = 200
