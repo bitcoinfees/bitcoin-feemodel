@@ -34,14 +34,14 @@ def tx_preprocess(memblock):
     return txs
 
 
-def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
+def calc_stranding_feerate(txs, bootstrap=True, numprocesses=None):
     '''Compute stranding feerate from preprocessed txs.
 
     txs is [(feerate, inblock) for some list of txs].
     bootstrap specifies whether or not to compute error estimates using
     bootstrap resampling.
 
-    multiprocess is the number of processes to use. defaults to
+    numprocesses is the number of processes to use. Defaults to
     multiprocessing.cpu_count().
     '''
     if not len(txs):
@@ -65,9 +65,8 @@ def calc_stranding_feerate(txs, bootstrap=True, multiprocess=None):
 
     if bootstrap and sfr != float("inf"):
         N = 1000  # Number of bootstrap estimates
-        numprocesses = (
-            multiprocess if multiprocess is not None
-            else multiprocessing.cpu_count())
+        if not numprocesses:
+            numprocesses = multiprocessing.cpu_count()
         bs_estimates = _get_bs_estimates(txs, N, numprocesses)
 
         if not any([b == float("inf") for b in bs_estimates]):

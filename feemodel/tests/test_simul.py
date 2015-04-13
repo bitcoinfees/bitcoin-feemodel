@@ -428,7 +428,7 @@ class TransientSimTests(unittest.TestCase):
             miniters=0,
             maxiters=MAXITERS,
             maxtime=60,
-            multiprocess=NUMPROCESSES)
+            numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
         print("numiters is {}.".format(numiters))
@@ -444,7 +444,7 @@ class TransientSimTests(unittest.TestCase):
             miniters=0,
             maxiters=10000,
             maxtime=MAXTIME,
-            multiprocess=NUMPROCESSES)
+            numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
         print("numiters is {}.".format(numiters))
@@ -460,7 +460,7 @@ class TransientSimTests(unittest.TestCase):
             miniters=MINITERS,
             maxiters=10000,
             maxtime=0,
-            multiprocess=NUMPROCESSES)
+            numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
         print("numiters is {}.".format(numiters))
@@ -474,7 +474,7 @@ class TransientSimTests(unittest.TestCase):
             miniters=0,
             maxiters=10000,
             maxtime=5,
-            multiprocess=NUMPROCESSES)
+            numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
         print("numiters is {}.".format(numiters))
@@ -490,7 +490,7 @@ class TransientSimTests(unittest.TestCase):
                 miniters=0,
                 maxiters=1000000000000,
                 maxtime=60,
-                multiprocess=NUMPROCESSES,
+                numprocesses=NUMPROCESSES,
                 stopflag=stopflag)
 
     def test_multiprocess(self):

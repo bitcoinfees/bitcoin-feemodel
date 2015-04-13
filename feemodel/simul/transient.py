@@ -34,7 +34,7 @@ def transientsim_core(sim, init_entries, feepoints):
 
 def transientsim(sim, feepoints=None, init_entries=None,
                  miniters=1000, maxiters=10000, maxtime=60,
-                 multiprocess=None, stopflag=None):
+                 numprocesses=None, stopflag=None):
     starttime = time()
     if init_entries is None:
         init_entries = {}
@@ -43,10 +43,8 @@ def transientsim(sim, feepoints=None, init_entries=None,
     else:
         feepoints = filter(lambda feerate: feerate >= sim.stablefeerate,
                            feepoints)
-
-    numprocesses = (
-        multiprocess if multiprocess is not None
-        else multiprocessing.cpu_count())
+    if not numprocesses:
+        numprocesses = multiprocessing.cpu_count()
     resultqueue = multiprocessing.Queue()
     process_stopflag = multiprocessing.Event()
     processes = [
@@ -152,7 +150,7 @@ def _get_feepoints(cap, stablefeerate):
 # #
 # #def transient_multiproc(sim, feepoints=None, init_entries=None,
 # #                        miniters=1000, maxiters=10000, maxtime=60,
-# #                        multiprocess=None, stopflag=None):
+# #                        numprocesses=None, stopflag=None):
 # #    '''Multiprocessing of transientsim.'''
 # #    starttime = time()
 # #    if init_entries is None:
@@ -160,7 +158,7 @@ def _get_feepoints(cap, stablefeerate):
 # #    if not feepoints:
 # #        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
 # #    numprocesses = (
-# #        multiprocess if multiprocess is not None
+# #        numprocesses if numprocesses is not None
 # #        else multiprocessing.cpu_count())
 # #    if numprocesses == 1:
 # #        waittimes, _dum, numiters = transientsim(
