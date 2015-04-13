@@ -8,7 +8,7 @@ from feemodel.config import minrelaytxfee
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
 from feemodel.simul.stats import WaitFn
-from feemodel.simul.transient import transient_multiproc as transientsim
+from feemodel.simul.transient import transientsim
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
 
 default_update_period = 60.

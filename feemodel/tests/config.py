@@ -8,4 +8,4 @@ blockdata = os.path.join(datadir, 'blockdata.pickle')
 
 poolsref = load_obj(os.path.join(datadir, "pe_ref.pickle"))
 txref = load_obj(os.path.join(datadir, "tr_ref.pickle"))
-transientref = load_obj(os.path.join(datadir, "transientstats_ref.pickle"))
+transientwaitsref = load_obj(os.path.join(datadir, "transientwaits_ref.pickle"))

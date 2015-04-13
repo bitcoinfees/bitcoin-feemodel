@@ -11,7 +11,7 @@ from bisect import insort
 from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimTx
 
-rate_ratio_thresh = 0.9
+cap_ratio_thresh = 0.9
 
 
 class SimEntry(SimTx):
@@ -35,7 +35,7 @@ cdef class Simul:
         # TODO: check edge conditions for feerates
         self.cap = Capacity(pools, txsource)
         # TODO: use all the tx points to calc stablefeerate
-        self.stablefeerate = self.cap.calc_stablefeerate(rate_ratio_thresh)
+        self.stablefeerate = self.cap.calc_stablefeerate(cap_ratio_thresh)
         if self.stablefeerate is None:
             raise ValueError("The queue is not stable - arrivals exceed "
                              "processing for all feerates.")

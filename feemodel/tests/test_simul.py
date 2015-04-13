@@ -1,17 +1,19 @@
 from __future__ import division
 
 import unittest
+import threading
 from collections import Counter
 from copy import deepcopy
 from random import seed
+from pprint import pprint
 
 from feemodel.txmempool import MemBlock
 from feemodel.simul import (SimPool, SimPools, Simul, SimTx, SimTxSource,
                             SimEntry)
-# from feemodel.simul.txsources import TxPtrArray
 from feemodel.simul.pools import SimBlock
 from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.simul.simul import SimMempool
+from feemodel.simul.transient import transientsim_core, transientsim
 from feemodel.util import cumsum_gen
 
 seed(0)
@@ -30,10 +32,7 @@ ref_txrate = 1.1
 ref_mean_byterate = sum([
     tx.size for tx in ref_txsample])/float(len(ref_txsample))*ref_txrate
 
-# b = MemBlock.read(333931, dbfile=dbfile)
 init_entries = MemBlock.read(333931, dbfile=dbfile).entries
-# init_mempool = [SimEntry.from_mementry(txid, entry)
-#                 for txid, entry in b.entries.items()]
 print("Mempool size is %d" %
       sum([entry.size for entry in init_entries.values()]))
 
@@ -392,6 +391,153 @@ class CustomMempoolTests(unittest.TestCase):
                 self.assertEqual(simblock.size, 2000*(501-375))
             else:
                 break
+
+
+class TransientSimTests(unittest.TestCase):
+
+    def setUp(self):
+        self.simpools = SimPools(pools=ref_pools)
+        self.tx_source = SimTxSource(ref_txsample, ref_txrate)
+        self.sim = Simul(self.simpools, self.tx_source)
+        self.init_entries = deepcopy(init_entries)
+        self.feepoints = [0, 1000, 5000, 10000, 20000]
+        self.feepoints = filter(
+            lambda feerate: feerate >= self.sim.stablefeerate, self.feepoints)
+
+    def test_basic(self):
+        # Just check that core can run.
+        self.sim.cap.print_cap()
+        print("Stable feerate is: {}".format(self.sim.stablefeerate))
+        print(self.feepoints)
+        for idx, waitvector in enumerate(transientsim_core(self.sim,
+                                                           self.init_entries,
+                                                           self.feepoints)):
+            if idx == 10:
+                break
+            print(waitvector)
+
+    def test_monoprocess(self):
+        NUMPROCESSES = 1
+
+        MAXITERS = 2000
+        print("Testing maxiters:")
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=0,
+            maxiters=MAXITERS,
+            maxtime=60,
+            multiprocess=NUMPROCESSES)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(numiters, MAXITERS*1.2)
+
+        print("Testing maxtime:")
+        MAXTIME = 1
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=0,
+            maxiters=10000,
+            maxtime=MAXTIME,
+            multiprocess=NUMPROCESSES)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(elapsedtime, MAXTIME*1.2)
+
+        print("Testing miniters: ")
+        MINITERS = 2000
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=MINITERS,
+            maxiters=10000,
+            maxtime=0,
+            multiprocess=NUMPROCESSES)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(numiters, MINITERS*1.1)
+
+        print("Testing auto feepoints:")
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            init_entries=init_entries,
+            miniters=0,
+            maxiters=10000,
+            maxtime=5,
+            multiprocess=NUMPROCESSES)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+
+        print("Testing stopflag:")
+        stopflag = threading.Event()
+        threading.Timer(1, stopflag.set).start()
+        with self.assertRaises(StopIteration):
+            feepoints, waittimes, elapsedtime, numiters = transientsim(
+                self.sim,
+                init_entries=init_entries,
+                miniters=0,
+                maxiters=1000000000000,
+                maxtime=60,
+                multiprocess=NUMPROCESSES,
+                stopflag=stopflag)
+
+    def test_multiprocess(self):
+        MAXITERS = 2000
+        print("Testing maxiters:")
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=0,
+            maxiters=MAXITERS,
+            maxtime=60)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(numiters, MAXITERS*1.2)
+
+        print("Testing maxtime:")
+        MAXTIME = 1
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=0,
+            maxiters=10000,
+            maxtime=MAXTIME)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(elapsedtime, MAXTIME*1.2)
+
+        print("Testing miniters: ")
+        MINITERS = 2000
+        feepoints, waittimes, elapsedtime, numiters = transientsim(
+            self.sim,
+            feepoints=self.feepoints,
+            init_entries=init_entries,
+            miniters=MINITERS,
+            maxiters=10000,
+            maxtime=0)
+        avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
+        pprint(zip(feepoints, avgwaittimes))
+        print("numiters is {}.".format(numiters))
+        print("elapsedtime is {}.".format(elapsedtime))
+        self.assertLess(numiters, MINITERS*1.2)
 
 
 class PseudoPools(SimPools):

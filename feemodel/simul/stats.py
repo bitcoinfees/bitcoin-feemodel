@@ -93,15 +93,9 @@ class Capacity(object):
         # Because we ensure in init that min(self.cap_ratios) = 0
         raise AssertionError("This is not supposed to happen.")
 
-    def print_cap(self):
-        # Only print caps at 10 feerates with uniform spacing in cap_ratios
-        NUM_POINTS = 10
-        max_cap_ratio = max(
-            filter(lambda r: r < float("inf"), self.cap_ratios))
+    def print_cap(self, num_points=20):
         cap_idxs = [
-            self.cap_ratio_index(max_cap_ratio*i/NUM_POINTS)
-            for i in range(1, NUM_POINTS+1)]
-        cap_idxs.append(0)
+            self.cap_ratio_index(i/num_points) for i in range(1, num_points+1)]
         cap_idxs = sorted(set(cap_idxs))
         headers = ["Feerate", "TxByterate", "Cap"]
         table = zip(
