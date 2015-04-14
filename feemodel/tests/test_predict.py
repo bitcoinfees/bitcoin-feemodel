@@ -10,7 +10,7 @@ from random import random, expovariate, seed
 from feemodel.app.predict import Prediction, pvals_blocks_to_keep
 from feemodel.txmempool import MemBlock
 from feemodel.tests.config import (memblock_dbfile as dbfile,
-                                   transientref as transientstats)
+                                   transientstatsref as transientstats)
 from feemodel.config import datadir
 
 seed(0)
@@ -54,7 +54,7 @@ class PredictTests(unittest.TestCase):
         for idx, p in enumerate(pred.pval_ecdf):
             diff = abs(p[1] - (idx+1)/len(pred.pval_ecdf))
             self.assertLessEqual(diff, pdistance)
-        self.assertLess(pdistance, 0.1)
+        self.assertLess(pdistance, 0.05)
 
         # Check the cleanup of pred.predicts
         for txid, entry in b.entries.items():

@@ -8,16 +8,15 @@ from random import choice, seed
 from pprint import pprint
 from copy import deepcopy
 
-from feemodel.txmempool import MempoolState
-from feemodel.tests.pseudoproxy import install, proxy
-
 import feemodel.simul.transient
 from feemodel.simul.transient import transientsim
 from feemodel.simul.simul import Simul
+from feemodel.txmempool import MempoolState
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
 from feemodel.tests.config import (poolsref, txref,
                                    transientwaitsref as waitsref)
+from feemodel.tests.pseudoproxy import install, proxy
 from feemodel.tests.test_simul import init_entries
 
 logging.basicConfig(level=logging.DEBUG)
