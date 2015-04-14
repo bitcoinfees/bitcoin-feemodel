@@ -5,48 +5,9 @@ from bisect import bisect_left
 from itertools import groupby
 
 from feemodel.util import cumsum_gen
-from feemodel.simul.simul import BlockTxs
+from feemodel.simul.simul import SimBlock
 
 default_blockrate = 1./600
-
-
-class SimBlock(object):
-    # TODO: turn this into a cdef class and get rid of BlockTxs type
-
-    def __init__(self, poolname, pool):
-        self.poolname = poolname
-        self.pool = pool
-        self.size = 0
-        self.sfr = float("inf")
-        self.is_sizeltd = None
-        self.txs = []
-
-    @property
-    def txs(self):
-        '''Get the block transactions as a SimTx list.
-
-        For efficiency, we keep the txs as a BlockTxs (as assigned in
-        SimMempool._process_block), and only instantiate the SimTxs
-        the first time you access it.
-
-        Take note that if the Simul instance that produced this SimBlock
-        becomes unreferenced, the memory to which BlockTxs points will
-        become deallocated, and bad things will happen.
-
-        TL;DR - if you want to access this property, make sure you maintain
-        a reference to the Simul instance.
-        '''
-        if isinstance(self._txs, BlockTxs):
-            self._txs = self._txs.get_simtxs()
-        return self._txs
-
-    @txs.setter
-    def txs(self, val):
-        self._txs = val
-
-    def __repr__(self):
-        return "SimBlock(pool: {}, numtxs: {}, size: {}, sfr: {})".format(
-            self.poolname, len(self._txs), self.size, self.sfr)
 
 
 class SimPool(object):

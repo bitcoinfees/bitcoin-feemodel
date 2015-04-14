@@ -21,6 +21,7 @@ srand(time(NULL))
 
 DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)
 
+
 class SimTx(object):
 
     def __init__(self, feerate, size):

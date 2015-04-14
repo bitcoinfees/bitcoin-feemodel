@@ -40,6 +40,13 @@ cdef class SimMempool:
         OrphanTxArray orphans
         list txidlist
 
-    cdef void _process_block(self, simblock)
+    cdef void _process_block(self, SimBlock simblock)
     cdef void _process_deps(self, TxStruct *newtx)
     cdef void _reset_orphan_deps(self)
+
+
+cdef class SimBlock:
+
+    cdef:
+        public object poolname, pool, size, sfr, is_sizeltd, _txs
+        TxPtrArray _txptrs

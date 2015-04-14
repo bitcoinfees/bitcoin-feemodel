@@ -143,20 +143,21 @@ cdef class SimMempool:
         txptrarray_copy(self.txqueue_bak, &self.txqueue)
         self._reset_orphan_deps()
 
-    cdef void _process_block(self, simblock):
+    cdef void _process_block(self, SimBlock simblock):
         DEF MAXFEE = 2100000000000000
         cdef:
             int newblocksize, maxblocksize, blocksize, blocksize_ltd
             long long minfeerate, sfr
             TxStruct *newtx
             OrphanTx orphantx
+            TxPtrArray blocktxs
 
         minfeerate = min(simblock.pool.minfeerate, MAXFEE)
         maxblocksize = simblock.pool.maxblocksize
         sfr = MAXFEE
         blocksize = 0
         blocksize_ltd = 0
-        blocktxs = BlockTxs(self.txqueue.size)
+        blocktxs = txptrarray_init(self.txqueue.size)
 
         txqueue_heapify(self.txqueue)
         self.rejected_entries.size = 0
@@ -174,7 +175,7 @@ cdef class SimMempool:
                         if newtx.feerate < sfr:
                             sfr = newtx.feerate
 
-                    blocktxs.append(newtx)
+                    txptrarray_append(&blocktxs, newtx)
                     blocksize = newblocksize
                     self._process_deps(newtx)
                 else:
@@ -188,7 +189,7 @@ cdef class SimMempool:
         simblock.sfr = sfr + 1 if blocksize_ltd else minfeerate
         simblock.is_sizeltd = bool(blocksize_ltd)
         simblock.size = blocksize
-        simblock.txs = blocktxs
+        simblock._txptrs = blocktxs
 
     cdef void _process_deps(self, TxStruct *newtx):
         """Process dependants of tx newly added to a block.
@@ -227,27 +228,51 @@ cdef class SimMempool:
         free(self.orphanmap)
 
 
-cdef class BlockTxs:
-    """Python wrapper for TxPtrArray."""
+cdef class SimBlock(object):
 
-    cdef:
-        TxPtrArray txs
+    def __cinit__(self, poolname, pool):
+        self._txptrs.txs = NULL
 
-    def __cinit__(self, int maxsize):
-        self.txs = txptrarray_init(maxsize)
+    def __init__(self, poolname, pool):
+        self.poolname = poolname
+        self.pool = pool
+        self.size = 0
+        self.sfr = float("inf")
+        self.is_sizeltd = None
+        self._txs = None
 
-    cdef void append(self, TxStruct *tx):
-        txptrarray_append(&self.txs, tx)
+    property txs:
 
-    def get_simtxs(self):
-        return [SimTx(self.txs.txs[idx].feerate, self.txs.txs[idx].size)
-                for idx in range(self.txs.size)]
+        def __get__(self):
+            '''Get the block transactions as a SimTx list.
 
-    def __len__(self):
-        return self.txs.size
+            For efficiency, we keep the txs as a TxPtrArray (as assigned in
+            SimMempool._process_block), and only instantiate the SimTxs
+            the first time you access it.
+
+            Take note that if the Simul instance that produced this SimBlock
+            becomes unreferenced, the tx memory to which self._txptrs.txs
+            points will become deallocated, and bad things will happen.
+
+            TL;DR - if you want to access this property, make sure you keep a
+            reference to the Simul instance, at least up until the first time
+            you access this property.
+            '''
+            if self._txs is None:
+                if self._txptrs.txs is NULL:
+                    return []
+                self._txs = [
+                    SimTx(self._txptrs.txs[i].feerate,
+                          self._txptrs.txs[i].size)
+                    for i in range(self._txptrs.size)]
+            return self._txs
+
+    def __repr__(self):
+        return "SimBlock(pool: {}, numtxs: {}, size: {}, sfr: {})".format(
+            self.poolname, len(self.txs), self.size, self.sfr)
 
     def __dealloc__(self):
-        txptrarray_deinit(self.txs)
+        txptrarray_deinit(self._txptrs)
 
 
 # =============
