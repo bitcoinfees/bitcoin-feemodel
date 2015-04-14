@@ -74,6 +74,29 @@ class TransientOnlineTests(unittest.TestCase):
             print("Stablefeerate is {}".format(stats.stablefeerate))
             print("Cap:")
             stats.cap.print_cap()
+            self.assertEqual(stats.expectedwaits(44640),
+                             stats.expectedwaits(44641))
+            minwait = stats.expectedwaits.waits[-1]
+            self.assertIsNotNone(stats.expectedwaits.inv(minwait))
+            self.assertIsNone(stats.expectedwaits.inv(minwait-1))
+
+            currtime = 0
+            for feerate in [2680, 10000, 44640, 44641]:
+                txpredict = stats.predict(feerate, currtime)
+                self.assertEqual(txpredict.calc_pval(currtime+0), 1)
+                self.assertEqual(
+                    txpredict.calc_pval(currtime+float("inf")), 0)
+                for pctl in [0.05, 0.5, 0.9]:
+                    wait_idx = bisect(WAIT_PERCENTILE_PTS, pctl) - 1
+                    wait = stats.waitpercentiles[wait_idx](feerate)
+                    print("{} wait for feerate of {} is {}.".
+                          format(pctl, feerate, wait))
+                    blocktime = currtime + wait
+                    pval = txpredict.calc_pval(blocktime)
+                    self.assertAlmostEqual(pval, 1-pctl)
+
+            txpredict = stats.predict(2679, currtime)
+            self.assertIsNone(txpredict)
 
             for i in range(2):
                 while transientonline.stats.timestamp == stats.timestamp:
@@ -132,12 +155,33 @@ class TransientOnlineTests(unittest.TestCase):
 
     def test_C(self):
         # Test iter limits.
-        pass
+        MAXITERS = 5000
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=100000,
+            miniters=0,
+            maxiters=MAXITERS)
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertLess(stats.numiters, MAXITERS*1.1)
 
-
-class TransientStatPredictTests(unittest.TestCase):
-    """Testing of predict method on transient stats."""
-    pass
+        MINITERS = 5000
+        transientonline = TransientOnline(
+            PseudoMempool(),
+            PseudoPoolsOnline(poolsref),
+            PseudoTxOnline(txref),
+            update_period=0,
+            miniters=MINITERS,
+            maxiters=float("inf"))
+        with transientonline.context_start():
+            while transientonline.stats is None:
+                sleep(0.1)
+            stats = transientonline.stats
+            self.assertLess(stats.numiters, MINITERS*1.1)
 
 # #class TransientSimTests(unittest.TestCase):
 # #
