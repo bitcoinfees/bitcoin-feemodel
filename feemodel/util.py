@@ -255,6 +255,9 @@ class DataSample(object):
         else:
             raise ValueError("len(weights) must be equal to len(datapoints).")
 
+    def __len__(self):
+        return len(self.datapoints)
+
     def __repr__(self):
         # FIXME: repr breaks before self.calc_stats is run
         return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (
