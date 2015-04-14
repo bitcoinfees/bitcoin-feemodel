@@ -122,7 +122,7 @@ class SimTxSource(object):
             len(self.txsample), self.txrate)
 
     def __nonzero__(self):
-        return bool(len(self.txsample))
+        return self.txrate is not None
 
 
 cdef class TxSampleArray:

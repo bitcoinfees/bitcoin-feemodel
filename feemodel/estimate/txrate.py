@@ -7,24 +7,20 @@ from math import log
 from feemodel.util import round_random
 from feemodel.config import memblock_dbfile
 from feemodel.txmempool import MemBlock
-from feemodel.simul import SimTxSource
+from feemodel.simul.txsources import SimTxSource, SimTx
 
 default_maxsamplesize = 10000
 logger = logging.getLogger(__name__)
 
 
-class TxRateEstimator(object):
-    '''Dummy class to satisfy some imports.'''
-    pass
-
-
 class ExpEstimator(SimTxSource):
     '''Continuous rate estimation with an exponential smoother.'''
+
+    BATCH_INTERVAL = 30
 
     def __init__(self, halflife):
         '''Specify the halflife of the exponential decay, in seconds.'''
         self.halflife = halflife
-        # self._a = -log(0.5) / halflife  # The exponent coefficient
         self._alpha = 0.5**(1 / halflife)
         self._reset_params()
 
@@ -55,10 +51,10 @@ class ExpEstimator(SimTxSource):
                 prevtime = prevblock.time
                 txbatch = []
                 for entry in newentries:
-                    tx = (entry.feerate, entry.size, '')
+                    tx = SimTx(entry.feerate, entry.size)
                     txbatch.append(tx)
                     interval = entry.time - prevtime
-                    if interval > 5:
+                    if interval > self.BATCH_INTERVAL:
                         self.update_txs(txbatch, interval, is_init=True)
                         prevtime = entry.time
                         txbatch = []
@@ -86,9 +82,8 @@ class ExpEstimator(SimTxSource):
         '''
         self.totaltime += interval
         num_old_to_keep = round_random(
-            len(self._txsample)*self._alpha**interval)
-        # len(self._txsample)*self._decayfactor(interval))
-        self._txsample = sample(self._txsample, num_old_to_keep) + new_txs
+            len(self.txsample)*self._alpha**interval)
+        self.txsample = sample(self.txsample, num_old_to_keep) + new_txs
         if not is_init:
             self._calc_txrate()
 
@@ -96,35 +91,27 @@ class ExpEstimator(SimTxSource):
         '''Calculate the tx rate (arrivals per second).'''
         if self.totaltime <= 0:
             raise ValueError("Insufficient number of blocks.")
-        self.txrate = len(self._txsample) * log(self._alpha) / (
+        self.txrate = len(self.txsample) * log(self._alpha) / (
             self._alpha**self.totaltime - 1)
-        # 1 - exp(-self._a * self.totaltime))
 
     def _reset_params(self):
         '''Reset the params; at init and upon (re)starting estimation.'''
-        self._txsample = []
-        self.txrate = 0.
+        self.txsample = []
+        self.txrate = None
         self.totaltime = 0
-
-    # def _decayfactor(self, t):
-    #     '''The decay factor as a function of time in seconds.'''
-    #     return self._alpha**t
-    #     # return exp(-self._a*t)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
 
 class RectEstimator(SimTxSource):
-    def __init__(self, maxsamplesize=default_maxsamplesize,
-                 remove_conflicts=False):
+    def __init__(self, maxsamplesize=default_maxsamplesize):
         self.maxsamplesize = maxsamplesize
-        self.remove_conflicts = remove_conflicts
         self._reset_params()
 
     def _reset_params(self):
-        self._txsample = []
-        self.txrate = 0.
+        self.txsample = []
+        self.txrate = None
         self.totaltime = 0.
         self.totaltxs = 0
         self.height = 0
@@ -146,44 +133,30 @@ class RectEstimator(SimTxSource):
         if self.totaltxs < 0 or self.totaltime <= 0:
             raise ValueError("Insufficient number of blocks.")
         self.txrate = self.totaltxs / self.totaltime
-        self._txsample = [(tx[0], tx[1], '') for tx in self._txsample]
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
 
     def _addblock(self, block, prevblock):
         newtxids = set(block.entries) - set(prevblock.entries)
-        # newtxs = [SimEntry.from_mementry(txid, block.entries[txid])
-        #           for txid in newtxids]
         newtxs = [
-            (block.entries[txid].feerate, block.entries[txid].size, txid)
+            SimTx(block.entries[txid].feerate, block.entries[txid].size)
             for txid in newtxids]
         newtotaltxs = self.totaltxs + len(newtxs)
         if newtotaltxs:
             oldprop = self.totaltxs / newtotaltxs
             combinedsize = min(self.maxsamplesize,
-                               len(self._txsample)+len(newtxs))
+                               len(self.txsample)+len(newtxs))
             numkeepold = round_random(oldprop*combinedsize)
-            if numkeepold > len(self._txsample):
-                numkeepold = len(self._txsample)
+            if numkeepold > len(self.txsample):
+                numkeepold = len(self.txsample)
                 numaddnew = round_random(numkeepold/oldprop*(1-oldprop))
             elif combinedsize - numkeepold > len(newtxs):
                 numaddnew = len(newtxs)
                 numkeepold = round_random(numaddnew/(1-oldprop)*oldprop)
             else:
                 numaddnew = combinedsize - numkeepold
-            combinedsample = (sample(self._txsample, numkeepold) +
-                              sample(newtxs, numaddnew))
-        else:
-            combinedsample = self._txsample
+            self.txsample = (sample(self.txsample, numkeepold) +
+                             sample(newtxs, numaddnew))
 
         self.totaltxs = newtotaltxs
         self.totaltime += block.time - prevblock.time
-        if self.remove_conflicts:
-            conflicts = [txid for txid, entry in block.entries.items()
-                         if entry.isconflict]
-            self._txsample = filter(lambda tx: tx[2] not in conflicts,
-                                    combinedsample)
-            self.totaltxs -= len(conflicts)
-            self.totaltxs = max(self.totaltxs, 0)
-        else:
-            self._txsample = combinedsample
