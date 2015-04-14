@@ -39,7 +39,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
     if init_entries is None:
         init_entries = {}
     if not feepoints:
-        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
+        feepoints = _get_default_feepoints(sim.cap, sim.stablefeerate)
     else:
         feepoints = filter(lambda feerate: feerate >= sim.stablefeerate,
                            feepoints)
@@ -98,8 +98,7 @@ def transientsim_process(sim, init_entries, feepoints, resultqueue,
             waitvectors = []
 
 
-def _get_feepoints(cap, stablefeerate):
-    '''Choose suitable feerates at which to evaluate stats.'''
+def _get_default_feepoints(cap, stablefeerate):
     NUMPOINTS = 20
     cap_ratio_targets = [i/NUMPOINTS*cap_ratio_thresh
                          for i in range(1, NUMPOINTS+1)]
