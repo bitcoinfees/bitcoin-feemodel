@@ -4,7 +4,7 @@ import logging
 import threading
 import os
 from time import time
-from copy import deepcopy, copy
+from copy import copy
 from feemodel.config import datadir, memblock_dbfile, DIFF_RETARGET_INTERVAL
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import MemBlock
@@ -85,6 +85,34 @@ class PoolsOnlineEstimator(object):
         # operations on the object.
         return self.poolsestimate
 
+    def get_stats(self):
+        est = self.poolsestimate
+        if not est:
+            return None
+        totalhashrate = est.calc_totalhashrate()
+        stats = {
+            'timestamp': est.timestamp,
+            'blockinterval': 1/est.blockrate,
+            'totalhashrate': totalhashrate
+        }
+        poolstats = {
+            name: {
+                'hashrate': pool.hashrate,
+                'proportion': pool.hashrate / totalhashrate,
+                'maxblocksize': pool.maxblocksize,
+                'minfeerate': pool.minfeerate,
+                'abovekn': pool.mfrstats['abovekn'],
+                'belowkn': pool.mfrstats['belowkn'],
+                'mean': pool.mfrstats['mean'],
+                'std': pool.mfrstats['std'],
+                'bias': pool.mfrstats['bias']
+            }
+            for name, pool in est.pools.items()
+        }
+        stats.update({'pools': poolstats})
+        stats.update({'next_update': self.next_update})
+        return stats
+
     def _update_pools(self, currheight, stopflag):
         with self.lock:
             rangetuple = [currheight-self.window+1, currheight+1]
@@ -93,12 +121,17 @@ class PoolsOnlineEstimator(object):
             if len(have_heights) >= self.minblocks:
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
-                # Only try once every hour, when there aren't enough blocks
-                self.next_update = time() + 3600
+                block_shortfall = self.minblocks - len(have_heights)
+                retry_interval = block_shortfall*600
+                logger.info("Only {} blocks out of required {}, "
+                            "trying again in {}m.".
+                            format(len(have_heights), self.minblocks,
+                                   retry_interval/60))
+                self.next_update = time() + retry_interval
                 return
             self.next_update = time() + self.update_period
             # TODO: verify that we only need copy for this.
-            poolsestimate = deepcopy(self.poolsestimate)
+            poolsestimate = copy(self.poolsestimate)
             try:
                 poolsestimate.start(
                     rangetuple, stopflag=stopflag, dbfile=self.dbfile)

@@ -75,7 +75,7 @@ class TxMempool(StoppableThread):
 
     WORKER_STOP = 'stop'  # Sentinel value for stopping block worker thread
 
-    def __init__(self, dbfile=None, blocks_to_keep=blocks_to_keep):
+    def __init__(self, dbfile=memblock_dbfile, blocks_to_keep=blocks_to_keep):
         self.state = None
         self.blockqueue = Queue()
         self.dbfile = dbfile
@@ -191,7 +191,7 @@ class TxMempool(StoppableThread):
         # return status
 
     def __nonzero__(self):
-        return self.rawmempool is not None
+        return self.state is not None
 
 
 class MempoolState(object):

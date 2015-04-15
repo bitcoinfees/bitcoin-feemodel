@@ -46,6 +46,7 @@ class PoolsOnlineTests(unittest.TestCase):
         self.assertIsNone(t2)
         t.join()
         poolsonline.get_pools().print_pools()
+        print(poolsonline.get_stats())
         self.assertEqual(min(poolsonline.get_pools().blockmap.keys()),
                          333931)
         t2 = poolsonline.update_async(333953)

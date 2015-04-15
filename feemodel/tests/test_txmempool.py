@@ -98,7 +98,7 @@ class ProcessBlocksTest(unittest.TestCase):
             entry.isconflict = False
         self.testrawmempool = rawmempool_from_mementries(
             self.memblockref.entries)
-        self.mempool = TxMempool()
+        self.mempool = TxMempool(dbfile=None)
 
     def test_process_blocks(self):
         prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)

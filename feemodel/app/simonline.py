@@ -5,9 +5,10 @@ import logging
 import threading
 
 from feemodel.txmempool import TxMempool
-from feemodel.config import datadir
+from feemodel.config import datadir, memblock_dbfile
 from feemodel.util import load_obj, save_obj
-from feemodel.app.pools import PoolsOnlineEstimator
+from feemodel.app.pools import (PoolsOnlineEstimator,
+                                default_savedir as pools_savedir)
 from feemodel.app.txrate import TxRateOnlineEstimator
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import Prediction, pvals_dbfile
@@ -30,17 +31,21 @@ predict_block_halflife = 1008
 
 class SimOnline(TxMempool):
 
-    def __init__(self, predict_savefile=predict_savefile):
-        super(SimOnline, self).__init__()
+    def __init__(self):
+        super(SimOnline, self).__init__(dbfile=memblock_dbfile)
         self.predict_lock = threading.Lock()
         self.predict_savefile = predict_savefile
+        self.pvals_dbfile = pvals_dbfile
         self.load_predicts()
 
         self.poolsonline = PoolsOnlineEstimator(
             pools_window,
             update_period=pools_update_period,
-            minblocks=pools_minblocks)
-        self.txonline = TxRateOnlineEstimator(halflife=txrate_halflife)
+            minblocks=pools_minblocks,
+            dbfile=memblock_dbfile,
+            savedir=pools_savedir)
+        self.txonline = TxRateOnlineEstimator(halflife=txrate_halflife,
+                                              dbfile=memblock_dbfile)
         self.transient = TransientOnline(
             self,
             self.poolsonline,
@@ -54,28 +59,34 @@ class SimOnline(TxMempool):
             super(SimOnline, self).run()
 
     def update(self):
-        super(SimOnline, self).update()
-        entries, currheight = self.get_entries()
+        state = super(SimOnline, self).update()
+        entries = state.get_entries()
         self.poolsonline.update_async(
-            currheight, stopflag=self.get_stop_object())
-        threading.Thread(
-            target=self.update_predicts,
-            args=(entries,)).start()
+            state.height, stopflag=self.get_stop_object())
+        threading.Thread(target=self.update_predicts,
+                         args=(entries,)).start()
+        self.txonline.update(entries, state.height)
 
     def process_blocks(self, *args):
         memblocks = super(SimOnline, self).process_blocks(*args)
         with self.predict_lock:
-            self.prediction.process_blocks(memblocks, dbfile=pvals_dbfile)
+            self.prediction.process_blocks(memblocks, dbfile=self.pvals_dbfile)
             self.save_predicts()
 
     def get_predictstats(self):
         return self.prediction.get_stats()
 
     def get_transientstats(self):
-        return self.transient.stats.get_stats()
+        stats = self.transient.stats
+        if stats is None:
+            return None
+        return stats.get_stats()
 
     def get_poolstats(self):
-        pass
+        return self.poolsonline.get_stats()
+
+    def get_txstats(self):
+        return self.txonline.get_stats()
 
     def update_predicts(self, entries):
         with self.predict_lock:

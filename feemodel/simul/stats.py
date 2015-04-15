@@ -88,15 +88,25 @@ class Capacity(object):
         # Because we ensure in init that min(self.cap_ratios) = 0
         raise AssertionError("This is not supposed to happen.")
 
-    def print_cap(self, num_points=20):
+    def get_stats(self, numpoints=20):
         cap_idxs = [
-            self.cap_ratio_index(i/num_points) for i in range(1, num_points+1)]
+            self.cap_ratio_index(i/numpoints) for i in range(1, numpoints+1)]
         cap_idxs = sorted(set(cap_idxs))
+        stats = {
+            'feerates': [self.feerates[idx] for idx in cap_idxs],
+            'txbyterates': [self.txbyterates[idx] for idx in cap_idxs],
+            'caps': [self.caps[idx] for idx in cap_idxs],
+            'maxcap': self.caps[-1]
+        }
+        return stats
+
+    def print_cap(self, numpoints=20):
+        stats = self.get_stats(numpoints)
         headers = ["Feerate", "TxByterate", "Cap"]
         table = zip(
-            [self.feerates[idx] for idx in cap_idxs],
-            [self.txbyterates[idx] for idx in cap_idxs],
-            [self.caps[idx] for idx in cap_idxs]
+            stats['feerates'],
+            stats['txbyterates'],
+            stats['caps']
         )
         print(tabulate(table, headers=headers))
 

@@ -24,16 +24,24 @@ class TxRateOnlineEstimator(object):
         self.prevtime = None
 
     def update(self, curr_entries, currheight):
+        # TODO: use MempoolState for this?
         currtime = time()
         txrate_estimator = copy(self.txrate_estimator)
-        if txrate_estimator.totaltime == 0:
+        if self.prevtime is None:
             # Estimate not yet initialized.
-            bestheight, besttime, bestblocktxids = txrate_estimator.start(
-                currheight, dbfile=self.dbfile)
-            if bestheight == currheight:
-                logger.info("bestheight matches currheight.")
-                self.prevtxids = bestblocktxids
-                self.prevtime = besttime
+            try:
+                bestheight, besttime, bestblocktxids = txrate_estimator.start(
+                    currheight, dbfile=self.dbfile)
+            except ValueError:
+                # There are no memblocks
+                self.prevtxids = set(curr_entries)
+                self.prevtime = currtime
+                return
+            else:
+                if bestheight == currheight:
+                    logger.info("bestheight matches currheight.")
+                    self.prevtxids = bestblocktxids
+                    self.prevtime = besttime
         curr_txids = set(curr_entries)
         if self.prevtime:
             new_txids = curr_txids - self.prevtxids
@@ -47,6 +55,22 @@ class TxRateOnlineEstimator(object):
 
     def get_txsource(self):
         return self.txrate_estimator
+
+    def get_stats(self):
+        est = self.txrate_estimator
+        if not est:
+            return None
+        meanbyterate, meanstd = est.calc_mean_byterate()
+        stats = {
+            "halflife": est.halflife,
+            "numsamples": len(est.txsample),
+            "txrate": est.txrate,
+            "byterate": {
+                "mean": meanbyterate,
+                "mean_std": meanstd
+            }
+        }
+        return stats
 
     def __nonzero__(self):
         return bool(self.txrate_estimator)

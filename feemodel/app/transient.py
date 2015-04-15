@@ -192,13 +192,14 @@ class TransientStats(object):
             'timestamp': self.timestamp,
             'timespent': self.timespent,
             'numiters': self.numiters,
-            'cap': self.cap.__dict__,
+            'cap': self.cap.get_stats(),
             'stablefeerate': self.stablefeerate,
             'feerates': self.feerates,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
             'waitpercentiles': [w.waits for w in self.waitpercentiles],
-            'mempoolsize': self.mempoolsize
+            'mempoolsize': self.mempoolsize,
+            'mempoolsize_with_fee': self.mempoolsize_with_fee
         }
         return stats
 

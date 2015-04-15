@@ -237,28 +237,3 @@ class PoolsEstimator(SimPools):
         print(tabulate(table, headers=headers))
         print("Avg block interval is %.2f" % (1./self.blockrate,))
         print("Total hashrate is {} Thps.".format(totalhashrate*1e-12))
-
-    def get_stats(self):
-        if not self:
-            return None
-        totalhashrate = self.calc_totalhashrate()
-        basestats = {
-            'timestamp': self.timestamp,
-            'blockinterval': 1/self.blockrate,
-        }
-        poolstats = {
-            name: {
-                'hashrate': pool.hashrate,
-                'proportion': pool.hashrate / totalhashrate,
-                'maxblocksize': pool.maxblocksize,
-                'minfeerate': pool.minfeerate,
-                'abovekn': pool.mfrstats['abovekn'],
-                'belowkn': pool.mfrstats['belowkn'],
-                'mean': pool.mfrstats['mean'],
-                'std': pool.mfrstats['std'],
-                'bias': pool.mfrstats['bias']
-            }
-            for name, pool in self.pools.items()
-        }
-        basestats.update({'pools': poolstats})
-        return basestats

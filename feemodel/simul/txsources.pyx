@@ -67,8 +67,8 @@ class SimTxSource(object):
 
     def get_byterates(self, feerates=None):
         '''Get reverse cumulative byterate as a function of feerate.'''
-        if not self.txsample:
-            raise ValueError("No txs.")
+        if self.txrate and not self.txsample:
+            raise ValueError("Non-zero txrate with empty txsample.")
         n = len(self.txsample)
 
         def feerate_keyfn(simtx):
@@ -82,7 +82,11 @@ class SimTxSource(object):
         _byterates = list(cumsum_gen(
             groupby(self.txsample, feerate_keyfn), mapfn=byterate_groupsum))
         _byterates.reverse()
-        if _feerates[0] != 0:
+
+        if not _feerates:
+            _feerates = [0]
+            _byterates = [0.]
+        elif _feerates[0] != 0:
             _feerates.insert(0, 0)
             _byterates.insert(0, _byterates[0])
 
@@ -104,6 +108,11 @@ class SimTxSource(object):
         Returns the mean byterate with its standard error, computed using a
         normal approximation.
         '''
+        if not self.txsample:
+            if self.txrate:
+                raise ValueError("Non-zero txrate with empty txsample.")
+            return 0, 0
+
         d = DataSample([tx.size*self.txrate for tx in self.txsample])
         d.calc_stats()
         return d.mean, d.std / len(self.txsample)**0.5

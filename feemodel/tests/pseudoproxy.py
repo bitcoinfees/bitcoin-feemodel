@@ -1,7 +1,6 @@
 '''A pseudo proxy for testing purposes.'''
 
 from bitcoin.core import CBlock
-from bitcoin.rpc import JSONRPCException
 
 import feemodel.util
 from feemodel.util import load_obj
@@ -20,13 +19,13 @@ class PseudoProxy(object):
     by getblockcount or getrawmempool respectively (or equivalently,
     by poll_mempool).
 
-    set on = False to simulate a connection error - raises JSONRPCException
+    set on = False to simulate a connection error - raises Exception
     on all method calls.
     '''
 
     def __init__(self):
-        self.blockcount = None
-        self.rawmempool = None
+        self.blockcount = 0
+        self.rawmempool = {}
         self.on = True
         self._blockhashes, blocks_ser = load_obj(blockdata)
         self._blocks = {}
@@ -35,27 +34,27 @@ class PseudoProxy(object):
 
     def getblockhash(self, blockheight):
         if not self.on:
-            raise JSONRPCException
+            raise Exception
         return self._blockhashes[blockheight]
 
     def getblock(self, blockhash):
         if not self.on:
-            raise JSONRPCException
+            raise Exception
         return self._blocks[blockhash]
 
     def getrawmempool(self, verbose=True):
         if not self.on:
-            raise JSONRPCException
+            raise Exception
         return self.rawmempool
 
     def getblockcount(self):
         if not self.on:
-            raise JSONRPCException
+            raise Exception
         return self.blockcount
 
     def poll_mempool(self):
         if not self.on:
-            raise JSONRPCException
+            raise Exception
         return self.blockcount, self.rawmempool
 
     def set_rawmempool(self, height):
