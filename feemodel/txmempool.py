@@ -297,6 +297,8 @@ class MemBlock(object):
                            (key, ','.join(val)))
             db.execute('CREATE INDEX IF NOT EXISTS heightidx '
                        'ON txs (blockheight)')
+            db.execute('CREATE INDEX IF NOT EXISTS blocks_heightidx '
+                       'ON blocks (height)')
             with db_lock:
                 with db:
                     db.execute('INSERT INTO blocks VALUES (?,?,?)',
@@ -335,25 +337,20 @@ class MemBlock(object):
                                    (blockheight,)).fetchall()
                 txlist = db.execute('SELECT * FROM txs WHERE blockheight=?',
                                     (blockheight,)).fetchall()
-        except sqlite3.OperationalError as e:
-            if e.message.startswith('no such table'):
-                return None
-            raise e
-        else:
-            if block:
-                blocksize, blocktime = block[0]
-            else:
-                return None
-            memblock = cls()
-            memblock.height = blockheight
-            memblock.size = blocksize
-            memblock.time = blocktime
-            memblock.entries = {
-                tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
-            return memblock
         finally:
             if db is not None:
                 db.close()
+        if block:
+            blocksize, blocktime = block[0]
+        else:
+            return None
+        memblock = cls()
+        memblock.height = blockheight
+        memblock.size = blocksize
+        memblock.time = blocktime
+        memblock.entries = {
+            tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
+        return memblock
 
     @staticmethod
     def get_heights(blockrangetuple=None, dbfile=memblock_dbfile):
@@ -374,14 +371,10 @@ class MemBlock(object):
                     'SELECT height FROM blocks '
                     'where height>=? and height <?',
                     blockrangetuple).fetchall()
-            return [r[0] for r in heights]
-        except sqlite3.OperationalError as e:
-            if e.message.startswith('no such table'):
-                return []
-            raise e
         finally:
             if db is not None:
                 db.close()
+        return [r[0] for r in heights]
 
     def __repr__(self):
         return "MemBlock{height: %d, size: %d, num entries: %d}" % (
