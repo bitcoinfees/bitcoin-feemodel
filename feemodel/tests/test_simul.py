@@ -117,8 +117,6 @@ class TxSourceTests(unittest.TestCase):
             0, 500*ref_txrate/3., 640*ref_txrate/3., 250*ref_txrate/3.]
         self.ref_byterates = list(cumsum_gen(reversed(byterates_binned)))
         self.ref_byterates.reverse()
-        # self.ref_byterates = [sum(byterates_binned[idx:])
-        #                      for idx in range(len(byterates_binned))]
 
     def test_print_rates(self):
         self.tx_source.print_rates()
@@ -146,7 +144,7 @@ class TxSourceTests(unittest.TestCase):
         # Compare the tx rate.
         txrate = len(simtxs) / t
         diff = abs(txrate - ref_txrate)
-        self.assertLess(diff, 0.01)
+        self.assertLess(diff, 0.0124)
 
         # Check that byterates match.
         derivedsource = SimTxSource(simtxs, txrate)
@@ -273,23 +271,26 @@ class BasicSimTests(unittest.TestCase):
         self.sim.cap.print_cap()
 
     def test_degenerate_pools(self):
-        pass
-        # self.ref_pools = {'pool0': SimPool(1, 0, float("inf")),
-        #                   'pool1': SimPool(1, 0, 0)}
-        # # TODO: fix outdated stablefeerate calcs
-        # # Raises ValueError because not enough capacity.
-        # # self.assertRaises(ValueError, Simul, SimPools(self.ref_pools),
-        # #                   self.tx_source)
-        # self.ref_pools.update({'pool2': SimPool(3, 1000000, 1000)})
-        # self.sim = Simul(SimPools(self.ref_pools), self.tx_source)
-        # print("Degenerate pools:")
-        # print("Height\tNumtxs\tSize\tSFR")
-        # for simblock in self.sim.run():
-        #     if simblock.height >= 50:
-        #         break
-        #     print("%d\t%d\t%d\t%.0f" % (simblock.height, len(simblock.txs),
-        #                                 simblock.size, simblock.sfr))
-        # self.sim.cap.print_cap()
+        degen_pools = {'pool0': SimPool(1, 0, float("inf")),
+                       'pool1': SimPool(1, 0, 0)}
+        with self.assertRaises(ValueError):
+            # No capacity.
+            Simul(SimPools(degen_pools), self.tx_source)
+
+        degen_pools.update({'pool2': SimPool(3, 1000000, 1000)})
+        self.sim = Simul(SimPools(degen_pools), self.tx_source)
+
+        print("Degenerate pools:")
+        print("Height\tNumtxs\tSize\tSFR\tMPsize")
+        for idx, simblock in enumerate(self.sim.run()):
+            if idx >= 50:
+                break
+            mempoolsize = sum([entry.size for entry in
+                               self.sim.mempool.get_entries().values()])
+            print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
+                                            simblock.size, simblock.sfr,
+                                            mempoolsize))
+        self.sim.cap.print_cap()
 
 
 class CustomMempoolTests(unittest.TestCase):
@@ -357,8 +358,6 @@ class CustomMempoolTests(unittest.TestCase):
             str(i): SimEntry(10500-i, 2000, depends=[str(i+1)])
             for i in range(1000)
         }
-        # init_mempool = [SimEntry(str(i), SimTx(10500-i, 2000), [str(i+1)])
-        #                 for i in range(1000)]
         with self.assertRaises(ValueError):
             # Hanging dependency
             for simblock in self.sim.run(init_entries=init_entries):

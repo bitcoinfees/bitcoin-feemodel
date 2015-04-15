@@ -17,6 +17,7 @@ from tabulate import tabulate
 from feemodel.util import DataSample, cumsum_gen
 
 DEF OVERALLOCATE = 2  # This better be > 1.
+# TODO: investigate the behaviour of this when multiprocessing.
 srand(time(NULL))
 
 DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)

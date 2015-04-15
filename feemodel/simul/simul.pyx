@@ -32,15 +32,14 @@ cdef class Simul:
     def __init__(self, pools, txsource):
         self.pools = pools
         self.txsource = txsource
-        # TODO: check edge conditions for feerates
         self.cap = Capacity(pools, txsource)
-        # TODO: use all the tx points to calc stablefeerate
         self.stablefeerate = self.cap.calc_stablefeerate(cap_ratio_thresh)
-        if self.stablefeerate is None:
-            raise ValueError("The queue is not stable - arrivals exceed "
-                             "processing for all feerates.")
         self.mempool = None
+        self.tx_emitter = None
         self.simtime = 0.
+
+        if self.cap.caps[-1] == 0:
+            raise ValueError("Zero pools capacity.")
 
     def run(self, init_entries=None):
         if init_entries is None:
