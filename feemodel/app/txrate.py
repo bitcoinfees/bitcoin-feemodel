@@ -5,8 +5,10 @@ from __future__ import division
 import logging
 from copy import copy
 from time import time
+
 from feemodel.estimate import ExpEstimator
 from feemodel.config import memblock_dbfile
+from feemodel.simul.txsources import SimTx
 
 default_halflife = 3600  # 1 hour
 
@@ -36,7 +38,7 @@ class TxRateOnlineEstimator(object):
         if self.prevtime:
             new_txids = curr_txids - self.prevtxids
             new_txs = [
-                (curr_entries[txid].feerate, curr_entries[txid].size, '')
+                SimTx(curr_entries[txid].feerate, curr_entries[txid].size)
                 for txid in new_txids]
             txrate_estimator.update_txs(new_txs, currtime - self.prevtime)
         self.prevtime = currtime
