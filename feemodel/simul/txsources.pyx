@@ -8,7 +8,7 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
 from feemodel.simul.simul cimport SimMempool
 
 from math import sqrt, cos, exp, log, pi
-from random import random, normalvariate
+from random import random, normalvariate, getrandbits
 from bisect import bisect, bisect_left
 from itertools import groupby
 
@@ -17,8 +17,6 @@ from tabulate import tabulate
 from feemodel.util import DataSample, cumsum_gen
 
 DEF OVERALLOCATE = 2  # This better be > 1.
-# TODO: investigate the behaviour of this when multiprocessing.
-srand(time(NULL))
 
 DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)
 
@@ -50,6 +48,8 @@ class SimTxSource(object):
                                self.txrate)
         else:
             filtered_txrate = 0
+
+        srand(getrandbits(8*sizeof(unsigned int)))
 
         def tx_emitter(time_interval):
             """Emit new txs into mempool.

@@ -73,6 +73,8 @@ class RectEstimatorTest(unittest.TestCase):
         tr = RectEstimator(maxsamplesize=10000)
         tr.start(blockrange, dbfile=dbfile)
         print(tr)
+        uniquetxs = set([(tx.feerate, tx.size) for tx in tr.txsample])
+        print("unique ratio is {}".format(len(uniquetxs) / len(tr.txsample)))
         tr.print_rates()
 
     def test_limit_sample(self):
@@ -97,7 +99,8 @@ class ExpEstimatorTest(unittest.TestCase):
         tr = ExpEstimator(3600)
         tr.start(blockrange[1]-1, dbfile=dbfile)
         print(tr)
-        print("len(txsample) is %d" % len(tr.txsample))
+        uniquetxs = set([(tx.feerate, tx.size) for tx in tr.txsample])
+        print("unique ratio is {}".format(len(uniquetxs) / len(tr.txsample)))
         tr.print_rates()
 
     def test_stop(self):

@@ -12,6 +12,7 @@ import feemodel.simul.transient
 from feemodel.simul.transient import transientsim
 from feemodel.simul.simul import Simul
 from feemodel.txmempool import MempoolState
+from feemodel.util import DataSample
 from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
 from feemodel.tests.config import (poolsref, txref,
@@ -48,7 +49,43 @@ class TransientRefCmp(unittest.TestCase):
         for avgwait, avgwaitref in zip(avgwaittimes, waitsref[1]):
             logdiff = abs(log(avgwait) - log(avgwaitref))
             print("avgwait/avgwaitref is {}.".format(avgwait/avgwaitref))
+            # Probabilistic test
             self.assertLess(logdiff, 0.1)
+
+
+class TransientSamplingDist(unittest.TestCase):
+    """Test the sampling distribution of the transient waittimes.
+
+    We want to see if the sampling distribution of the mean waittime is as
+    predicted.
+    """
+    def test_mean(self):
+        sim = Simul(poolsref, txref)
+        feepoints = [10000]
+
+        means = []
+        stds = []
+        for i in range(100):
+            feerates, waittimes, elapsedtime, numiters = transientsim(
+                sim,
+                feepoints=feepoints,
+                maxiters=400,
+                miniters=400
+            )
+            w = waittimes[0]
+            waitdata = DataSample(w)
+            waitdata.calc_stats()
+            means.append(waitdata.mean)
+            stds.append(waitdata.std / len(waitdata)**0.5)
+            if not i % 10:
+                print("Finished iteration {}".format(i))
+
+        estd = sum(stds) / len(stds)
+        meandata = DataSample(means)
+        meandata.calc_stats()
+        print("Expected/actual std: {}/{}".format(estd, meandata.std))
+        # Probabilistic test
+        self.assertLess(abs(log(estd)-log(meandata.std)), 0.2)
 
 
 class TransientOnlineTests(unittest.TestCase):
@@ -182,6 +219,43 @@ class TransientOnlineTests(unittest.TestCase):
             stats = transientonline.stats
             self.assertLess(stats.numiters, MINITERS*1.1)
 
+
+class PseudoMempool(object):
+    '''A pseudo TxMempool'''
+
+    def __init__(self):
+        proxy.set_rawmempool(333931)
+        proxy.blockcount = 333930
+        self.state = MempoolState(*proxy.poll_mempool())
+
+
+class PseudoPoolsOnline(object):
+
+    def __init__(self, poolsestimate):
+        self.poolsestimate = poolsestimate
+
+    def get_pools(self):
+        return self.poolsestimate
+
+    def __nonzero__(self):
+        return bool(self.poolsestimate)
+
+
+class PseudoTxOnline(object):
+
+    def __init__(self, txrate_estimator):
+        self.txrate_estimator = txrate_estimator
+
+    def get_txsource(self):
+        return self.txrate_estimator
+
+    def __nonzero__(self):
+        return bool(self.txrate_estimator)
+
+
+if __name__ == '__main__':
+    unittest.main()
+
 # #class TransientSimTests(unittest.TestCase):
 # #
 # #    def test_A(self):
@@ -297,40 +371,3 @@ class TransientOnlineTests(unittest.TestCase):
 # #            stats = transientonline.stats
 # #            print("Expected wait:")
 # #            stats.expectedwaits.print_fn()
-
-
-class PseudoMempool(object):
-    '''A pseudo TxMempool'''
-
-    def __init__(self):
-        proxy.set_rawmempool(333931)
-        proxy.blockcount = 333930
-        self.state = MempoolState(*proxy.poll_mempool())
-
-
-class PseudoPoolsOnline(object):
-
-    def __init__(self, poolsestimate):
-        self.poolsestimate = poolsestimate
-
-    def get_pools(self):
-        return self.poolsestimate
-
-    def __nonzero__(self):
-        return bool(self.poolsestimate)
-
-
-class PseudoTxOnline(object):
-
-    def __init__(self, txrate_estimator):
-        self.txrate_estimator = txrate_estimator
-
-    def get_txsource(self):
-        return self.txrate_estimator
-
-    def __nonzero__(self):
-        return bool(self.txrate_estimator)
-
-
-if __name__ == '__main__':
-    unittest.main()

@@ -2,8 +2,9 @@ from __future__ import division
 
 import unittest
 import threading
+import multiprocessing
 from collections import Counter
-from copy import deepcopy
+from copy import deepcopy, copy
 from random import seed
 from pprint import pprint
 
@@ -15,6 +16,7 @@ from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.simul.simul import SimMempool
 from feemodel.simul.transient import transientsim_core, transientsim
 from feemodel.util import cumsum_gen
+from feemodel.tests.config import txref
 
 seed(0)
 
@@ -227,6 +229,40 @@ class TxSourceTests(unittest.TestCase):
         tx_emitter = self.tx_source.get_emitter(mempool)
         tx_emitter(600)
         self.assertEqual(len(mempool.get_entries()), 0)
+
+    def test_randomness(self):
+        # Test that txsource does not generate identical txs when doing
+        # multiprocessing.
+        numtxs = 10
+        txsource = copy(txref)
+        # With the standard txref, unique txs is ~ 500 txs
+        uniquetxs = set([(tx.feerate, tx.size) for tx in txref.txsample])
+        txsource.txsample = [SimTx(*tx) for tx in uniquetxs]
+
+        def target(conn):
+            mempool = SimMempool({})
+            tx_emitter = txsource.get_emitter(mempool)
+            while len(mempool.get_entries()) < numtxs:
+                tx_emitter(1)
+            txs = [(entry.feerate, entry.size)
+                   for entry in mempool.get_entries().values()]
+            conn.send(txs)
+
+        parent0, child0 = multiprocessing.Pipe()
+        parent1, child1 = multiprocessing.Pipe()
+        process0 = multiprocessing.Process(target=target, args=(child0,))
+        process1 = multiprocessing.Process(target=target, args=(child1,))
+        process0.start()
+        process1.start()
+
+        txs0 = set(parent0.recv())
+        txs1 = set(parent1.recv())
+        intersectsize = len(txs0 & txs1)
+        print("len of intersection is {}.".format(intersectsize))
+        # Probabilistic test
+        self.assertLess(intersectsize, 2)
+        process0.join()
+        process1.join()
 
 
 class BasicSimTests(unittest.TestCase):
