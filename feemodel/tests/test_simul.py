@@ -5,7 +5,7 @@ import threading
 import multiprocessing
 from collections import Counter
 from copy import deepcopy, copy
-from random import seed
+from random import seed, expovariate
 from pprint import pprint
 
 from feemodel.txmempool import MemBlock
@@ -136,17 +136,24 @@ class TxSourceTests(unittest.TestCase):
             self.assertAlmostEqual(test, target)
 
     def test_emitter(self):
-        t = 10000.
+        # Test that the long-run average byterates of emitted txs
+        # are close to the expected values.
         mempool = SimMempool({})
         tx_emitter = self.tx_source.get_emitter(mempool, feeratethresh=2000)
-        # Emit txs over an interval of t seconds.
-        tx_emitter(t)
+
+        t = 0
+        maxtime = 10000.
+        while t < maxtime:
+            # Use a mean interval of 10 min
+            interval = expovariate(1/600)
+            tx_emitter(interval)
+            t += interval
         simtxs = mempool.get_entries().values()
 
         # Compare the tx rate.
         txrate = len(simtxs) / t
         diff = abs(txrate - ref_txrate)
-        self.assertLess(diff, 0.0124)
+        self.assertLess(diff, 0.02)
 
         # Check that byterates match.
         derivedsource = SimTxSource(simtxs, txrate)
