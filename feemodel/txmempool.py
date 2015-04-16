@@ -7,7 +7,7 @@ import decimal
 import logging
 from Queue import Queue
 from time import time
-from copy import deepcopy
+from copy import copy
 
 from bitcoin.core import b2lx
 
@@ -85,15 +85,15 @@ class TxMempool(StoppableThread):
 
     @StoppableThread.auto_restart(60)
     def run(self):
-        '''Target function of the thread.
+        """Target function of the thread.
 
-        Polls mempool every poll_period seconds until stop flag is set.
-        '''
+        Updates mempool every poll_period seconds.
+        """
         logger.info("Starting TxMempool")
         self.blockworker = threading.Thread(target=self.blockworker_target)
         self.blockworker.start()
         try:
-            self.state = MempoolState(*proxy.poll_mempool())
+            self.state = get_mempool_state()
             while not self.is_stopped():
                 self.update()
                 self.sleep(poll_period)
@@ -104,16 +104,19 @@ class TxMempool(StoppableThread):
             logger.info("TxMempool stopped.")
 
     def update(self):
-        '''Mempool polling function.'''
-        newstate = MempoolState(*proxy.poll_mempool())
+        """Update the mempool state.
+
+        If block height has increased, call self.process_blocks through
+        blockworker thread.
+        """
+        newstate = get_mempool_state()
         if newstate.height > self.state.height:
-            self.blockqueue.put(
-                (self.state, newstate, int(time())))
+            self.blockqueue.put((self.state, newstate))
         self.state = newstate
         return newstate
 
     def blockworker_target(self):
-        '''Target function for a worker thread that processes new memblocks.'''
+        """Target function for blockworker thread."""
         while True:
             args = self.blockqueue.get()
             if args == self.WORKER_STOP:
@@ -121,33 +124,25 @@ class TxMempool(StoppableThread):
             self.process_blocks(*args)
         logger.info("Block worker received stop sentinel; thread complete.")
 
-    def process_blocks(self, prevstate, newstate, blocktime):
-        '''Called when block count has increased.
-
-        Records the mempool entries in a MemBlock instance and writes to disk.
-        entries is a dict that maps txids to MemEntry objects.
-        new_entries_ids is the set of txids in the mempool immediately after
-        the block(s).
-        '''
+    def process_blocks(self, prevstate, newstate):
+        """Record the mempool state in a MemBlock."""
+        # Make a copy because we are going to mutate it
+        prevstate = copy(prevstate)
         memblocks = []
-        prev_entries = prevstate.get_entries()
-        for height in range(prevstate.height+1, newstate.height+1):
-            block = proxy.getblock(proxy.getblockhash(height))
+        while prevstate.height < newstate.height:
             memblock = MemBlock()
-            memblock.record_block(height, blocktime, block, prev_entries)
+            memblock.record_block(prevstate)
             memblocks.append(memblock)
 
         # The set of transactions that were removed from the mempool, yet
         # were not included in a block.
-        newstate_txids = set(newstate.rawmempool)
-        conflicts = set(prev_entries) - newstate_txids
-        conflicts_size = 0
+        conflicts = (prevstate - newstate).entries
+        conflicts_size = sum([entry.size for entry in conflicts.values()])
         for txid in conflicts:
             # For the first block, label the MemBlock entries that are
             # conflicts. Assume the conflict was removed after the first
             # block, so remove them from the remaining blocks.
             memblocks[0].entries[txid].isconflict = True
-            conflicts_size += memblocks[0].entries[txid].size
             for memblock in memblocks[1:]:
                 del memblock.entries[txid]
         if len(conflicts):
@@ -195,73 +190,77 @@ class TxMempool(StoppableThread):
 
 
 class MempoolState(object):
-    '''Current block height + rawmempool.
+    """Mempool state.
 
-    Updated every poll_period by TxMempool thread.
-    '''
+    Comprised of:
+        height - the block height
+        entries - dictionary of mempool entries
+        time - time in seconds
+    """
 
     def __init__(self, height, rawmempool):
         self.height = height
-        self.rawmempool = rawmempool
+        self.entries = {txid: MemEntry.from_rawentry(rawentry)
+                        for txid, rawentry in rawmempool.iteritems()}
+        self.time = time()
 
-    def get_entries(self):
-        entries = {txid: MemEntry.from_rawentry(rawentry)
-                   for txid, rawentry in self.rawmempool.iteritems()}
-        return entries
+    def __copy__(self):
+        cpy = MempoolState(self.height, {})
+        cpy.entries = {txid: copy(entry)
+                       for txid, entry in self.entries.iteritems()}
+        cpy.time = self.time
+        return cpy
 
-    def __nonzero__(self):
-        return bool(self.height)
+    def __sub__(self, other):
+        result = MempoolState(self.height - other.height, {})
+        result.time = self.time - other.time
+        result.entries = {
+            txid: self.entries[txid]
+            for txid in set(self.entries) - set(other.entries)
+        }
+        return result
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
-class MemBlock(object):
-    '''Represents the mempool state at the time a block was discovered.
-
-    Instance vars:
-        entries - {txid: entry} dict of mempool entries just prior to block
-                  discovery time. entry is a MemEntry object.
-        height - The block height
-        size - The block size in bytes
-        time - The block discovery time as recorded by this node
-               (not the block timestamp).
-
-    Methods:
-        write - Write to disk.
-        read - Read from disk.
-        get_heights - Get the list of heights of stored blocks.
-    '''
+class MemBlock(MempoolState):
+    '''The mempool state at the time a block was discovered.'''
 
     def __init__(self):
+        # The attributes inherited from MempoolState
         self.height = None
-        self.size = None
-        self.time = None
         self.entries = None
+        self.time = None
 
-    def record_block(self, blockheight, blocktime, block, entries):
-        '''Label the mempool entries based on the block data.
+        # MemBlock specific attributes
+        self.blockheight = None
+        self.blocksize = None
 
-        We record various block statistics, and for each MemEntry we label
-        inblock and leadtime. See MemEntry for more info.
-        '''
-        # TODO: add warning if measured time differs greatly from timestamp
-        self.height = blockheight
-        self.size = len(block.serialize())
-        self.time = blocktime
-        self.entries = deepcopy(entries)
+    def record_block(self, state):
+        self.height = state.height
+        self.entries = {txid: copy(entry)
+                        for txid, entry in state.entries.iteritems()}
+        self.time = state.time
         for entry in self.entries.values():
             entry.inblock = False
             entry.isconflict = False
             entry.leadtime = self.time - entry.time
 
+        self.blockheight = state.height + 1
+        block = proxy.getblock(proxy.getblockhash(self.blockheight))
+        self.blocksize = len(block.serialize())
+
         blocktxids = [b2lx(tx.GetHash()) for tx in block.vtx]
-        entries_inblock = set(entries) & set(blocktxids)
+        entries_inblock = set(self.entries) & set(blocktxids)
         for txid in entries_inblock:
             self.entries[txid].inblock = True
-            # Delete it, because entries will be used for the next block
+            # Delete it, because state.entries will be used for the next block
             # if there are > 1 blocks in this update cycle.
-            del entries[txid]
+            del state.entries[txid]
 
         incl_text = 'Block {}: {}/{} in mempool'.format(
-            blockheight, len(entries_inblock), len(blocktxids)-1)
+            self.blockheight, len(entries_inblock), len(blocktxids)-1)
         logger.info(incl_text)
 
         # As a measure of our node's connectivity, we want to note the
@@ -271,6 +270,8 @@ class MemBlock(object):
             incl_ratio = len(entries_inblock) / (len(blocktxids)-1)
             if incl_ratio < 0.9:
                 logger.warning(incl_text)
+
+        state.height += 1
 
     def calc_stranding_feerate(self, bootstrap=False):
         if not self:
@@ -301,14 +302,15 @@ class MemBlock(object):
                        'ON blocks (height)')
             with db_lock:
                 with db:
-                    db.execute('INSERT INTO blocks VALUES (?,?,?)',
-                               (self.height, self.size, self.time))
+                    db.execute(
+                        'INSERT INTO blocks VALUES (?,?,?)',
+                        (self.blockheight, self.blocksize, self.time))
                     db.executemany(
                         'INSERT INTO txs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                        [(self.height, txid) + entry._get_attr_tuple()
+                        [(self.blockheight, txid) + entry._get_attr_tuple()
                          for txid, entry in self.entries.iteritems()])
                 if blocks_to_keep > 0:
-                    height_thresh = self.height - blocks_to_keep
+                    height_thresh = self.blockheight - blocks_to_keep
                     with db:
                         db.execute('DELETE FROM blocks WHERE height<=?',
                                    (height_thresh,))
@@ -345,11 +347,13 @@ class MemBlock(object):
         else:
             return None
         memblock = cls()
-        memblock.height = blockheight
-        memblock.size = blocksize
-        memblock.time = blocktime
+        memblock.height = blockheight - 1
         memblock.entries = {
             tx[1]: MemEntry._from_attr_tuple(tx[2:]) for tx in txlist}
+        memblock.time = blocktime
+
+        memblock.blockheight = blockheight
+        memblock.blocksize = blocksize
         return memblock
 
     @staticmethod
@@ -376,17 +380,15 @@ class MemBlock(object):
                 db.close()
         return [r[0] for r in heights]
 
-    def __repr__(self):
-        return "MemBlock{height: %d, size: %d, num entries: %d}" % (
-            self.height, self.size, len(self.entries))
-
     def __nonzero__(self):
         return self.entries is not None
 
-    def __eq__(self, other):
-        if not isinstance(other, MemBlock):
-            return False
-        return self.__dict__ == other.__dict__
+    def __repr__(self):
+        return "MemBlock(blockheight: %d, blocksize: %d, len(entries): %d)" % (
+            self.blockheight, self.blocksize, len(self.entries))
+
+    def __copy__(self):
+        raise NotImplementedError
 
 
 class MemEntry(SimEntry):
@@ -510,13 +512,9 @@ class MemEntry(SimEntry):
         proxy.getrawmempool(verbose=True).
         '''
         entry = cls()
-        entry.size = rawentry['size']
-        entry.fee = rawentry['fee']
-        entry.startingpriority = rawentry['startingpriority']
-        entry.currentpriority = rawentry['currentpriority']
-        entry.time = rawentry['time']
-        entry.height = rawentry['height']
-        entry.depends = rawentry['depends'][:]
+        for attr in rawentry:
+            setattr(entry, attr, rawentry[attr])
+        entry.depends = entry.depends[:]
 
         # Additional fields
         entry.feerate = get_feerate(rawentry)
@@ -526,6 +524,13 @@ class MemEntry(SimEntry):
 
         return entry
 
+    def __copy__(self):
+        cpy = MemEntry()
+        for attr in self.__dict__:
+            setattr(cpy, attr, getattr(self, attr))
+        cpy.depends = cpy.depends[:]
+        return cpy
+
     def __repr__(self):
         return str(self.__dict__)
 
@@ -533,19 +538,24 @@ class MemEntry(SimEntry):
         return self.__dict__ == other.__dict__
 
 
-# TODO: maybe deprecate this?
-def get_mempool_size(minfeerate):
-    '''Get size of mempool.
-
-    Returns size of mempool in bytes for all transactions that have a feerate
-    >= minfeerate.
-    '''
-    rawmempool = proxy.getrawmempool(verbose=True)
-    txs = [MemEntry.from_rawentry(entry) for entry in rawmempool.values()]
-    return sum([tx.size for tx in txs if tx.feerate >= minfeerate])
+def get_mempool_state():
+    return MempoolState(*proxy.poll_mempool())
 
 
-def get_mempool():
-    rawmempool = proxy.getrawmempool(verbose=True)
-    return {txid: MemEntry.from_rawentry(entry)
-            for txid, entry in rawmempool.items()}
+# ## TODO: maybe deprecate this?
+# #def get_mempool_size(minfeerate):
+# #    '''Get size of mempool.
+# #
+# #    Returns size of mempool in bytes for all transactions that have
+# #    a feerate >= minfeerate.
+# #    '''
+# #    rawmempool = proxy.getrawmempool(verbose=True)
+# #    txs = [MemEntry.from_rawentry(entry) for entry in rawmempool.values()]
+# #    return sum([tx.size for tx in txs if tx.feerate >= minfeerate])
+# #
+# #
+# ## Deprecate this.
+# #def get_mempool():
+# #    rawmempool = proxy.getrawmempool(verbose=True)
+# #    return {txid: MemEntry.from_rawentry(entry)
+# #            for txid, entry in rawmempool.items()}

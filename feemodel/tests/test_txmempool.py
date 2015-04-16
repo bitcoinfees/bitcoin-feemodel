@@ -2,15 +2,18 @@ import unittest
 import sqlite3
 import os
 import logging
+from copy import copy
 
 from feemodel.config import datadir
-from feemodel.txmempool import TxMempool, MemBlock, MempoolState
+from feemodel.txmempool import (TxMempool, MemBlock, MempoolState, MemEntry,
+                                get_mempool_state)
 
 from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.tests.pseudoproxy import (proxy, install,
                                         rawmempool_from_mementries)
 
 proxy.set_rawmempool(333931)
+proxy.blockcount = 333930
 install()
 
 blocks_to_keep = 10
@@ -19,7 +22,45 @@ logging.basicConfig(level=logging.DEBUG)
 tmpdbfile = os.path.join(datadir, '_tmp_test.db')
 
 
+class BasicTests(unittest.TestCase):
+
+    def test_mementry(self):
+        # Test creation and copying.
+        # Most importantly, that a new 'depends' object was created.
+        rawentries = proxy.getrawmempool()
+        rawentry = rawentries.values()[0]
+        entry = MemEntry.from_rawentry(rawentry)
+        self.assertEqual(entry.depends, rawentry['depends'])
+        self.assertIsNot(entry.depends, rawentry['depends'])
+        entry_cpy = copy(entry)
+        self.assertEqual(entry.depends, entry_cpy.depends)
+        self.assertIsNot(entry.depends, entry_cpy.depends)
+
+    def test_mempoolstate(self):
+        state = get_mempool_state()
+        state_cpy = copy(state)
+        self.assertEqual(state, state_cpy)
+        self.assertIsNot(state, state_cpy)
+        self.assertIsNot(state.entries, state_cpy.entries)
+        for txid in state.entries:
+            self.assertIsNot(state.entries[txid].depends,
+                             state_cpy.entries[txid].depends)
+
+        d = state - state_cpy
+        self.assertEqual(d.height, 0)
+        self.assertEqual(d.time, 0)
+        self.assertEqual(len(d.entries), 0)
+
+        state.entries['test'] = MemEntry()
+        d = state - state_cpy
+        self.assertEqual(d.height, 0)
+        self.assertEqual(d.time, 0)
+        self.assertEqual(len(d.entries), 1)
+        self.assertEqual(d.entries['test'], state.entries['test'])
+
+
 class WriteReadTests(unittest.TestCase):
+
     def setUp(self):
         self.test_blockheight = 333931
         self.db = None
@@ -86,7 +127,8 @@ class WriteReadTests(unittest.TestCase):
             self.db.close()
 
 
-class ProcessBlocksTest(unittest.TestCase):
+class ProcessBlocksTests(unittest.TestCase):
+
     def setUp(self):
         self.test_blockheight = 333931
         self.memblockref = MemBlock.read(self.test_blockheight,
@@ -103,24 +145,25 @@ class ProcessBlocksTest(unittest.TestCase):
     def test_process_blocks(self):
         prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
         newstate = MempoolState(self.test_blockheight, self.testrawmempool)
-        memblocks = self.mempool.process_blocks(
-            prevstate, newstate, self.memblockref.time)
+        prevstate.time = self.memblockref.time
+        memblocks = self.mempool.process_blocks(prevstate, newstate)
         self.assertEqual(memblocks[0], self.memblockref)
 
     def test_process_empty_mempool(self):
         self.memblockref.entries = {}
         prevstate = MempoolState(self.test_blockheight-1, {})
         newstate = MempoolState(self.test_blockheight, {})
-        memblocks = self.mempool.process_blocks(
-            prevstate, newstate, self.memblockref.time)
+        prevstate.time = self.memblockref.time
+        memblocks = self.mempool.process_blocks(prevstate, newstate)
         self.assertEqual(memblocks[0], self.memblockref)
 
     def test_multipleblocks(self):
         print("\nMultiple blocks test\n====================")
         prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
         newstate = MempoolState(self.test_blockheight+2, self.testrawmempool)
-        memblocks = self.mempool.process_blocks(
-            prevstate, newstate, self.memblockref.time)
+        prevstate.time = self.memblockref.time
+        memblocks = self.mempool.process_blocks(prevstate, newstate)
+        self.assertEqual(len(memblocks), newstate.height - prevstate.height)
 
         previnblock = None
         for b in memblocks:
@@ -142,8 +185,10 @@ class ProcessBlocksTest(unittest.TestCase):
         print("\nMultiple blocks conflicts test\n====================")
         prevstate = MempoolState(self.test_blockheight-1, self.testrawmempool)
         newstate = MempoolState(self.test_blockheight+2, {})
-        memblocks = self.mempool.process_blocks(
-            prevstate, newstate, self.memblockref.time)
+        prevstate.time = self.memblockref.time
+        memblocks = self.mempool.process_blocks(prevstate, newstate)
+        self.assertEqual(len(memblocks), newstate.height - prevstate.height)
+
         for idx, b in enumerate(memblocks):
             self.assertTrue(all([
                 not entry.isconflict for entry in b.entries.values()
