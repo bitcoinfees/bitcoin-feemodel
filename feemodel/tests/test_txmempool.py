@@ -3,6 +3,7 @@ import sqlite3
 import os
 import logging
 from copy import copy
+from time import sleep
 
 from feemodel.config import datadir
 from feemodel.txmempool import (TxMempool, MemBlock, MempoolState, MemEntry,
@@ -12,17 +13,19 @@ from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.tests.pseudoproxy import (proxy, install,
                                         rawmempool_from_mementries)
 
-proxy.set_rawmempool(333931)
-proxy.blockcount = 333930
 install()
 
-blocks_to_keep = 10
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s:%(levelname)s:%(message)s')
 
 tmpdbfile = os.path.join(datadir, '_tmp_test.db')
 
 
 class BasicTests(unittest.TestCase):
+
+    def setUp(self):
+        proxy.set_rawmempool(333931)
+        proxy.blockcount = 333930
 
     def test_mementry(self):
         # Test creation and copying.
@@ -91,6 +94,7 @@ class WriteReadTests(unittest.TestCase):
 
     def test_deletehistory(self):
         '''Test that history is deleted according to retention policy.'''
+        blocks_to_keep = 10
         memblocks = [MemBlock.read(height, dbfile=dbfile)
                      for height in range(333931, 333953)]
 
@@ -165,16 +169,20 @@ class ProcessBlocksTests(unittest.TestCase):
         memblocks = self.mempool.process_blocks(prevstate, newstate)
         self.assertEqual(len(memblocks), newstate.height - prevstate.height)
 
+        prev = None
         previnblock = None
-        for b in memblocks:
+        for idx, b in enumerate(memblocks):
+            self.assertEqual(b.blockheight, b.height+1)
+            self.assertEqual(b.blockheight, self.test_blockheight+idx)
             self.assertTrue(all([not entry.isconflict
                                  for entry in b.entries.values()]))
-            if previnblock:
+            if prev:
                 # Check that inblock txs are removed from entries before
                 # next block is processed.
-                print("Checking for no inblock overlap...")
                 self.assertFalse(set(previnblock) & set(b.entries))
+                self.assertEqual(set(prev), set(b.entries) | set(previnblock))
 
+            prev = b.entries.keys()
             previnblock = [txid for txid, entry in b.entries.items()
                            if entry.inblock]
             print b
@@ -190,6 +198,8 @@ class ProcessBlocksTests(unittest.TestCase):
         self.assertEqual(len(memblocks), newstate.height - prevstate.height)
 
         for idx, b in enumerate(memblocks):
+            self.assertEqual(b.blockheight, b.height+1)
+            self.assertEqual(b.blockheight, self.test_blockheight+idx)
             self.assertTrue(all([
                 not entry.isconflict for entry in b.entries.values()
                 if entry.inblock]))
@@ -205,6 +215,35 @@ class ProcessBlocksTests(unittest.TestCase):
             print b
         print("====================")
 
+
+class ThreadTest(unittest.TestCase):
+
+    def test_A(self):
+        bref = MemBlock.read(333931, dbfile=dbfile)
+        proxy.set_rawmempool(333931)
+        proxy.blockcount = 333930
+        proxy.on = False
+        mempool = TxMempool(dbfile=tmpdbfile)
+        with mempool.context_start():
+            sleep(50)
+            proxy.on = True
+            sleep(20)
+            proxy.blockcount = 333931
+            sleep(10)
+
+        btest = MemBlock.read(333931, dbfile=tmpdbfile)
+        # They're not equal because their times don't match.
+        self.assertNotEqual(btest, bref)
+        btest.time = bref.time
+        for entry in bref.entries.values():
+            entry.leadtime = int(entry.leadtime)
+        for entry in btest.entries.values():
+            entry.leadtime = btest.time - entry.time
+        self.assertEqual(btest, bref)
+
+    def tearDown(self):
+        if os.path.exists(tmpdbfile):
+            os.remove(tmpdbfile)
 
 if __name__ == '__main__':
     unittest.main()

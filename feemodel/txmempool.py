@@ -73,11 +73,9 @@ class TxMempool(StoppableThread):
     errors.
     '''
 
-    WORKER_STOP = 'stop'  # Sentinel value for stopping block worker thread
-
     def __init__(self, dbfile=memblock_dbfile, blocks_to_keep=blocks_to_keep):
         self.state = None
-        self.blockqueue = Queue()
+        self.blockworker = None
         self.dbfile = dbfile
         self.blocks_to_keep = blocks_to_keep
         self.starttime = time()
@@ -90,7 +88,7 @@ class TxMempool(StoppableThread):
         Updates mempool every poll_period seconds.
         """
         logger.info("Starting TxMempool")
-        self.blockworker = threading.Thread(target=self.blockworker_target)
+        self.blockworker = BlockWorker(self)
         self.blockworker.start()
         try:
             self.state = get_mempool_state()
@@ -98,8 +96,7 @@ class TxMempool(StoppableThread):
                 self.update()
                 self.sleep(poll_period)
         finally:
-            self.blockqueue.put(self.WORKER_STOP)
-            self.blockworker.join()
+            self.blockworker.stop()
             self.state = None
             logger.info("TxMempool stopped.")
 
@@ -111,21 +108,15 @@ class TxMempool(StoppableThread):
         """
         newstate = get_mempool_state()
         if newstate.height > self.state.height:
-            self.blockqueue.put((self.state, newstate))
+            self.blockworker.put(self.state, newstate)
         self.state = newstate
         return newstate
 
-    def blockworker_target(self):
-        """Target function for blockworker thread."""
-        while True:
-            args = self.blockqueue.get()
-            if args == self.WORKER_STOP:
-                break
-            self.process_blocks(*args)
-        logger.info("Block worker received stop sentinel; thread complete.")
-
     def process_blocks(self, prevstate, newstate):
-        """Record the mempool state in a MemBlock."""
+        """Record the mempool state in a MemBlock.
+
+        This is called in self.blockworker.run.
+        """
         # Make a copy because we are going to mutate it
         prevstate = copy(prevstate)
         memblocks = []
@@ -158,7 +149,7 @@ class TxMempool(StoppableThread):
             stats = memblock.calc_stranding_feerate(bootstrap=False)
             if stats:
                 logger.info("Block {}: stranding feerate is {}".
-                            format(memblock.height, stats['sfr']))
+                            format(memblock.blockheight, stats['sfr']))
             if self.dbfile and self.is_alive():
                 try:
                     memblock.write(self.dbfile, self.blocks_to_keep)
@@ -189,6 +180,32 @@ class TxMempool(StoppableThread):
         return self.state is not None
 
 
+class BlockWorker(threading.Thread):
+    """Worker thread which calls TxMempool.process_blocks."""
+
+    STOP = 'stop'  # Stop sentinel value
+
+    def __init__(self, mempool):
+        self.blockqueue = Queue()
+        self.process_blocks = mempool.process_blocks
+        super(BlockWorker, self).__init__()
+
+    def run(self):
+        while True:
+            args = self.blockqueue.get()
+            if args == self.STOP:
+                break
+            self.process_blocks(*args)
+        logger.info("Block worker stopped.")
+
+    def put(self, prevstate, newstate):
+        self.blockqueue.put((prevstate, newstate))
+
+    def stop(self):
+        self.blockqueue.put(self.STOP)
+        self.join()
+
+
 class MempoolState(object):
     """Mempool state.
 
@@ -202,7 +219,7 @@ class MempoolState(object):
         self.height = height
         self.entries = {txid: MemEntry.from_rawentry(rawentry)
                         for txid, rawentry in rawmempool.iteritems()}
-        self.time = time()
+        self.time = int(time())
 
     def __copy__(self):
         cpy = MempoolState(self.height, {})
