@@ -38,6 +38,7 @@ class SimTxSource(object):
         self.txrate = txrate
 
     def get_emitter(self, SimMempool mempool not None, feeratethresh=0):
+        cdef int i
         if self.txrate and not self.txsample:
             raise ValueError("Non-zero txrate with empty txsample.")
         txsample_filtered = filter(lambda tx: tx.feerate >= feeratethresh,
@@ -48,6 +49,13 @@ class SimTxSource(object):
                                self.txrate)
         else:
             filtered_txrate = 0
+
+        # Sanity check on possible undefined behavior of pointer comparisons
+        # (made use of in SimMempool._process_deps)
+        for i in range(txsample_array.txsample.size):
+            assert not (mempool.init_array.txs <=
+                        txsample_array.txsample.txs + i <
+                        mempool.init_array.txs + mempool.init_array.size)
 
         srand(getrandbits(8*sizeof(unsigned int)))
 

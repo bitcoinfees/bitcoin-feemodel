@@ -168,11 +168,8 @@ cdef class SimMempool:
                 if newblocksize <= maxblocksize:
                     if blocksize_ltd > 0:
                         blocksize_ltd -= 1
-                    else:
-                        # FIXME: SFR setting must be changed to match
-                        #        stranding.py's definition
-                        if newtx.feerate < sfr:
-                            sfr = newtx.feerate
+                    elif newtx.feerate < sfr:
+                        sfr = newtx.feerate
 
                     txptrarray_append(&blocktxs, newtx)
                     blocksize = newblocksize
@@ -199,14 +196,17 @@ cdef class SimMempool:
         """
         cdef:
             int depidx, txindex
-            OrphanTxPtrArray otxptrarray
-        depidx = newtx - self.init_array.txs
-        if depidx >= 0 and depidx < self.init_array.size:
+            OrphanTxPtrArray dependants
+
+        if self.init_array.txs <= newtx < self.init_array.txs + self.init_array.size:
             # Then newtx points to a transaction within self.init_array,
             # so it might have dependants.
-            otxptrarray = self.orphanmap[depidx]
-            for i in range(otxptrarray.size):
-                txindex = orphantx_removedep(otxptrarray.otxptrs[i], depidx)
+            # WARNING: we're not 100% sure that this expression always evaluates
+            #          false if newtx is not part of the array.
+            depidx = newtx - self.init_array.txs
+            dependants = self.orphanmap[depidx]
+            for i in range(dependants.size):
+                txindex = orphantx_removedep(dependants.otxptrs[i], depidx)
                 if txindex >= 0:
                     txqueue_heappush(&self.txqueue, &self.init_array.txs[txindex])
 

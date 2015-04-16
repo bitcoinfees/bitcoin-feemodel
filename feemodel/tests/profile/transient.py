@@ -3,7 +3,7 @@ import cProfile
 import multiprocessing
 from threading import Timer
 from feemodel.txmempool import MemBlock
-from feemodel.simul.transient import transient_multiproc as transientsim
+from feemodel.simul.transient import transientsim
 from feemodel.simul import Simul, SimEntry
 from feemodel.util import load_obj, DataSample
 from feemodel.tests.config import memblock_dbfile as dbfile, poolsref, txref
@@ -26,12 +26,12 @@ stopflag = multiprocessing.Event()
 # waittimes, realtime, numiters = transientsim(
 #     sim, init_entries=init_entries, stopflag=stopflag)
 print("Starting transientsim.")
-cProfile.run("waittimes, realtime, numiters = transientsim("
-             "sim, init_entries=init_entries, multiprocess=1, stopflag=stopflag)")
+cProfile.run("feepoints, waittimes, realtime, numiters = transientsim("
+             "sim, init_entries=init_entries, numprocesses=None, stopflag=stopflag)")
 print("Completed in {}s with {} iters.".format(realtime, numiters))
 
 print("Feerate\tMean wait")
-for feerate, waitsample in sorted(waittimes.items()):
+for feerate, waitsample in zip(feepoints, waittimes):
     waitdata = DataSample(waitsample)
     waitdata.calc_stats()
     print("{}\t{}".format(feerate, waitdata.mean))
