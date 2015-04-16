@@ -4,7 +4,6 @@ from __future__ import division
 
 import logging
 from copy import copy
-from time import time
 
 from feemodel.estimate import ExpEstimator
 from feemodel.config import memblock_dbfile
@@ -19,45 +18,47 @@ class TxRateOnlineEstimator(object):
 
     def __init__(self, halflife=default_halflife, dbfile=memblock_dbfile):
         self.dbfile = dbfile
-        self.txrate_estimator = ExpEstimator(halflife)
-        self.prevtxids = None
-        self.prevtime = None
+        self.tr_estimator = ExpEstimator(halflife)
+        self.prevstate = None
 
-    def update(self, curr_entries, currheight):
-        # TODO: use MempoolState for this?
-        currtime = time()
-        txrate_estimator = copy(self.txrate_estimator)
-        if self.prevtime is None:
-            # Estimate not yet initialized.
-            try:
-                bestheight, besttime, bestblocktxids = txrate_estimator.start(
-                    currheight, dbfile=self.dbfile)
-            except ValueError:
-                # There are no memblocks
-                self.prevtxids = set(curr_entries)
-                self.prevtime = currtime
-                return
+    def update(self, state):
+        tr_estimator = copy(self.tr_estimator)
+        if self.prevstate is None:
+            self.init_calcs(state, tr_estimator)
+
+        state_delta = state - self.prevstate
+        newtxs = [SimTx(entry.feerate, entry.size)
+                  for entry in state_delta.entries.values()]
+        tr_estimator.update_txs(newtxs, state_delta.time)
+
+        self.prevstate = state
+        self.tr_estimator = tr_estimator
+
+    def init_calcs(self, state, tr_estimator):
+        logger.info("Beginning init calcs.")
+        try:
+            lastblock = tr_estimator.start(state.height, dbfile=self.dbfile)
+        except ValueError:
+            # There are no memblocks.
+            self.prevstate = copy(state)
+        else:
+            logger.info(repr(tr_estimator))
+            if state.height == lastblock.blockheight:
+                logger.info("Init last height matches currheight.")
+                self.prevstate = lastblock
             else:
-                if bestheight == currheight:
-                    logger.info("bestheight matches currheight.")
-                    self.prevtxids = bestblocktxids
-                    self.prevtime = besttime
-        curr_txids = set(curr_entries)
-        if self.prevtime:
-            new_txids = curr_txids - self.prevtxids
-            new_txs = [
-                SimTx(curr_entries[txid].feerate, curr_entries[txid].size)
-                for txid in new_txids]
-            txrate_estimator.update_txs(new_txs, currtime - self.prevtime)
-        self.prevtime = currtime
-        self.prevtxids = curr_txids
-        self.txrate_estimator = txrate_estimator
+                self.prevstate = copy(state)
+
+        if state.time == self.prevstate.time:
+            # Makes things a bit neater by guaranteeing that the first update
+            # will never encounter a ValueError due to zero totaltime.
+            self.prevstate.time -= 1
 
     def get_txsource(self):
-        return self.txrate_estimator
+        return self.tr_estimator
 
     def get_stats(self):
-        est = self.txrate_estimator
+        est = self.tr_estimator
         if not est:
             return None
         meanbyterate, meanstd = est.calc_mean_byterate()
@@ -73,4 +74,32 @@ class TxRateOnlineEstimator(object):
         return stats
 
     def __nonzero__(self):
-        return bool(self.txrate_estimator)
+        return bool(self.tr_estimator)
+
+    # def update(self, curr_entries, currheight):
+    #     currtime = time()
+    #     tr_estimator = copy(self.tr_estimator)
+    #     if self.prevtime is None:
+    #         try:
+    #             bestheight, besttime, bestblocktxids = tr_estimator.start(
+    #                 currheight, dbfile=self.dbfile)
+    #         except ValueError:
+    #             # There are no memblocks
+    #             self.prevtxids = set(curr_entries)
+    #             self.prevtime = currtime
+    #             return
+    #         else:
+    #             if bestheight == currheight:
+    #                 logger.info("bestheight matches currheight.")
+    #                 self.prevtxids = bestblocktxids
+    #                 self.prevtime = besttime
+    #     curr_txids = set(curr_entries)
+    #     if self.prevtime:
+    #         new_txids = curr_txids - self.prevtxids
+    #         new_txs = [
+    #             SimTx(curr_entries[txid].feerate, curr_entries[txid].size)
+    #             for txid in new_txids]
+    #         tr_estimator.update_txs(new_txs, currtime - self.prevtime)
+    #     self.prevtime = currtime
+    #     self.prevtxids = curr_txids
+    #     self.tr_estimator = tr_estimator

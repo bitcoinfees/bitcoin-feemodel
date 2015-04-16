@@ -48,8 +48,9 @@ class PoolEstimate(SimPool):
                 avgtxsize = 0.
             # We assume a block is fee-limited if its size is smaller than
             # the maxblocksize, minus a margin of the block avg tx size.
-            if self.maxblocksize - block.size > avgtxsize:
-                self.feelimitedblocks.append((block.height, block.size))
+            if self.maxblocksize - block.blocksize > avgtxsize:
+                self.feelimitedblocks.append(
+                    (block.blockheight, block.blocksize))
                 txs.extend(tx_preprocess(block))
                 # Only take up to MAX_TXS of the most recent transactions.
                 # If MAX_TXS is sufficiently high, this helps the adaptivity
@@ -62,7 +63,8 @@ class PoolEstimate(SimPool):
                 if len(txs) >= MAX_TXS:
                     break
             else:
-                self.sizelimitedblocks.append((block.height, block.size))
+                self.sizelimitedblocks.append(
+                    (block.blockheight, block.blocksize))
 
         if not txs and self.sizelimitedblocks:
             # All the blocks are close to the max block size.

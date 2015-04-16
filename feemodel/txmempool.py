@@ -229,6 +229,8 @@ class MempoolState(object):
         return cpy
 
     def __sub__(self, other):
+        if not isinstance(other, MempoolState):
+            raise TypeError("Operands must both be MempoolState instances.")
         result = MempoolState(self.height - other.height, {})
         result.time = self.time - other.time
         result.entries = {

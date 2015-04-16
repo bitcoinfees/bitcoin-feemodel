@@ -73,7 +73,7 @@ class TransientOnline(StoppableThread):
         pools = self.poolsonline.get_pools()
         sim = Simul(pools, tx_source)
         feepoints = self.calc_feepoints(sim)
-        init_entries = self.mempool.state.get_entries()
+        init_entries = self.mempool.state.entries
 
         feepoints, waittimes, timespent, numiters = transientsim(
             sim,

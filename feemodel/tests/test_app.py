@@ -12,7 +12,7 @@ from feemodel.app.simonline import SimOnline
 from feemodel.config import datadir
 
 import feemodel.app.simonline as simonline
-import feemodel.app.txrate as apptxrate
+import feemodel.txmempool as txmempool
 
 logging.basicConfig(level=logging.DEBUG)
 install()
@@ -33,23 +33,18 @@ class AppTests(unittest.TestCase):
         simonline.predict_savefile = self.predict_savefile
         simonline.pvals_dbfile = self.pvals_dbfile
 
-        apptxrate.time = get_mytime(self.memblock_dbfile)
+        txmempool.time = get_mytime(self.memblock_dbfile)
 
     def test_A(self):
         """Basic tests."""
         simonline.pools_minblocks = 1
         sim = SimOnline()
         proxy.blockcount = 333953
-        proxy.on = False
-        # proxy.set_rawmempool(333931)
         print("Starting test A thread.")
         with sim.context_start():
             for method in ['get_predictstats', 'get_poolstats',
                            'get_transientstats', 'get_txstats']:
                 self.assertIsNone(getattr(sim, method)())
-            sleep(1)
-            proxy.on = True
-            print("Turning proxy on.")
             while not sim.txonline:
                 sleep(0.1)
             pprint(sim.get_txstats())

@@ -55,9 +55,10 @@ def populate_testdb():
             mementry.size = entry.size
 
         b = MemBlock()
-        b.height = height
+        b.height = height - 1
+        b.blockheight = height
         b.time = t
-        b.size = sum([entry.size for entry in mempool_entries.values()])
+        b.blocksize = sum([entry.size for entry in mempool_entries.values()])
         b.entries = entries
         b.write(tmpdbfile, 2000)
         mempool.reset()
@@ -70,6 +71,7 @@ _dum, txref_rates = txref.get_byterates(feerates=feerates)
 class RectEstimatorTest(unittest.TestCase):
 
     def test_basic(self):
+        print("Starting RectEstimator test")
         tr = RectEstimator(maxsamplesize=10000)
         tr.start(blockrange, dbfile=dbfile)
         print(tr)

@@ -60,12 +60,11 @@ class SimOnline(TxMempool):
 
     def update(self):
         state = super(SimOnline, self).update()
-        entries = state.get_entries()
         self.poolsonline.update_async(
             state.height, stopflag=self.get_stop_object())
         threading.Thread(target=self.update_predicts,
-                         args=(entries,)).start()
-        self.txonline.update(entries, state.height)
+                         args=(state.entries,)).start()
+        self.txonline.update(state)
 
     def process_blocks(self, *args):
         memblocks = super(SimOnline, self).process_blocks(*args)
