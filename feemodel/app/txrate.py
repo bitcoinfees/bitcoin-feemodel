@@ -30,6 +30,7 @@ class TxRateOnlineEstimator(object):
         newtxs = [SimTx(entry.feerate, entry.size)
                   for entry in state_delta.entries.values()]
         tr_estimator.update_txs(newtxs, state_delta.time)
+        logger.debug(repr(tr_estimator))
 
         self.prevstate = state
         self.tr_estimator = tr_estimator
@@ -69,7 +70,8 @@ class TxRateOnlineEstimator(object):
             "byterate": {
                 "mean": meanbyterate,
                 "mean_std": meanstd
-            }
+            },
+            "totaltime": est.totaltime
         }
         return stats
 

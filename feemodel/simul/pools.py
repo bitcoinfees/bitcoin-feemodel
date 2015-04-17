@@ -25,12 +25,15 @@ class SimPool(object):
                 (self.hashrate, self.maxblocksize, self.minfeerate))
 
     def __eq__(self, other):
-        relevant_attrs = [
-            'hashrate',
-            'maxblocksize',
-            'minfeerate']
+        relevant_attrs = ['hashrate', 'maxblocksize', 'minfeerate']
         return all([
             getattr(self, attr) == getattr(other, attr)
+            for attr in relevant_attrs])
+
+    def __ne__(self, other):
+        relevant_attrs = ['hashrate', 'maxblocksize', 'minfeerate']
+        return any([
+            getattr(self, attr) != getattr(other, attr)
             for attr in relevant_attrs])
 
 
@@ -114,6 +117,9 @@ class SimPools(object):
 
     def __eq__(self, other):
         return self.pools == other.pools
+
+    def __ne__(self, other):
+        return self.pools != other.pools
 
     # #def calc_capacities(self, tx_source):
     # #    poolfeerates = [pool.minfeerate for name, pool in self.__pools]

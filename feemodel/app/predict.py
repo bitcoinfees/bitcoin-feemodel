@@ -104,11 +104,17 @@ class PValECDF(Function):
             cumsum += count
             p = cumsum / totalcount
             y.append(p)
-            p_ref = (idx+1) / NUM_PVAL_POINTS
+            p_ref = (idx+1) / len(pvalcounts)
             x.append(p_ref)
             d.append(abs(p - p_ref))
         self.pdistance = max(d)
         super(PValECDF, self).__init__(x, y)
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return self.__dict__ != other.__dict__
 
 
 class Prediction(object):
@@ -123,14 +129,17 @@ class Prediction(object):
     def update_predictions(self, state, transientstats):
         if not transientstats:
             return
+        newpredicts = {}
         for txid, entry in state.entries.iteritems():
             if txid in self.predicts:
                 continue
             if not entry.depends and not entry.is_high_priority():
-                self.predicts[txid] = transientstats.predict(entry.feerate,
-                                                             state.time)
+                newpredicts[txid] = transientstats.predict(entry.feerate,
+                                                           state.time)
             else:
-                self.predicts[txid] = None
+                newpredicts[txid] = None
+        logger.debug("{} new predicts.".format(len(newpredicts)))
+        self.predicts.update(newpredicts)
 
     def process_blocks(self, blocks, dbfile=None):
         for block in blocks:

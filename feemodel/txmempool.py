@@ -109,6 +109,7 @@ class TxMempool(StoppableThread):
         if newstate.height > self.state.height:
             self.blockworker.put(self.state, newstate)
         self.state = newstate
+        logger.debug(repr(newstate))
         return newstate
 
     def process_blocks(self, prevstate, newstate):
@@ -212,8 +213,15 @@ class MempoolState(object):
         }
         return result
 
+    def __repr__(self):
+        return "MempoolState(height: {}, entries: {}, time: {})".format(
+            self.height, len(self.entries), self.time)
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return self.__dict__ != other.__dict__
 
 
 class MemBlock(MempoolState):
@@ -530,6 +538,9 @@ class MemEntry(SimEntry):
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return self.__dict__ != other.__dict__
 
 
 def get_mempool_state():

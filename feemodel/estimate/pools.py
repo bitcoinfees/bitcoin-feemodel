@@ -202,7 +202,7 @@ class PoolsEstimator(SimPools):
             hashrate = totalhashes / windowlen
             pool = PoolEstimate(blockheights, hashrate, maxblocksize)
             pool.estimate_minfeerate(stopflag=stopflag, dbfile=dbfile)
-            logger.info("Estimated %s: %s" % (poolname, repr(pool)))
+            logger.debug("Estimated %s: %s" % (poolname, repr(pool)))
             self.pools[poolname] = pool
 
     def calc_blockrate(self, height=None):

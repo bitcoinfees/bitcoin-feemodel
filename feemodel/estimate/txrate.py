@@ -100,9 +100,6 @@ class ExpEstimator(SimTxSource):
         self.txrate = None
         self.totaltime = 0
 
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
-
 
 class RectEstimator(SimTxSource):
 
