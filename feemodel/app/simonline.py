@@ -2,11 +2,10 @@ from __future__ import division
 
 import os
 import logging
-import threading
 
 from feemodel.txmempool import TxMempool
 from feemodel.config import datadir, memblock_dbfile
-from feemodel.util import load_obj, save_obj
+from feemodel.util import load_obj, save_obj, WorkerThread
 from feemodel.app.pools import (PoolsOnlineEstimator,
                                 default_savedir as pools_savedir)
 from feemodel.app.txrate import TxRateOnlineEstimator
@@ -33,7 +32,7 @@ class SimOnline(TxMempool):
 
     def __init__(self):
         super(SimOnline, self).__init__(dbfile=memblock_dbfile)
-        self.predict_lock = threading.Lock()
+        self.predictworker = WorkerThread(self.update_predicts)
         self.predict_savefile = predict_savefile
         self.pvals_dbfile = pvals_dbfile
         self.load_predicts()
@@ -56,20 +55,26 @@ class SimOnline(TxMempool):
 
     def run(self):
         with self.transient.context_start():
+            self.predictworker.start()
             super(SimOnline, self).run()
+            self.predictworker.stop()
 
     def update(self):
         state = super(SimOnline, self).update()
         self.poolsonline.update_async(
             state.height, stopflag=self.get_stop_object())
-        threading.Thread(target=self.update_predicts,
-                         args=(state.entries,)).start()
+        self.predictworker.put(state, self.transient.stats)
         self.txonline.update(state)
 
     def process_blocks(self, *args):
         memblocks = super(SimOnline, self).process_blocks(*args)
-        with self.predict_lock:
-            self.prediction.process_blocks(memblocks, dbfile=self.pvals_dbfile)
+        self.predictworker.put(memblocks)
+
+    def update_predicts(self, *args):
+        if len(args) == 2:
+            self.prediction.update_predictions(*args)
+        else:
+            self.prediction.process_blocks(args[0], dbfile=self.pvals_dbfile)
             self.save_predicts()
 
     def get_predictstats(self):
@@ -86,11 +91,6 @@ class SimOnline(TxMempool):
 
     def get_txstats(self):
         return self.txonline.get_stats()
-
-    def update_predicts(self, entries):
-        with self.predict_lock:
-            self.prediction.update_predictions(
-                entries, self.transient.stats)
 
     def load_predicts(self):
         try:

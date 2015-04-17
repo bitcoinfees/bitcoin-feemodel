@@ -5,7 +5,6 @@ import threading
 import sqlite3
 import decimal
 import logging
-from Queue import Queue
 from time import time
 from copy import copy
 
@@ -13,7 +12,7 @@ from bitcoin.core import b2lx
 
 from feemodel.config import (memblock_dbfile, poll_period,
                              minrelaytxfee, prioritythresh, blocks_to_keep)
-from feemodel.util import proxy, StoppableThread, get_feerate
+from feemodel.util import proxy, StoppableThread, get_feerate, WorkerThread
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
@@ -88,7 +87,7 @@ class TxMempool(StoppableThread):
         Updates mempool every poll_period seconds.
         """
         logger.info("Starting TxMempool")
-        self.blockworker = BlockWorker(self)
+        self.blockworker = WorkerThread(self.process_blocks)
         self.blockworker.start()
         try:
             self.state = get_mempool_state()
@@ -178,32 +177,6 @@ class TxMempool(StoppableThread):
 
     def __nonzero__(self):
         return self.state is not None
-
-
-class BlockWorker(threading.Thread):
-    """Worker thread which calls TxMempool.process_blocks."""
-
-    STOP = 'stop'  # Stop sentinel value
-
-    def __init__(self, mempool):
-        self.blockqueue = Queue()
-        self.process_blocks = mempool.process_blocks
-        super(BlockWorker, self).__init__()
-
-    def run(self):
-        while True:
-            args = self.blockqueue.get()
-            if args == self.STOP:
-                break
-            self.process_blocks(*args)
-        logger.info("Block worker stopped.")
-
-    def put(self, prevstate, newstate):
-        self.blockqueue.put((prevstate, newstate))
-
-    def stop(self):
-        self.blockqueue.put(self.STOP)
-        self.join()
 
 
 class MempoolState(object):
@@ -430,6 +403,14 @@ class MemEntry(SimEntry):
 
     def __init__(self):
         super(MemEntry, self).__init__(None, None)
+        self.fee = None
+        self.startingpriority = None
+        self.currentpriority = None
+        self.time = None
+        self.height = None
+        self.leadtime = None
+        self.isconflict = None
+        self.inblock = None
 
     def is_high_priority(self):
         '''Check if entry is high priority.
@@ -534,13 +515,7 @@ class MemEntry(SimEntry):
         for attr in rawentry:
             setattr(entry, attr, rawentry[attr])
         entry.depends = entry.depends[:]
-
-        # Additional fields
         entry.feerate = get_feerate(rawentry)
-        entry.leadtime = None
-        entry.isconflict = None
-        entry.inblock = None
-
         return entry
 
     def __copy__(self):

@@ -3,7 +3,6 @@ from __future__ import division
 import os
 import logging
 import sqlite3
-from time import time
 from bisect import bisect
 from math import ceil
 
@@ -22,6 +21,7 @@ WAIT_MEDIAN_IDX = bisect(WAIT_PERCENTILE_PTS, 0.5) - 1
 PVALS_DB_SCHEMA = {
     'txs': [
         'blockheight INTEGER',
+        'txid TEXT',
         'feerate INTEGER',
         'entrytime INTEGER',
         'median_wait INTEGER',
@@ -120,16 +120,15 @@ class Prediction(object):
         self.pval_ecdf = None
         self.predicts = {}
 
-    def update_predictions(self, entries, transientstats):
+    def update_predictions(self, state, transientstats):
         if not transientstats:
             return
-        new_txids = set(entries) - set(self.predicts)
-        currtime = int(time())
-        for txid in new_txids:
-            entry = entries[txid]
+        for txid, entry in state.entries.iteritems():
+            if txid in self.predicts:
+                continue
             if not entry.depends and not entry.is_high_priority():
                 self.predicts[txid] = transientstats.predict(entry.feerate,
-                                                             currtime)
+                                                             state.time)
             else:
                 self.predicts[txid] = None
 
@@ -137,30 +136,27 @@ class Prediction(object):
         for block in blocks:
             if block is None:
                 continue
-            newtxpredicts = []
-            inblocktxids = [txid for txid, entry in block.entries.items()
-                            if entry.inblock]
-            predict_inblock = set(self.predicts) & set(inblocktxids)
-            for txid in predict_inblock:
-                txpredict = self.predicts[txid]
-                if txpredict:
-                    txpredict.calc_pval(block.time)
-                    newtxpredicts.append(txpredict)
-                del self.predicts[txid]
-            _pvals = [tx.pval for tx in newtxpredicts]
-            self._add_block_pvals(_pvals)
-            logger.info("Block %d: %d predicts tallied." %
-                        (block.height, len(newtxpredicts)))
+            predicts_inblock = [
+                (txid, predict) for txid, predict in self.predicts.iteritems()
+                if predict is not None and
+                txid in block.entries and
+                block.entries[txid].inblock]
+            for txid, predict in predicts_inblock:
+                predict.calc_pval(block.time)
+            pvals = [predict.pval for txid, predict in predicts_inblock]
+            self._add_block_pvals(pvals)
+            logger.info("Block {}: {} predicts tallied.".
+                        format(block.blockheight, len(predicts_inblock)))
 
             # Remove from predictions those entries that are no longer
             # in the mempool. This can happen, for example, if the predicts
             # are outdated, or if a tx was removed as a conflict.
-            predicts_del = set(self.predicts) - set(block.entries)
-            for txid in predicts_del:
-                del self.predicts[txid]
+            self.predicts = {
+                txid: predict for txid, predict in self.predicts.iteritems()
+                if txid in block.entries and not block.entries[txid].inblock}
             if dbfile:
-                self._write_block(
-                    block.height, newtxpredicts, dbfile, pvals_blocks_to_keep)
+                self._write_block(block.blockheight, predicts_inblock,
+                                  dbfile, pvals_blocks_to_keep)
 
         try:
             self._calc_pval_ecdf()
@@ -173,8 +169,8 @@ class Prediction(object):
             pvalcount_idx = max(int(ceil(pval*NUM_PVAL_POINTS)) - 1, 0)
             new_pvalcounts[pvalcount_idx] += 1
         for idx in range(len(self.pvalcounts)):
-            self.pvalcounts[idx] = (self._alpha*self.pvalcounts[idx] +
-                                    (1 - self._alpha)*new_pvalcounts[idx])
+            self.pvalcounts[idx] = (
+                self._alpha*self.pvalcounts[idx] + new_pvalcounts[idx])
 
     def _calc_pval_ecdf(self):
         '''Calculate the new p-value ECDF.'''
@@ -191,8 +187,8 @@ class Prediction(object):
         if not heights:
             return pred
         for height in heights:
-            pvals = pred._read_block(
-                height, conditions=conditions, dbfile=dbfile)
+            pvals = pred._read_block(height, conditions=conditions,
+                                     dbfile=dbfile)
             pred._add_block_pvals(pvals)
         try:
             pred._calc_pval_ecdf()
@@ -212,9 +208,9 @@ class Prediction(object):
                        'ON txs (blockheight)')
             with db:
                 db.executemany(
-                    'INSERT INTO txs VALUES (?,?,?,?,?,?)',
-                    [(blockheight,) + tx._get_attr_tuple()
-                     for tx in txpredicts])
+                    'INSERT INTO txs VALUES (?,?,?,?,?,?,?)',
+                    [(blockheight, txid) + predict._get_attr_tuple()
+                     for txid, predict in txpredicts])
 
             if blocks_to_keep > 0:
                 height_thresh = blockheight - blocks_to_keep
@@ -238,8 +234,7 @@ class Prediction(object):
             query = "SELECT pval FROM txs WHERE blockheight=?"
             if conditions:
                 query += " AND ({})".format(conditions)
-            pvals = db.execute(
-                query, (blockheight, )).fetchall()
+            pvals = db.execute(query, (blockheight, )).fetchall()
             return [r[0] for r in pvals]
         except sqlite3.OperationalError as e:
             if e.message.startswith('no such table'):

@@ -1,6 +1,7 @@
 from __future__ import division
 
 import threading
+import Queue
 import logging
 from bisect import insort, bisect
 from math import ceil, log
@@ -87,6 +88,42 @@ class StoppableThread(threading.Thread):
                         self.sleep(interval)
             return looped_fn
         return decorator
+
+
+class WorkerThread(threading.Thread):
+    """Worker thread.
+
+    Fetches args from a queue and calls a user specified function.
+    """
+
+    STOP = 'stop'
+
+    def __init__(self, workfn):
+        """workfn is the function to be called."""
+        self.workfn = workfn
+        self._workqueue = Queue.Queue()
+        super(WorkerThread, self).__init__()
+
+    def run(self):
+        """Main loop."""
+        while True:
+            args = self._workqueue.get()
+            if args == self.STOP:
+                break
+            self.workfn(*args)
+        logger.info("{} worker stopped.".format(self.workfn.__name__))
+
+    def put(self, *args):
+        """Put a set of arguments into the queue.
+
+        In the main loop, workfn will be called with these arguments.
+        """
+        self._workqueue.put(args)
+
+    def stop(self):
+        """Stop and join this worker thread."""
+        self._workqueue.put(self.STOP)
+        self.join()
 
 
 class BlockingProxy(Proxy):

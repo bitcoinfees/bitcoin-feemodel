@@ -224,9 +224,11 @@ class ThreadTest(unittest.TestCase):
         proxy.blockcount = 333930
         proxy.on = False
         mempool = TxMempool(dbfile=tmpdbfile)
+        print("*** Proxy is OFF ***")
         with mempool.context_start():
             sleep(50)
             proxy.on = True
+            print("*** Proxy is ON ***")
             sleep(20)
             proxy.blockcount = 333931
             sleep(10)
