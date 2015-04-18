@@ -7,9 +7,9 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Free as free)
 from feemodel.simul.simul cimport SimMempool
 
-from math import sqrt, cos, exp, log, pi
+from math import exp
 from random import random, normalvariate, getrandbits
-from bisect import bisect, bisect_left
+from bisect import bisect_left
 from itertools import groupby
 
 from tabulate import tabulate

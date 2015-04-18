@@ -5,9 +5,6 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Realloc as realloc,
                           PyMem_Free as free)
 
-from collections import defaultdict
-from bisect import insort
-
 from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimTx
 
