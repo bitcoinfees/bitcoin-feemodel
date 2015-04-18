@@ -2,7 +2,7 @@ import unittest
 from feemodel.txmempool import MemBlock
 from feemodel.stranding import (tx_preprocess, calc_stranding_feerate,
                                 _calc_min_leadtime)
-from feemodel.tests.config import memblock_dbfile as dbfile
+from feemodel.tests.config import test_memblock_dbfile as dbfile
 
 txs_refA = [
     (11000, True),
@@ -55,10 +55,6 @@ txs_refG = [
 txs_refH = txs_refG + [(10000, True)]
 
 
-
-# FIXME: new defaults for tx_preprocess (no more remove_zero option,
-#        and remove high priority by default, plus < minrelaytxfee =>
-#        high priority now; need to recalibrate the tests
 class PreprocessTests(unittest.TestCase):
 
     def test_A(self):

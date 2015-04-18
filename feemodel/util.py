@@ -3,6 +3,7 @@ from __future__ import division
 import threading
 import Queue
 import logging
+import cPickle as pickle
 from bisect import insort, bisect
 from math import ceil, log
 from contextlib import contextmanager
@@ -10,10 +11,6 @@ from random import random
 from functools import wraps
 from time import time
 from collections import OrderedDict
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 from tabulate import tabulate
 

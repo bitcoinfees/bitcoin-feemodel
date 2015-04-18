@@ -5,11 +5,10 @@ from random import sample
 from time import time
 from math import log
 from feemodel.util import round_random
-from feemodel.config import memblock_dbfile
-from feemodel.txmempool import MemBlock
+from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.simul.txsources import SimTxSource, SimTx
 
-default_maxsamplesize = 10000
+DEFAULT_MAXSAMPLESIZE = 10000
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +23,7 @@ class ExpEstimator(SimTxSource):
         self._alpha = 0.5**(1 / halflife)
         self._reset_params()
 
-    def start(self, blockheight, stopflag=None, dbfile=memblock_dbfile):
+    def start(self, blockheight, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         self._reset_params()
         starttime = time()
         num_blocks_to_use = int(log(0.01) / log(self._alpha) / 600)
@@ -103,7 +102,7 @@ class ExpEstimator(SimTxSource):
 
 class RectEstimator(SimTxSource):
 
-    def __init__(self, maxsamplesize=default_maxsamplesize):
+    def __init__(self, maxsamplesize=DEFAULT_MAXSAMPLESIZE):
         self.maxsamplesize = maxsamplesize
         self._reset_params()
 
@@ -113,7 +112,7 @@ class RectEstimator(SimTxSource):
         self.totaltime = 0.
         self.totaltxs = 0
 
-    def start(self, blockrangetuple, stopflag=None, dbfile=memblock_dbfile):
+    def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         logger.info("Starting TxRate estimation "
                     "from blockrange ({}, {}).".format(*blockrangetuple))
         starttime = time()

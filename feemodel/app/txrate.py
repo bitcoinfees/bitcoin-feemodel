@@ -6,18 +6,16 @@ import logging
 from copy import copy
 
 from feemodel.estimate import ExpEstimator
-from feemodel.config import memblock_dbfile
 from feemodel.simul.txsources import SimTx
 
-default_halflife = 3600  # 1 hour
+DEFAULT_HALFLIFE = 3600  # 1 hour
 
 logger = logging.getLogger(__name__)
 
 
 class TxRateOnlineEstimator(object):
 
-    def __init__(self, halflife=default_halflife, dbfile=memblock_dbfile):
-        self.dbfile = dbfile
+    def __init__(self, halflife=DEFAULT_HALFLIFE):
         self.tr_estimator = ExpEstimator(halflife)
         self.prevstate = None
 
@@ -38,7 +36,7 @@ class TxRateOnlineEstimator(object):
     def init_calcs(self, state, tr_estimator):
         logger.info("Beginning init calcs.")
         try:
-            lastblock = tr_estimator.start(state.height, dbfile=self.dbfile)
+            lastblock = tr_estimator.start(state.height)
         except ValueError:
             # There are no memblocks.
             self.prevstate = copy(state)
@@ -84,7 +82,7 @@ class TxRateOnlineEstimator(object):
     #     if self.prevtime is None:
     #         try:
     #             bestheight, besttime, bestblocktxids = tr_estimator.start(
-    #                 currheight, dbfile=self.dbfile)
+    #                 currheight, dbfile=MEMBLOCK_DBFILE)
     #         except ValueError:
     #             # There are no memblocks
     #             self.prevtxids = set(curr_entries)

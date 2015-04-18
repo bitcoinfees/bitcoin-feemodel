@@ -5,11 +5,10 @@ import logging
 from copy import copy
 from time import sleep
 
-from feemodel.config import datadir
+from feemodel.tests.config import (setup_tmpdatadir,
+                                   test_memblock_dbfile as dbfile)
 from feemodel.txmempool import (TxMempool, MemBlock, MempoolState, MemEntry,
                                 get_mempool_state)
-
-from feemodel.tests.config import memblock_dbfile as dbfile
 from feemodel.tests.pseudoproxy import (proxy, install,
                                         rawmempool_from_mementries)
 
@@ -17,8 +16,6 @@ install()
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s:%(levelname)s:%(message)s')
-
-tmpdbfile = os.path.join(datadir, '_tmp_test.db')
 
 
 class BasicTests(unittest.TestCase):
@@ -66,56 +63,66 @@ class WriteReadTests(unittest.TestCase):
 
     def setUp(self):
         self.test_blockheight = 333931
-        self.db = None
-        if os.path.exists(tmpdbfile):
-            os.remove(tmpdbfile)
 
     def test_writeread(self):
         '''Tests that mempool entry is unchanged upon write/read.'''
-        memblock = MemBlock.read(333931, dbfile=dbfile)
-        memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
-        memblock_read = MemBlock.read(333931, dbfile=tmpdbfile)
-        print(memblock_read)
-        self.assertEqual(memblock_read, memblock)
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            memblock = MemBlock.read(333931)
+            memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
+            memblock_read = MemBlock.read(333931, dbfile=tmpdbfile)
+            print(memblock_read)
+            self.assertEqual(memblock_read, memblock)
 
     def test_writereadempty(self):
         '''Tests write/read of empty entries dict'''
-        memblock = MemBlock.read(self.test_blockheight, dbfile=dbfile)
-        memblock.entries = {}
-        memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
-        memblock_read = MemBlock.read(self.test_blockheight, dbfile=tmpdbfile)
-        self.assertEqual(memblock_read, memblock)
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            memblock = MemBlock.read(self.test_blockheight)
+            memblock.entries = {}
+            memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
+            memblock_read = MemBlock.read(self.test_blockheight,
+                                          dbfile=tmpdbfile)
+            self.assertEqual(memblock_read, memblock)
 
     def test_write_uninitialized(self):
         '''Test write of uninitialized MemBlock.'''
-        memblock = MemBlock()
-        with self.assertRaises(ValueError):
-            memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            memblock = MemBlock()
+            with self.assertRaises(ValueError):
+                memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
 
     def test_deletehistory(self):
         '''Test that history is deleted according to retention policy.'''
-        blocks_to_keep = 10
-        memblocks = [MemBlock.read(height, dbfile=dbfile)
-                     for height in range(333931, 333953)]
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            blocks_to_keep = 10
+            memblocks = [MemBlock.read(height)
+                         for height in range(333931, 333953)]
 
-        for memblock in memblocks:
-            if memblock:
-                memblock.write(dbfile=tmpdbfile, blocks_to_keep=blocks_to_keep)
+            for memblock in memblocks:
+                if memblock:
+                    memblock.write(dbfile=tmpdbfile,
+                                   blocks_to_keep=blocks_to_keep)
 
-        block_list = MemBlock.get_heights(dbfile=tmpdbfile)
-        self.assertEqual(len(block_list), blocks_to_keep)
+            block_list = MemBlock.get_heights(dbfile=tmpdbfile)
+            self.assertEqual(len(block_list), blocks_to_keep)
 
     def test_duplicate_writes(self):
-        block = MemBlock.read(333931, dbfile=dbfile)
-        block.write(tmpdbfile, 100)
-        self.assertRaises(sqlite3.IntegrityError, block.write, tmpdbfile, 100)
-        self.db = sqlite3.connect(tmpdbfile)
-        txlist = self.db.execute('SELECT * FROM txs WHERE blockheight=?',
-                                 (333931,))
-        txids = [tx[1] for tx in txlist]
-        self.assertEqual(sorted(set(txids)), sorted(txids))
-        block_read = MemBlock.read(333931, dbfile=tmpdbfile)
-        self.assertEqual(block, block_read)
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            block = MemBlock.read(333931)
+            block.write(tmpdbfile, 100)
+            self.assertRaises(
+                sqlite3.IntegrityError, block.write, tmpdbfile, 100)
+            db = sqlite3.connect(tmpdbfile)
+            txlist = db.execute('SELECT * FROM txs WHERE blockheight=333931')
+            txids = [tx[1] for tx in txlist]
+            self.assertEqual(sorted(set(txids)), sorted(txids))
+            block_read = MemBlock.read(333931, dbfile=tmpdbfile)
+            self.assertEqual(block, block_read)
+            db.close()
 
     def test_read_uninitialized(self):
         '''Read from a db that has not been initialized.'''
@@ -123,12 +130,6 @@ class WriteReadTests(unittest.TestCase):
         self.assertIsNone(block)
         heights = MemBlock.get_heights(dbfile='nonsense.db')
         self.assertEqual([], heights)
-
-    def tearDown(self):
-        if os.path.exists(tmpdbfile):
-            os.remove(tmpdbfile)
-        if self.db:
-            self.db.close()
 
 
 class ProcessBlocksTests(unittest.TestCase):
@@ -219,33 +220,32 @@ class ProcessBlocksTests(unittest.TestCase):
 class ThreadTest(unittest.TestCase):
 
     def test_A(self):
-        bref = MemBlock.read(333931, dbfile=dbfile)
-        proxy.set_rawmempool(333931)
-        proxy.blockcount = 333930
-        proxy.on = False
-        mempool = TxMempool(dbfile=tmpdbfile)
-        print("*** Proxy is OFF ***")
-        with mempool.context_start():
-            sleep(50)
-            proxy.on = True
-            print("*** Proxy is ON ***")
-            sleep(20)
-            proxy.blockcount = 333931
-            sleep(10)
+        with setup_tmpdatadir() as datadir:
+            tmpdbfile = os.path.join(datadir, '_tmp.db')
+            bref = MemBlock.read(333931)
+            proxy.set_rawmempool(333931)
+            proxy.blockcount = 333930
+            proxy.on = False
+            mempool = TxMempool(dbfile=tmpdbfile)
+            print("*** Proxy is OFF ***")
+            with mempool.context_start():
+                sleep(50)
+                proxy.on = True
+                print("*** Proxy is ON ***")
+                sleep(20)
+                proxy.blockcount = 333931
+                sleep(10)
 
-        btest = MemBlock.read(333931, dbfile=tmpdbfile)
-        # They're not equal because their times don't match.
-        self.assertNotEqual(btest, bref)
-        btest.time = bref.time
-        for entry in bref.entries.values():
-            entry.leadtime = int(entry.leadtime)
-        for entry in btest.entries.values():
-            entry.leadtime = btest.time - entry.time
-        self.assertEqual(btest, bref)
+            btest = MemBlock.read(333931, dbfile=tmpdbfile)
+            # They're not equal because their times don't match.
+            self.assertNotEqual(btest, bref)
+            btest.time = bref.time
+            for entry in bref.entries.values():
+                entry.leadtime = int(entry.leadtime)
+            for entry in btest.entries.values():
+                entry.leadtime = btest.time - entry.time
+            self.assertEqual(btest, bref)
 
-    def tearDown(self):
-        if os.path.exists(tmpdbfile):
-            os.remove(tmpdbfile)
 
 if __name__ == '__main__':
     unittest.main()

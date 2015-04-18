@@ -3,33 +3,26 @@ from __future__ import division
 
 import unittest
 import logging
-import os
 from math import exp
-from random import random, expovariate, seed
+from random import random, expovariate
 
+from feemodel.tests.config import (transientstatsref as transientstats,
+                                   setup_tmpdatadir)
 from feemodel.app.predict import Prediction, pvals_blocks_to_keep
 from feemodel.txmempool import MemBlock
-from feemodel.tests.config import (memblock_dbfile as dbfile,
-                                   transientstatsref as transientstats)
-from feemodel.config import datadir
 
-seed(0)
 logging.basicConfig(level=logging.DEBUG)
 
-pvals_dbfile = os.path.join(datadir, '_tmp_pvals.db')
-
 HALFLIFE = 1000
-
-if os.path.exists(pvals_dbfile):
-    os.remove(pvals_dbfile)
 
 
 class PredictTests(unittest.TestCase):
 
     def setUp(self):
         self.pred = Prediction(HALFLIFE)
-        self.b = MemBlock.read(333931, dbfile=dbfile)
-        extra_entries = MemBlock.read(333932, dbfile=dbfile)
+        with setup_tmpdatadir():
+            self.b = MemBlock.read(333931)
+            extra_entries = MemBlock.read(333932)
         self.pred.update_predictions(self.b, transientstats)
         self.pred.update_predictions(extra_entries, transientstats)
 
@@ -47,7 +40,7 @@ class PredictTests(unittest.TestCase):
             waittime = txpredict.inv(target_pval)
             txpredict.entrytime = blocktime - waittime
 
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=None)
         pvalcount = sum(pred.pvalcounts)
         pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
@@ -68,7 +61,7 @@ class PredictTests(unittest.TestCase):
         # Check the exponential decay
         N = 10
         for i in range(N):
-            pred.process_blocks([b])
+            pred.process_blocks([b], dbfile=None)
 
         newpdistance = pred.pval_ecdf.pdistance
         self.assertAlmostEqual(newpdistance, pdistance)
@@ -83,7 +76,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = blocktime
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=None)
         pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
@@ -96,7 +89,7 @@ class PredictTests(unittest.TestCase):
         for txpredict in pred.predicts.values():
             if txpredict:
                 txpredict.entrytime = -float("inf")
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=None)
         pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
         self.assertEqual(pdistance, 0.99)
@@ -107,62 +100,59 @@ class PredictTests(unittest.TestCase):
         pred = self.pred
         b = self.b
         b.entries = {}
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+        pred.process_blocks([b], dbfile=None)
 
     def test_E(self):
         # DB checks
-        pred = self.pred
-        b = self.b
-        blocktime = b.time
-        for txpredict in pred.predicts.values():
-            if txpredict:
-                txpredict.entrytime = blocktime - 600
-        pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
-        self.assertIsNone(pred_db.pval_ecdf)
-        pred.process_blocks([b], dbfile=pvals_dbfile)
-        pred_db = Prediction.from_db(HALFLIFE, conditions="waittime>600",
-                                     dbfile=pvals_dbfile)
-        # No pvals
-        self.assertRaises(ValueError, pred_db.print_predicts)
+        with setup_tmpdatadir():
+            pred = self.pred
+            b = self.b
+            blocktime = b.time
+            for txpredict in pred.predicts.values():
+                if txpredict:
+                    txpredict.entrytime = blocktime - 600
+            pred_db = Prediction.from_db(HALFLIFE)
+            self.assertIsNone(pred_db.pval_ecdf)
+            pred.process_blocks([b])
+            pred_db = Prediction.from_db(HALFLIFE, conditions="waittime>600")
+            # No pvals
+            self.assertRaises(ValueError, pred_db.print_predicts)
 
-        b.blockheight += pvals_blocks_to_keep - 1
-        pred.update_predictions(b, transientstats)
-        for txpredict in pred.predicts.values():
-            if txpredict:
-                txpredict.entrytime = blocktime - 300
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+            b.blockheight += pvals_blocks_to_keep - 1
+            pred.update_predictions(b, transientstats)
+            for txpredict in pred.predicts.values():
+                if txpredict:
+                    txpredict.entrytime = blocktime - 300
+            pred.process_blocks([b])
 
-        # Check stat is unchanged on load
-        pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
-        for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf):
-            self.assertAlmostEqual(p[1], p_db[1])
-        self.assertEqual(pred_db.pval_ecdf.pdistance, pred.pval_ecdf.pdistance)
+            # Check stat is unchanged on load
+            pred_db = Prediction.from_db(HALFLIFE)
+            for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf):
+                self.assertAlmostEqual(p[1], p_db[1])
+            self.assertEqual(pred_db.pval_ecdf.pdistance,
+                             pred.pval_ecdf.pdistance)
 
-        # Check the circular db deletes
-        heights = pred._get_heights(dbfile=pvals_dbfile)
-        self.assertEqual(heights, [333931, 333931+pvals_blocks_to_keep-1])
+            # Check the circular db deletes
+            heights = pred._get_heights()
+            self.assertEqual(heights, [333931, 333931+pvals_blocks_to_keep-1])
 
-        b.blockheight += 1
-        pred.update_predictions(b, transientstats)
-        for txpredict in pred.predicts.values():
-            if txpredict:
-                txpredict.entrytime = blocktime - 100
-        pred.process_blocks([b], dbfile=pvals_dbfile)
+            b.blockheight += 1
+            pred.update_predictions(b, transientstats)
+            for txpredict in pred.predicts.values():
+                if txpredict:
+                    txpredict.entrytime = blocktime - 100
+            pred.process_blocks([b])
 
-        heights = pred._get_heights(dbfile=pvals_dbfile)
-        self.assertEqual(
-            heights,
-            [333931+pvals_blocks_to_keep-1, 333931+pvals_blocks_to_keep])
-        pred_db = Prediction.from_db(HALFLIFE, dbfile=pvals_dbfile)
-        self.assertTrue(any([
-            abs(p[1]-p_db[1]) >= 0.00001
-            for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf)]))
-        self.assertNotAlmostEqual(pred.pval_ecdf.pdistance,
-                                  pred_db.pval_ecdf.pdistance)
-
-    def tearDown(self):
-        if os.path.exists(pvals_dbfile):
-            os.remove(pvals_dbfile)
+            heights = pred._get_heights()
+            self.assertEqual(
+                heights,
+                [333931+pvals_blocks_to_keep-1, 333931+pvals_blocks_to_keep])
+            pred_db = Prediction.from_db(HALFLIFE)
+            self.assertTrue(any([
+                abs(p[1]-p_db[1]) >= 0.00001
+                for p, p_db in zip(pred.pval_ecdf, pred_db.pval_ecdf)]))
+            self.assertNotAlmostEqual(pred.pval_ecdf.pdistance,
+                                      pred_db.pval_ecdf.pdistance)
 
 
 class GeneralTests(unittest.TestCase):

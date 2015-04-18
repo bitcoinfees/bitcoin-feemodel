@@ -10,8 +10,8 @@ from copy import copy
 
 from bitcoin.core import b2lx
 
-from feemodel.config import (memblock_dbfile, poll_period,
-                             minrelaytxfee, prioritythresh, blocks_to_keep)
+from feemodel.config import (datadir, poll_period, MINRELAYTXFEE,
+                             PRIORITYTHRESH, blocks_to_keep)
 from feemodel.util import proxy, StoppableThread, get_feerate, WorkerThread
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
@@ -40,6 +40,7 @@ MEMBLOCK_TABLE_SCHEMA = {
         'inblock INTEGER'
     ]
 }
+MEMBLOCK_DBFILE = os.path.join(datadir, 'memblock.db')
 
 # We're having db concurrency problems, so add our own lock for now
 db_lock = threading.Lock()
@@ -72,7 +73,7 @@ class TxMempool(StoppableThread):
     errors.
     '''
 
-    def __init__(self, dbfile=memblock_dbfile, blocks_to_keep=blocks_to_keep):
+    def __init__(self, dbfile=MEMBLOCK_DBFILE, blocks_to_keep=blocks_to_keep):
         self.state = None
         self.blockworker = None
         self.dbfile = dbfile
@@ -86,7 +87,8 @@ class TxMempool(StoppableThread):
 
         Updates mempool every poll_period seconds.
         """
-        logger.info("Starting TxMempool")
+        logger.info("Starting TxMempool with dbfile/blocks_to_keep: {}/{}".
+                    format(self.dbfile, self.blocks_to_keep))
         self.blockworker = WorkerThread(self.process_blocks)
         self.blockworker.start()
         try:
@@ -321,7 +323,7 @@ class MemBlock(MempoolState):
                 db.close()
 
     @classmethod
-    def read(cls, blockheight, dbfile=memblock_dbfile):
+    def read(cls, blockheight, dbfile=MEMBLOCK_DBFILE):
         '''Read MemBlock from disk.
 
         Returns the memblock with specified blockheight.
@@ -357,7 +359,7 @@ class MemBlock(MempoolState):
         return memblock
 
     @staticmethod
-    def get_heights(blockrangetuple=None, dbfile=memblock_dbfile):
+    def get_heights(blockrangetuple=None, dbfile=MEMBLOCK_DBFILE):
         '''Get the list of MemBlocks stored on disk.
 
         Returns a list of heights of all MemBlocks on disk within
@@ -456,8 +458,8 @@ class MemEntry(SimEntry):
         as high priority if (entry.currentpriority > prioritythresh) or
         (entry.feerate < minrelaytxfee).
         '''
-        return (self.currentpriority > prioritythresh or
-                self.feerate < minrelaytxfee)
+        return (self.currentpriority > PRIORITYTHRESH or
+                self.feerate < MINRELAYTXFEE)
 
     def _get_attr_tuple(self):
         '''Get tuple of attributes.

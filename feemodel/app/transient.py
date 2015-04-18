@@ -5,7 +5,7 @@ from time import time
 from bisect import bisect
 from math import ceil
 
-from feemodel.config import minrelaytxfee
+from feemodel.config import MINRELAYTXFEE
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
 from feemodel.simul.stats import WaitFn
@@ -143,7 +143,7 @@ class TransientOnline(StoppableThread):
             fidx = bisect(feerates, entry.feerate)
             if fidx:
                 sizebins[fidx-1] += entry.size
-            if entry.feerate >= minrelaytxfee:
+            if entry.feerate >= MINRELAYTXFEE:
                 mempoolsize_with_fee += entry.size
         mempoolsize = [sum(sizebins[idx:]) for idx in range(len(sizebins))]
         return mempoolsize, mempoolsize_with_fee

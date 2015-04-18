@@ -6,12 +6,12 @@ from itertools import groupby
 
 from tabulate import tabulate
 
-from feemodel.config import knownpools, memblock_dbfile
-from feemodel.util import get_coinbase_info, get_block_timestamp
-from feemodel.util import get_block_size, get_hashesperblock
+from feemodel.config import knownpools
+from feemodel.util import (get_coinbase_info, get_block_timestamp,
+                           get_block_size, get_hashesperblock)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
-from feemodel.txmempool import MemBlock
+from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class PoolEstimate(SimPool):
         super(PoolEstimate, self).__init__(
             hashrate, maxblocksize, float("inf"))
 
-    def estimate_minfeerate(self, stopflag=None, dbfile=memblock_dbfile):
+    def estimate_minfeerate(self, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         txs = []
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
@@ -108,7 +108,7 @@ class PoolsEstimator(SimPools):
     def update(self):
         super(PoolsEstimator, self).update(self.pools)
 
-    def start(self, blockrangetuple, stopflag=None, dbfile=memblock_dbfile):
+    def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         logger.info("Beginning pool estimation "
                     "from blockrange({}, {})".format(*blockrangetuple))
         starttime = time()
@@ -174,7 +174,7 @@ class PoolsEstimator(SimPools):
 
         logger.info("Finished identifying blocks.")
 
-    def estimate_pools(self, stopflag=None, dbfile=memblock_dbfile):
+    def estimate_pools(self, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         if len(self.blockmap) < 2:
             raise ValueError("Not enough blocks.")
         self.pools = {}

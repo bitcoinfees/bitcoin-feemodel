@@ -6,7 +6,7 @@ from __future__ import division
 
 import multiprocessing
 from random import random
-from feemodel.config import minrelaytxfee
+from feemodel.config import MINRELAYTXFEE
 from feemodel.util import DataSample
 
 __all__ = ['tx_preprocess', 'calc_stranding_feerate']
@@ -61,7 +61,7 @@ def calc_stranding_feerate(txs, bootstrap=True, numprocesses=None):
             belowk += not tx[1]
             belown += 1
     if alt_bias_ref is None:
-        alt_bias_ref = minrelaytxfee
+        alt_bias_ref = MINRELAYTXFEE
 
     if bootstrap and sfr != float("inf"):
         N = 1000  # Number of bootstrap estimates

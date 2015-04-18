@@ -1,17 +1,17 @@
-import os
-import shutil
 import unittest
 import logging
 import sqlite3
 from time import sleep, time
 from pprint import pprint
 
-from feemodel.txmempool import MemBlock
+from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
+                                   setup_tmpdatadir)
 from feemodel.tests.pseudoproxy import install, proxy
-from feemodel.tests.config import memblock_dbfile as testdb
+
+from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.app.simonline import SimOnline, predict_block_halflife
 from feemodel.app.predict import Prediction
-from feemodel.config import datadir, poll_period
+from feemodel.config import poll_period
 
 import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
@@ -25,25 +25,8 @@ install()
 class AppTests(unittest.TestCase):
 
     def setUp(self):
-        self.memblock_dbfile = os.path.join(datadir, '_memblocks.db')
-        self.pools_savedir = os.path.join(datadir, '_pools/')
-        self.predict_savefile = os.path.join(datadir, '_savepredicts.pickle')
-        self.pvals_dbfile = os.path.join(datadir, '_pvals.db')
-
-        shutil.copyfile(testdb, self.memblock_dbfile)
-
-        simonline.memblock_dbfile = self.memblock_dbfile
-        simonline.pools_savedir = self.pools_savedir
-        simonline.predict_savefile = self.predict_savefile
-        simonline.pvals_dbfile = self.pvals_dbfile
-
-        self.time = get_mytime(self.memblock_dbfile)
+        self.time = get_mytime()
         txmempool.time = self.time
-        db = sqlite3.connect(self.memblock_dbfile)
-        with db:
-            db.execute("DELETE FROM blocks WHERE height=333953")
-            db.execute("DELETE FROM txs WHERE height=333953")
-        db.close()
 
     def test_A(self):
         """Basic tests."""
@@ -51,7 +34,12 @@ class AppTests(unittest.TestCase):
         sim = SimOnline()
         proxy.blockcount = 333952
         print("Starting test A thread.")
-        with sim.context_start():
+        with setup_tmpdatadir(), sim.context_start():
+            db = sqlite3.connect(MEMBLOCK_DBFILE)
+            with db:
+                db.execute("DELETE FROM blocks WHERE height=333953")
+                db.execute("DELETE FROM txs WHERE height=333953")
+            db.close()
             for method in ['get_predictstats', 'get_poolstats',
                            'get_transientstats', 'get_txstats']:
                 self.assertIsNone(getattr(sim, method)())
@@ -82,8 +70,7 @@ class AppTests(unittest.TestCase):
             predictstats = sim.get_predictstats()
             pprint(zip(*predictstats['pval_ecdf']))
             print("p-distance is {}".format(predictstats['pdistance']))
-            pred_db = Prediction.from_db(predict_block_halflife,
-                                         dbfile=self.pvals_dbfile)
+            pred_db = Prediction.from_db(predict_block_halflife)
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
 
     def test_B(self):
@@ -93,25 +80,16 @@ class AppTests(unittest.TestCase):
         proxy.blockcount = 333930
         proxy.set_rawmempool(333931)
         print("Starting test B thread.")
-        with sim.context_start():
+        with setup_tmpdatadir(), sim.context_start():
             sleep(5)
             proxy.set_rawmempool(333932)
             sleep(5)
             pprint(sim.get_txstats())
 
-    def tearDown(self):
-        for filepath in [self.memblock_dbfile,
-                         self.predict_savefile,
-                         self.pvals_dbfile]:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-        if os.path.exists(self.pools_savedir):
-            shutil.rmtree(self.pools_savedir)
 
-
-def get_mytime(dbfile):
+def get_mytime():
     starttime = time()
-    b = MemBlock.read(333953, dbfile=dbfile)
+    b = MemBlock.read(333953, dbfile=memblock_dbfile)
     reftime = b.time
 
     def mytime():

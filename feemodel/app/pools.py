@@ -5,30 +5,26 @@ import threading
 import os
 from time import time
 from copy import copy
-from feemodel.config import datadir, memblock_dbfile, DIFF_RETARGET_INTERVAL
+from feemodel.config import datadir, DIFF_RETARGET_INTERVAL
 from feemodel.util import save_obj, load_obj
-from feemodel.txmempool import MemBlock
+from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.estimate.pools import PoolsEstimator
 
 logger = logging.getLogger(__name__)
 
-default_update_period = 86400
-default_savedir = os.path.join(datadir, 'pools/')
-default_minblocks = 432  # 3 days' worth
+DEFAULT_UPDATE_PERIOD = 86400
+DEFAULT_MINBLOCKS = 432  # 3 days' worth
+SAVEDIR = os.path.join(datadir, 'pools/')
 
 
 class PoolsOnlineEstimator(object):
 
     def __init__(self, window,
-                 update_period=default_update_period,
-                 minblocks=default_minblocks,
-                 dbfile=memblock_dbfile,
-                 savedir=default_savedir):
+                 update_period=DEFAULT_UPDATE_PERIOD,
+                 minblocks=DEFAULT_MINBLOCKS):
         self.window = window
         self.update_period = update_period
         self.minblocks = minblocks
-        self.dbfile = dbfile
-        self.savedir = savedir
         self.best_diff_interval = None
         self.lock = threading.Lock()
         try:
@@ -49,8 +45,8 @@ class PoolsOnlineEstimator(object):
                             bestheight)
                 self.best_diff_interval = bestheight // DIFF_RETARGET_INTERVAL
         self.next_update = self.poolsestimate.timestamp + update_period
-        if not os.path.exists(self.savedir):
-            os.makedirs(self.savedir)
+        if not os.path.exists(SAVEDIR):
+            os.makedirs(SAVEDIR)
 
     def update_async(self, currheight, stopflag=None):
         '''Update pool estimates in a new thread.
@@ -117,7 +113,7 @@ class PoolsOnlineEstimator(object):
         with self.lock:
             rangetuple = [currheight-self.window+1, currheight+1]
             have_heights = MemBlock.get_heights(
-                blockrangetuple=rangetuple, dbfile=self.dbfile)
+                blockrangetuple=rangetuple, dbfile=MEMBLOCK_DBFILE)
             if len(have_heights) >= self.minblocks:
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
@@ -134,7 +130,7 @@ class PoolsOnlineEstimator(object):
             poolsestimate = copy(self.poolsestimate)
             try:
                 poolsestimate.start(
-                    rangetuple, stopflag=stopflag, dbfile=self.dbfile)
+                    rangetuple, stopflag=stopflag, dbfile=MEMBLOCK_DBFILE)
             except StopIteration:
                 return
             self.poolsestimate = poolsestimate
@@ -155,17 +151,17 @@ class PoolsOnlineEstimator(object):
                         format(poolsestimate.blockrate))
 
     def load_estimates(self):
-        savefiles = sorted([f for f in os.listdir(self.savedir)
+        savefiles = sorted([f for f in os.listdir(SAVEDIR)
                             if f.startswith('pe') and f.endswith('pickle')])
         # This works until ~ 2190 CE
-        savefile = os.path.join(self.savedir, savefiles[-1])
+        savefile = os.path.join(SAVEDIR, savefiles[-1])
         self.poolsestimate = load_obj(savefile)
 
     def save_estimates(self, currheight):
         currheightstr = str(currheight)
         currheightstr = (7 - len(currheightstr)) * '0' + currheightstr
         savefilename = 'pe' + currheightstr + '.pickle'
-        savefile = os.path.join(self.savedir, savefilename)
+        savefile = os.path.join(SAVEDIR, savefilename)
         save_obj(self.poolsestimate, savefile)
 
     def __nonzero__(self):
@@ -199,8 +195,8 @@ class PoolsOnlineEstimator(object):
 # #
 # #        self.next_update = self.pe.timestamp + update_period
 # #        self._updating = None
-# #        if not os.path.exists(self.savedir):
-# #            os.mkdir(self.savedir)
+# #        if not os.path.exists(SAVEDIR):
+# #            os.mkdir(SAVEDIR)
 # #        super(PoolsEstimatorOnline, self).__init__()
 # #
 # #    @StoppableThread.auto_restart(60)
@@ -256,14 +252,14 @@ class PoolsOnlineEstimator(object):
 # #            self._pe = val
 # #
 # #    def load_pe(self):
-# #        savefiles = sorted([f for f in os.listdir(self.savedir)
+# #        savefiles = sorted([f for f in os.listdir(SAVEDIR)
 # #                            if f.startswith('pe') and f.endswith('pickle')])
-# #        savefile = os.path.join(self.savedir, savefiles[-1])
+# #        savefile = os.path.join(SAVEDIR, savefiles[-1])
 # #        self.pe = load_obj(savefile)
 # #
 # #    def save_pe(self, currheight):
 # #        savefilename = 'pe' + str(currheight) + '.pickle'
-# #        savefile = os.path.join(self.savedir, savefilename)
+# #        savefile = os.path.join(SAVEDIR, savefilename)
 # #        save_obj(self.pe, savefile)
 # #
 # #    @property

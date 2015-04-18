@@ -54,10 +54,6 @@ def load_config(section, option, opt_type=''):
         return defaultval
 
 
-prioritythresh = load_config('general', 'prioritythresh', opt_type='int')
-minrelaytxfee = load_config('general', 'minrelaytxfee', opt_type='int')
-
-memblock_dbfile = os.path.join(datadir, 'memblocks.db')
 poll_period = load_config('txmempool', 'poll_period', opt_type='int')
 blocks_to_keep = load_config('txmempool', 'blocks_to_keep', opt_type='int')
 
@@ -88,3 +84,5 @@ trans_config = {
 }
 
 DIFF_RETARGET_INTERVAL = 2016
+PRIORITYTHRESH = 57600000
+MINRELAYTXFEE = 1000

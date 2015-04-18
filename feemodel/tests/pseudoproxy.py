@@ -6,7 +6,7 @@ import feemodel.util
 from feemodel.util import load_obj
 import feemodel.txmempool
 from feemodel.txmempool import MemBlock
-from feemodel.tests.config import blockdata, memblock_dbfile as dbfile
+from feemodel.tests.config import blockdata, test_memblock_dbfile as dbfile
 
 
 class PseudoProxy(object):

@@ -1,20 +1,18 @@
 '''Test app.transient.'''
 import unittest
 import logging
-from time import sleep, time
+from time import sleep
 from bisect import bisect
 from math import log
-from random import choice, seed
 from pprint import pprint
 from copy import deepcopy
 
-import feemodel.simul.transient
 from feemodel.simul.transient import transientsim
 from feemodel.simul.simul import Simul
 from feemodel.txmempool import MempoolState
 from feemodel.util import DataSample
 from feemodel.app.transient import TransientOnline
-from feemodel.app.predict import WAIT_PERCENTILE_PTS, WAIT_MEDIAN_IDX
+from feemodel.app.predict import WAIT_PERCENTILE_PTS
 from feemodel.tests.config import (poolsref, txref,
                                    transientwaitsref as waitsref)
 from feemodel.tests.pseudoproxy import install, proxy

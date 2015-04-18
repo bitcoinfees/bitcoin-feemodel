@@ -1,7 +1,7 @@
 import unittest
 from feemodel.txmempool import MemBlock
 from feemodel.tests.pseudoproxy import proxy
-from feemodel.tests.config import memblock_dbfile as dbfile
+from feemodel.tests.config import test_memblock_dbfile as dbfile
 
 AVAILABLE_HEIGHTS = range(333931, 333954) + [334655, 334656]
 
@@ -25,7 +25,6 @@ class PseudoProxyTests(unittest.TestCase):
         for txid, rawentry in rawmempool.items():
             for key, val in rawentry.items():
                 self.assertEqual(val, getattr(b.entries[txid], key))
-
 
 
 if __name__ == "__main__":

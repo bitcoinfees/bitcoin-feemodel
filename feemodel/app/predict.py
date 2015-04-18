@@ -29,7 +29,7 @@ PVALS_DB_SCHEMA = {
         'pval REAL'
     ]
 }
-pvals_dbfile = os.path.join(datadir, 'pvals.db')
+PVALS_DBFILE = os.path.join(datadir, 'pvals.db')
 pvals_blocks_to_keep = 2016
 
 
@@ -141,7 +141,7 @@ class Prediction(object):
         logger.debug("{} new predicts.".format(len(newpredicts)))
         self.predicts.update(newpredicts)
 
-    def process_blocks(self, blocks, dbfile=None):
+    def process_blocks(self, blocks, dbfile=PVALS_DBFILE):
         for block in blocks:
             if block is None:
                 continue
@@ -186,7 +186,7 @@ class Prediction(object):
         self.pval_ecdf = PValECDF(self.pvalcounts)
 
     @classmethod
-    def from_db(cls, block_halflife, conditions=None, dbfile=pvals_dbfile):
+    def from_db(cls, block_halflife, conditions=None, dbfile=PVALS_DBFILE):
         '''Load past tx p-vals from db.
 
         Only uses the txs for which condition_fn(txpredict) is True.
@@ -231,7 +231,7 @@ class Prediction(object):
                 db.close()
 
     @staticmethod
-    def _read_block(blockheight, conditions=None, dbfile=pvals_dbfile):
+    def _read_block(blockheight, conditions=None, dbfile=PVALS_DBFILE):
         '''Read the p-vals of a block.
 
         conditions is an SQL WHERE clause expression. Warning: there are no
@@ -254,7 +254,7 @@ class Prediction(object):
                 db.close()
 
     @staticmethod
-    def _get_heights(dbfile=pvals_dbfile):
+    def _get_heights(dbfile=PVALS_DBFILE):
         '''Get the block heights in the db.
 
         Returns the list of heights for which tx p-value records exist.

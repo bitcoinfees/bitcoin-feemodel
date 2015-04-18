@@ -12,7 +12,7 @@ from feemodel.txmempool import MemBlock
 from feemodel.simul import (SimPool, SimPools, Simul, SimTx, SimTxSource,
                             SimEntry)
 from feemodel.simul.pools import SimBlock
-from feemodel.tests.config import memblock_dbfile as dbfile
+from feemodel.tests.config import test_memblock_dbfile as dbfile
 from feemodel.simul.simul import SimMempool
 from feemodel.simul.transient import transientsim_core, transientsim
 from feemodel.util import cumsum_gen
