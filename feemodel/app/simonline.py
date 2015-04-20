@@ -5,7 +5,7 @@ import logging
 
 from feemodel.txmempool import TxMempool, MEMBLOCK_DBFILE
 from feemodel.config import (datadir, pools_config, txrate_halflife,
-                             trans_config, predict_block_halflife)
+                             trans_config, predict_config)
 from feemodel.util import load_obj, save_obj, WorkerThread
 from feemodel.app.pools import PoolsOnlineEstimator
 from feemodel.app.txrate import TxRateOnlineEstimator
@@ -81,7 +81,9 @@ class SimOnline(TxMempool):
         except Exception:
             logger.info("Unable to load saved predicts; "
                         "starting from scratch.")
-            self.prediction = Prediction(predict_block_halflife)
+            self.prediction = Prediction(
+                predict_config['block_halflife'],
+                blocks_to_keep=predict_config['blocks_to_keep'])
 
     def save_predicts(self):
         try:

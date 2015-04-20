@@ -231,7 +231,7 @@ def get_blockname(height):
             name = candidate_name
 
     if name is None:
-        for addr in baddrs:
+        for addr in sorted(baddrs):
             if addr is not None:
                 # Underscore indicates that the pool is not in the
                 # list of known pools. We use the first valid

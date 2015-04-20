@@ -10,8 +10,8 @@ from copy import copy
 
 from bitcoin.core import b2lx
 
-from feemodel.config import (datadir, poll_period, MINRELAYTXFEE,
-                             PRIORITYTHRESH, blocks_to_keep)
+from feemodel.config import (datadir, txmempool_config,
+                             MINRELAYTXFEE, PRIORITYTHRESH)
 from feemodel.util import proxy, StoppableThread, get_feerate, WorkerThread
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
@@ -35,7 +35,6 @@ MEMBLOCK_TABLE_SCHEMA = {
         'height INTEGER',
         'depends TEXT',
         'feerate INTEGER',
-        # TODO: remove leadtime / feerate from the db
         'leadtime INTEGER',
         'isconflict INTEGER',
         'inblock INTEGER'
@@ -74,11 +73,14 @@ class TxMempool(StoppableThread):
     errors.
     '''
 
-    def __init__(self, dbfile=MEMBLOCK_DBFILE, blocks_to_keep=blocks_to_keep):
+    def __init__(self, dbfile=MEMBLOCK_DBFILE,
+                 blocks_to_keep=txmempool_config['blocks_to_keep'],
+                 poll_period=txmempool_config['poll_period']):
         self.state = None
         self.blockworker = None
         self.dbfile = dbfile
         self.blocks_to_keep = blocks_to_keep
+        self.poll_period = poll_period
         self.starttime = time()
         super(TxMempool, self).__init__()
 
@@ -96,7 +98,7 @@ class TxMempool(StoppableThread):
             self.state = get_mempool_state()
             while not self.is_stopped():
                 self.update()
-                self.sleep(poll_period)
+                self.sleep(self.poll_period)
         finally:
             self.blockworker.stop()
             self.state = None

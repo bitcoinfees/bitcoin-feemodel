@@ -30,7 +30,7 @@ PVALS_DB_SCHEMA = {
     ]
 }
 PVALS_DBFILE = os.path.join(datadir, 'pvals.db')
-pvals_blocks_to_keep = 2016
+DEFAULT_BLOCKS_TO_KEEP = 2016
 
 
 class TxPrediction(Function):
@@ -119,8 +119,9 @@ class PValECDF(Function):
 
 class Prediction(object):
 
-    def __init__(self, block_halflife):
+    def __init__(self, block_halflife, blocks_to_keep=DEFAULT_BLOCKS_TO_KEEP):
         self.block_halflife = block_halflife
+        self.blocks_to_keep = DEFAULT_BLOCKS_TO_KEEP
         self._alpha = 0.5**(1 / block_halflife)
         self.pvalcounts = [0.]*NUM_PVAL_POINTS
         self.pval_ecdf = None
@@ -165,7 +166,7 @@ class Prediction(object):
                 if txid in block.entries and not block.entries[txid].inblock}
             if dbfile:
                 self._write_block(block.blockheight, predicts_inblock,
-                                  dbfile, pvals_blocks_to_keep)
+                                  dbfile, self.blocks_to_keep)
 
         try:
             self._calc_pval_ecdf()

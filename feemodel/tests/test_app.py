@@ -8,14 +8,15 @@ from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
 from feemodel.tests.pseudoproxy import install, proxy
 
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
-from feemodel.app.simonline import SimOnline, predict_block_halflife
+from feemodel.app.simonline import SimOnline
 from feemodel.app.predict import Prediction
-from feemodel.config import poll_period
+from feemodel.config import txmempool_config, predict_config
 
 import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
 
 install()
+poll_period = txmempool_config['poll_period']
 
 
 class AppTests(unittest.TestCase):
@@ -66,7 +67,7 @@ class AppTests(unittest.TestCase):
             predictstats = sim.get_predictstats()
             pprint(zip(*predictstats['pval_ecdf']))
             print("p-distance is {}".format(predictstats['pdistance']))
-            pred_db = Prediction.from_db(predict_block_halflife)
+            pred_db = Prediction.from_db(predict_config['block_halflife'])
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
             self.assertEqual(sum(sim.prediction.pvalcounts), 79)
 

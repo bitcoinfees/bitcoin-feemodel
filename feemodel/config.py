@@ -8,8 +8,7 @@ pkgname = 'bitcoin-feemodel'
 __version__ = get_distribution(pkgname).version
 
 knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
-defaultconfigfilename = 'default.cfg'
-defaultconfigfile = resource_stream(__name__, defaultconfigfilename)
+defaultconfigfile = resource_stream(__name__, 'default.cfg')
 defaultconfig = configparser.ConfigParser()
 defaultconfig.readfp(defaultconfigfile)
 
@@ -58,8 +57,11 @@ def load_config(section, option, opt_type=''):
         return defaultval
 
 
-poll_period = load_config('txmempool', 'poll_period', opt_type='int')
-blocks_to_keep = load_config('txmempool', 'blocks_to_keep', opt_type='int')
+txmempool_config = {
+    'poll_period': load_config('txmempool', 'poll_period', opt_type='int'),
+    'blocks_to_keep': load_config('txmempool', 'blocks_to_keep',
+                                  opt_type='int')
+}
 
 app_port = load_config('app', 'port', opt_type='int')
 pools_config = {
@@ -73,8 +75,12 @@ trans_config = {
     'maxiters': load_config('app', 'trans_maxiters', opt_type='int')
 }
 txrate_halflife = load_config('app', 'txrate_halflife', opt_type='int')
-predict_block_halflife = load_config('app', 'predict_block_halflife',
-                                     opt_type='int')
+predict_config = {
+    'block_halflife': load_config('app', 'predict_block_halflife',
+                                  opt_type='int'),
+    'blocks_to_keep': load_config('app', 'predict_blocks_to_keep',
+                                  opt_type='int')
+}
 
 DIFF_RETARGET_INTERVAL = 2016
 PRIORITYTHRESH = 57600000

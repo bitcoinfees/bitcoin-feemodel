@@ -7,7 +7,7 @@ from random import random, expovariate
 
 from feemodel.tests.config import (transientstatsref as transientstats,
                                    setup_tmpdatadir)
-from feemodel.app.predict import Prediction, pvals_blocks_to_keep
+from feemodel.app.predict import Prediction, DEFAULT_BLOCKS_TO_KEEP
 from feemodel.txmempool import MemBlock
 
 HALFLIFE = 1000
@@ -115,7 +115,7 @@ class PredictTests(unittest.TestCase):
             # No pvals
             self.assertRaises(ValueError, pred_db.print_predicts)
 
-            b.blockheight += pvals_blocks_to_keep - 1
+            b.blockheight += DEFAULT_BLOCKS_TO_KEEP - 1
             pred.update_predictions(b, transientstats)
             for txpredict in pred.predicts.values():
                 if txpredict:
@@ -131,7 +131,8 @@ class PredictTests(unittest.TestCase):
 
             # Check the circular db deletes
             heights = pred._get_heights()
-            self.assertEqual(heights, [333931, 333931+pvals_blocks_to_keep-1])
+            self.assertEqual(
+                heights, [333931, 333931+DEFAULT_BLOCKS_TO_KEEP-1])
 
             b.blockheight += 1
             pred.update_predictions(b, transientstats)
@@ -143,7 +144,8 @@ class PredictTests(unittest.TestCase):
             heights = pred._get_heights()
             self.assertEqual(
                 heights,
-                [333931+pvals_blocks_to_keep-1, 333931+pvals_blocks_to_keep])
+                [333931+DEFAULT_BLOCKS_TO_KEEP-1,
+                 333931+DEFAULT_BLOCKS_TO_KEEP])
             pred_db = Prediction.from_db(HALFLIFE)
             self.assertTrue(any([
                 abs(p[1]-p_db[1]) >= 0.00001
