@@ -1,6 +1,5 @@
 from __future__ import division
 
-from math import ceil
 from bisect import bisect, bisect_left
 from tabulate import tabulate
 
@@ -114,12 +113,13 @@ class Capacity(object):
 # TODO: deprecate this.
 def get_feeclasses(cap, stablefeerate):
     '''Choose suitable feerates at which to evaluate stats.'''
-    quantize = 200
-    feeclasses = [int(ceil((feerate + 1) / quantize)*quantize)
-                  for feerate in cap.feerates]
-    feeclasses = sorted(set(feeclasses))
-    feeclasses = filter(lambda feerate: feerate >= stablefeerate, feeclasses)
-    return feeclasses
+    raise NotImplementedError
+    # quantize = 200
+    # feeclasses = [int(ceil((feerate + 1) / quantize)*quantize)
+    #               for feerate in cap.feerates]
+    # feeclasses = sorted(set(feeclasses))
+    # feeclasses = filter(lambda feerate: feerate >= stablefeerate, feeclasses)
+    # return feeclasses
 
 
 # #class SimStats(object):

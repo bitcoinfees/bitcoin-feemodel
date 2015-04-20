@@ -35,6 +35,7 @@ MEMBLOCK_TABLE_SCHEMA = {
         'height INTEGER',
         'depends TEXT',
         'feerate INTEGER',
+        # TODO: remove leadtime / feerate from the db
         'leadtime INTEGER',
         'isconflict INTEGER',
         'inblock INTEGER'

@@ -171,7 +171,7 @@ class TransientStats(object):
             waitpercentiles.append(
                 [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
-        self.feerates = feepoints
+        self.feepoints = feepoints
         self.expectedwaits = WaitFn(feepoints, expectedwaits,
                                     expectedwaits_err)
         self.waitpercentiles = [WaitFn(feepoints, w)
@@ -182,7 +182,7 @@ class TransientStats(object):
 
         entry is a mementry object. Returns a TxPrediction object.
         '''
-        if feerate < self.feerates[0]:
+        if feerate < self.feepoints[0]:
             return None
         waitpercentiles = [w(feerate) for w in self.waitpercentiles]
         return TxPrediction(waitpercentiles, feerate, currtime)
@@ -194,7 +194,7 @@ class TransientStats(object):
             'numiters': self.numiters,
             'cap': self.cap.get_stats(),
             'stablefeerate': self.stablefeerate,
-            'feerates': self.feerates,
+            'feepoints': self.feepoints,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
             'waitpercentiles': [w.waits for w in self.waitpercentiles],

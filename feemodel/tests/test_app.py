@@ -72,6 +72,7 @@ class AppTests(unittest.TestCase):
             print("p-distance is {}".format(predictstats['pdistance']))
             pred_db = Prediction.from_db(predict_block_halflife)
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
+            self.assertEqual(sum(sim.prediction.pvalcounts), 79)
 
     def test_B(self):
         """No memblocks."""

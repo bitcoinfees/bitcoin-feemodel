@@ -126,7 +126,6 @@ class PoolsOnlineEstimator(object):
                 self.next_update = time() + retry_interval
                 return
             self.next_update = time() + self.update_period
-            # TODO: verify that we only need copy for this.
             poolsestimate = copy(self.poolsestimate)
             try:
                 poolsestimate.start(

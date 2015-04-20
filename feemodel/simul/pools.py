@@ -88,7 +88,6 @@ class SimPools(object):
         caps = list(cumsum_gen(
             groupby(pools, minfeerate_keyfn), mapfn=byterate_groupsum))
 
-        # TODO: decide if we should include feerate 0 or not.
         if not feerates or feerates[0] != 0:
             feerates.insert(0, 0)
             caps.insert(0, 0)
