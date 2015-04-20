@@ -140,10 +140,12 @@ cdef class SimMempool:
         self._reset_orphan_deps()
 
     cdef void _process_block(self, SimBlock simblock):
-        DEF MAXFEE = 2100000000000000
         cdef:
             int newblocksize, maxblocksize, blocksize, blocksize_ltd
-            long long minfeerate, sfr
+            # TODO: see if, on 32 bit systems, changing the feerate to uint
+            #       would speed things up
+            unsigned long long MAXFEE = -2
+            unsigned long long minfeerate, sfr
             TxStruct *newtx
             OrphanTx orphantx
             TxPtrArray blocktxs

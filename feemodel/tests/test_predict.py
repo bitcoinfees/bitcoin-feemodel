@@ -2,7 +2,6 @@
 from __future__ import division
 
 import unittest
-import logging
 from math import exp
 from random import random, expovariate
 
@@ -10,8 +9,6 @@ from feemodel.tests.config import (transientstatsref as transientstats,
                                    setup_tmpdatadir)
 from feemodel.app.predict import Prediction, pvals_blocks_to_keep
 from feemodel.txmempool import MemBlock
-
-logging.basicConfig(level=logging.DEBUG)
 
 HALFLIFE = 1000
 

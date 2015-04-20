@@ -34,11 +34,13 @@ class PoolEstimate(SimPool):
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
 
+        nummissingblocks = 0
         for height in sorted(self.blockheights, reverse=True):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             block = MemBlock.read(height, dbfile=dbfile)
             if block is None:
+                nummissingblocks += 1
                 continue
             _inblocktxs = filter(lambda tx: tx.inblock, block.entries.values())
             if _inblocktxs:
@@ -88,12 +90,9 @@ class PoolEstimate(SimPool):
                 "belowkn": (-1, -1),
             }
 
-        numblocks = len(self.feelimitedblocks) + len(self.sizelimitedblocks)
-        maxblocks = len(self.blockheights)
-
-        if numblocks < maxblocks:
-            logger.warning("MFR estimation: only %d memblocks found out "
-                           "of possible %d" % (numblocks, maxblocks))
+        if nummissingblocks:
+            logger.warning("MFR estimation: {} missing blocks.".
+                           format(nummissingblocks))
 
 
 class PoolsEstimator(SimPools):

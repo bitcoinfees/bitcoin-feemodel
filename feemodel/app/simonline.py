@@ -4,7 +4,8 @@ import os
 import logging
 
 from feemodel.txmempool import TxMempool, MEMBLOCK_DBFILE
-from feemodel.config import datadir
+from feemodel.config import (datadir, pools_config, txrate_halflife,
+                             trans_config, predict_block_halflife)
 from feemodel.util import load_obj, save_obj, WorkerThread
 from feemodel.app.pools import PoolsOnlineEstimator
 from feemodel.app.txrate import TxRateOnlineEstimator
@@ -12,18 +13,6 @@ from feemodel.app.transient import TransientOnline
 from feemodel.app.predict import Prediction, PVALS_DBFILE
 
 logger = logging.getLogger(__name__)
-
-pools_window = 2016
-pools_update_period = 86400
-pools_minblocks = 432
-
-txrate_halflife = 3600
-
-trans_update_period = 60
-trans_miniters = 1000
-trans_maxiters = 10000
-
-predict_block_halflife = 1008
 PREDICT_SAVEFILE = os.path.join(datadir, 'savepredict.pickle')
 
 
@@ -35,17 +24,17 @@ class SimOnline(TxMempool):
         self.load_predicts()
 
         self.poolsonline = PoolsOnlineEstimator(
-            pools_window,
-            update_period=pools_update_period,
-            minblocks=pools_minblocks)
+            pools_config['window'],
+            update_period=pools_config['update_period'],
+            minblocks=pools_config['minblocks'])
         self.txonline = TxRateOnlineEstimator(halflife=txrate_halflife)
         self.transient = TransientOnline(
             self,
             self.poolsonline,
             self.txonline,
-            update_period=trans_update_period,
-            miniters=trans_miniters,
-            maxiters=trans_maxiters)
+            update_period=trans_config['update_period'],
+            miniters=trans_config['miniters'],
+            maxiters=trans_config['maxiters'])
 
     def run(self):
         with self.transient.context_start():

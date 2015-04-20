@@ -1,5 +1,4 @@
 import unittest
-import logging
 import sqlite3
 from time import sleep, time
 from pprint import pprint
@@ -16,9 +15,6 @@ from feemodel.config import poll_period
 import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s:%(name)s:%(levelname)s:%(message)s')
 install()
 
 
@@ -30,7 +26,7 @@ class AppTests(unittest.TestCase):
 
     def test_A(self):
         """Basic tests."""
-        simonline.pools_minblocks = 1
+        simonline.pools_config['minblocks'] = 1
         sim = SimOnline()
         proxy.blockcount = 333952
         print("Starting test A thread.")
@@ -50,7 +46,7 @@ class AppTests(unittest.TestCase):
             transient_stats = sim.transient.stats
             transient_stats.expectedwaits.print_fn()
             transient_stats.cap.print_cap()
-            lowest_feerate = transient_stats.feerates[0]
+            lowest_feerate = transient_stats.feepoints[0]
             print("*** Setting rawmempool to 333931 ***")
             proxy.set_rawmempool(333953)
             sleep(poll_period)
@@ -76,7 +72,7 @@ class AppTests(unittest.TestCase):
 
     def test_B(self):
         """No memblocks."""
-        simonline.pools_minblocks = 432
+        simonline.pools_config['minblocks'] = 432
         sim = SimOnline()
         proxy.blockcount = 333930
         proxy.set_rawmempool(333931)

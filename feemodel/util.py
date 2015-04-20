@@ -93,7 +93,7 @@ class WorkerThread(threading.Thread):
     Fetches args from a queue and calls a user specified function.
     """
 
-    STOP = 'stop'
+    STOP = StopIteration()
 
     def __init__(self, workfn):
         """workfn is the function to be called."""
@@ -105,13 +105,13 @@ class WorkerThread(threading.Thread):
         """Main loop."""
         while True:
             args = self._workqueue.get()
-            if args == self.STOP:
+            if args is self.STOP:
                 break
             self.workfn(*args)
         logger.info("{} worker stopped.".format(self.workfn.__name__))
 
     def put(self, *args):
-        """Put a set of arguments into the queue.
+        """Put an argument tuple into the queue.
 
         In the main loop, workfn will be called with these arguments.
         """

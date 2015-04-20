@@ -1,7 +1,6 @@
 import unittest
 import sqlite3
 import os
-import logging
 from copy import copy
 from time import sleep
 
@@ -13,9 +12,6 @@ from feemodel.tests.pseudoproxy import (proxy, install,
                                         rawmempool_from_mementries)
 
 install()
-
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s:%(levelname)s:%(message)s')
 
 
 class BasicTests(unittest.TestCase):

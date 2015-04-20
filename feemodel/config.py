@@ -1,8 +1,7 @@
-import logging
 import os
 import json
 import ConfigParser as configparser
-from pkg_resources import resource_stream, resource_string, get_distribution
+from pkg_resources import resource_stream, get_distribution
 from feemodel.appdirs import user_data_dir
 
 pkgname = 'bitcoin-feemodel'
@@ -23,16 +22,18 @@ if not os.path.exists(datadir):
         raise e
 
 configfilename = os.path.join(datadir, 'feemodel.cfg')
+
+# If config file doesn't exist, create it with default values
 if not os.path.exists(configfilename):
-    defaultconfigstr = resource_string(__name__, defaultconfigfilename)
     try:
-        with open(configfilename, 'w') as f:
-            f.write(defaultconfigstr)
+        with open(configfilename, 'wb') as configfile:
+            defaultconfig.write(configfile)
     except Exception as e:
         print("Error: unable to write to data directory %s." % datadir)
         raise e
 
 config = configparser.ConfigParser()
+
 try:
     config.read(configfilename)
 except Exception:
@@ -41,7 +42,10 @@ except Exception:
 
 def load_config(section, option, opt_type=''):
     '''Return <option> from <section>.
+
     opt_type is "int" or "float", or the empty string (for strings).
+    Tries to load from main config feemodel.cfg, if it fails, then load from
+    default.cfg.
     '''
     try:
         getfn = getattr(config, 'get' + opt_type)
@@ -57,31 +61,20 @@ def load_config(section, option, opt_type=''):
 poll_period = load_config('txmempool', 'poll_period', opt_type='int')
 blocks_to_keep = load_config('txmempool', 'blocks_to_keep', opt_type='int')
 
-windowfillthresh = load_config('app', 'windowfillthresh', opt_type='float')
-applogfile = os.path.join(datadir, load_config('app', 'applogfile'))
-loglevel = getattr(logging, load_config('app', 'loglevel').upper())
 app_port = load_config('app', 'port', opt_type='int')
-
 pools_config = {
     'window': load_config('app', 'pools_window', opt_type='int'),
-    'update_period': load_config('app', 'pools_update_period', opt_type='int')
+    'update_period': load_config('app', 'pools_update_period', opt_type='int'),
+    'minblocks': load_config('app', 'pools_minblocks', opt_type='int')
 }
-
-ss_config = {
-    'window': load_config('app', 'ss_window', opt_type='int'),
-    'update_period': load_config('app', 'ss_update_period', opt_type='int'),
-    'maxiters': load_config('app', 'ss_maxiters', opt_type='int'),
-    'miniters': load_config('app', 'ss_miniters', opt_type='int'),
-    'maxtime': load_config('app', 'ss_maxtime', opt_type='int')
-}
-
 trans_config = {
-    'window': load_config('app', 'trans_window', opt_type='int'),
     'update_period': load_config('app', 'trans_update_period', opt_type='int'),
-    'maxiters': load_config('app', 'trans_maxiters', opt_type='int'),
     'miniters': load_config('app', 'trans_miniters', opt_type='int'),
-    'maxtime': load_config('app', 'trans_maxtime', opt_type='int')
+    'maxiters': load_config('app', 'trans_maxiters', opt_type='int')
 }
+txrate_halflife = load_config('app', 'txrate_halflife', opt_type='int')
+predict_block_halflife = load_config('app', 'predict_block_halflife',
+                                     opt_type='int')
 
 DIFF_RETARGET_INTERVAL = 2016
 PRIORITYTHRESH = 57600000

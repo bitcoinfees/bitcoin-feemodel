@@ -1,6 +1,5 @@
 '''Test app.transient.'''
 import unittest
-import logging
 from time import sleep
 from bisect import bisect
 from math import log
@@ -18,7 +17,6 @@ from feemodel.tests.config import (poolsref, txref,
 from feemodel.tests.pseudoproxy import install, proxy
 from feemodel.tests.test_simul import init_entries
 
-logging.basicConfig(level=logging.DEBUG)
 install()
 
 

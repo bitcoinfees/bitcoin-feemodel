@@ -2,7 +2,6 @@
 from __future__ import division
 
 import unittest
-import logging
 import os
 import threading
 from time import sleep, time
@@ -14,7 +13,6 @@ from feemodel.util import save_obj, get_hashesperblock, load_obj
 from feemodel.app.pools import PoolsOnlineEstimator
 
 install()
-logging.basicConfig(level=logging.DEBUG)
 
 
 class PoolsOnlineTests(unittest.TestCase):

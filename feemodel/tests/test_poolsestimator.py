@@ -1,4 +1,3 @@
-import logging
 import os
 import unittest
 import threading
@@ -13,8 +12,6 @@ from feemodel.estimate import PoolsEstimator
 
 
 install()
-logging.basicConfig(level=logging.DEBUG)
-
 blockrange = (333931, 333954)
 
 pe = PoolsEstimator()
