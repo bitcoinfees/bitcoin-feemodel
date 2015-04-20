@@ -8,9 +8,10 @@ from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
 from feemodel.tests.pseudoproxy import install, proxy
 
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
-from feemodel.app.simonline import SimOnline
+from feemodel.app.simonline import SimOnline, PREDICT_SAVEFILE
 from feemodel.app.predict import Prediction
 from feemodel.config import txmempool_config, predict_config
+from feemodel.util import load_obj
 
 import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
@@ -70,6 +71,8 @@ class AppTests(unittest.TestCase):
             pred_db = Prediction.from_db(predict_config['block_halflife'])
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
             self.assertEqual(sum(sim.prediction.pvalcounts), 79)
+            predict_load = load_obj(PREDICT_SAVEFILE)
+            self.assertEqual(predict_load, sim.prediction)
 
     def test_B(self):
         """No memblocks."""

@@ -74,6 +74,9 @@ class TxPrediction(Function):
             self.pval)
         return attr_tuple
 
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
+
 
 class PValECDF(Function):
     '''p-value empirical CDF.
@@ -295,6 +298,9 @@ class Prediction(object):
         return {
             "pval_ecdf": [pval_ecdf._x, pval_ecdf._y],
             "pdistance": pval_ecdf.pdistance}
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 # #class BlockScore(object):
