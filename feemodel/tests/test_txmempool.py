@@ -10,6 +10,7 @@ from feemodel.txmempool import (TxMempool, MemBlock, MempoolState, MemEntry,
                                 get_mempool_state)
 from feemodel.tests.pseudoproxy import (proxy, install,
                                         rawmempool_from_mementries)
+from feemodel.config import MINRELAYTXFEE
 
 install()
 
@@ -53,6 +54,33 @@ class BasicTests(unittest.TestCase):
         self.assertEqual(d.time, 0)
         self.assertEqual(len(d.entries), 1)
         self.assertEqual(d.entries['test'], state.entries['test'])
+
+    def test_mempoolstate_stats(self):
+        state = get_mempool_state()
+        stats = state.get_stats()
+        totalsize = sum([entry.size for entry in state.entries.values()])
+        self.assertEqual(stats['totalsize'], totalsize)
+        for idx, feerate in enumerate(stats['feerates']):
+            refsize = sum([entry.size for entry in state.entries.values()
+                           if entry.feerate >= feerate])
+            self.assertEqual(refsize, stats['revcumsize'][idx])
+
+        state.entries = {
+            txid: entry for txid, entry in state.entries.iteritems()
+            if entry.feerate < MINRELAYTXFEE}
+        stats = state.get_stats()
+        totalsize = sum([entry.size for entry in state.entries.values()])
+        self.assertEqual(stats['totalsize'], totalsize)
+        self.assertFalse(stats['feerates'])
+        self.assertFalse(stats['revcumsize'])
+
+        for entry in state.entries.values():
+            entry.feerate = MINRELAYTXFEE
+        stats = state.get_stats()
+        totalsize = sum([entry.size for entry in state.entries.values()])
+        self.assertEqual(stats['totalsize'], totalsize)
+        self.assertEqual(stats['feerates'], [MINRELAYTXFEE])
+        self.assertEqual(stats['revcumsize'], [totalsize])
 
 
 class WriteReadTests(unittest.TestCase):

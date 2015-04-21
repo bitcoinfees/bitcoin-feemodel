@@ -82,15 +82,16 @@ class PoolsOnlineEstimator(object):
         return self.poolsestimate
 
     def get_stats(self):
+        stats = {'next_update': self.next_update}
         est = self.poolsestimate
         if not est:
-            return None
+            return stats
         totalhashrate = est.calc_totalhashrate()
-        stats = {
+        stats.update({
             'timestamp': est.timestamp,
             'blockinterval': 1/est.blockrate,
             'totalhashrate': totalhashrate
-        }
+        })
         poolstats = {
             name: {
                 'hashrate': pool.hashrate,
@@ -99,14 +100,13 @@ class PoolsOnlineEstimator(object):
                 'minfeerate': pool.minfeerate,
                 'abovekn': pool.mfrstats['abovekn'],
                 'belowkn': pool.mfrstats['belowkn'],
-                'mean': pool.mfrstats['mean'],
-                'std': pool.mfrstats['std'],
-                'bias': pool.mfrstats['bias']
+                'mfrmean': pool.mfrstats['mean'],
+                'mfrstd': pool.mfrstats['std'],
+                'mfrbias': pool.mfrstats['bias']
             }
             for name, pool in est.pools.items()
         }
         stats.update({'pools': poolstats})
-        stats.update({'next_update': self.next_update})
         return stats
 
     def _update_pools(self, currheight, stopflag):

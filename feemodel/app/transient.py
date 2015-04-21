@@ -13,7 +13,7 @@ from feemodel.simul.transient import transientsim
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
 
 default_update_period = 60.
-default_miniters = 1000
+default_miniters = 2000
 default_maxiters = 10000
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,8 @@ class TransientOnline(StoppableThread):
         sim = Simul(pools, tx_source)
         feepoints = self.calc_feepoints(sim)
         init_entries = self.mempool.state.entries
+        mempoolsize = sum([entry.size for entry in init_entries.values()
+                           if entry.feerate >= MINRELAYTXFEE])
 
         feepoints, waittimes, timespent, numiters = transientsim(
             sim,
@@ -84,19 +86,16 @@ class TransientOnline(StoppableThread):
             maxtime=self.update_period,
             stopflag=self.get_stop_object())
 
-        mempoolsize, mempoolsize_with_fee = self._calc_mempoolsize(
-            init_entries, feepoints)
-
         logger.info("Finished transient simulation in %.2fs and "
                     "%d iterations - mempool size was %d bytes" %
-                    (timespent, numiters, mempoolsize_with_fee))
+                    (timespent, numiters, mempoolsize))
         # Warn if we reached miniters
         if numiters <= self.miniters*1.1:
             logger.warning("Transient sim took %.2fs to do %d iters." %
                            (timespent, numiters))
 
         self.stats = TransientStats(feepoints, waittimes, timespent, numiters,
-                                    sim, mempoolsize, mempoolsize_with_fee)
+                                    mempoolsize, sim)
         self._updating = False
 
     def calc_feepoints(self, sim):
@@ -150,32 +149,31 @@ class TransientOnline(StoppableThread):
 
 
 class TransientStats(object):
+
     def __init__(self, feepoints, waittimes, timespent, numiters,
-                 sim, mempoolsize, mempoolsize_with_fee):
+                 mempoolsize, sim):
         self.timestamp = time()
         self.timespent = timespent
         self.numiters = numiters
+        self.mempoolsize = mempoolsize
         self.cap = sim.cap
         self.stablefeerate = sim.stablefeerate
-        self.mempoolsize = mempoolsize
-        self.mempoolsize_with_fee = mempoolsize_with_fee
 
         expectedwaits = []
         expectedwaits_err = []
-        waitpercentiles = []
+        waitmatrix = []
         for waitsample in waittimes:
             waitdata = DataSample(waitsample)
             waitdata.calc_stats()
             expectedwaits.append(waitdata.mean)
             expectedwaits_err.append(waitdata.mean_interval[1]-waitdata.mean)
-            waitpercentiles.append(
+            waitmatrix.append(
                 [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
         self.feepoints = feepoints
         self.expectedwaits = WaitFn(feepoints, expectedwaits,
                                     expectedwaits_err)
-        self.waitpercentiles = [WaitFn(feepoints, w)
-                                for w in zip(*waitpercentiles)]
+        self.waitmatrix = [WaitFn(feepoints, w) for w in zip(*waitmatrix)]
 
     def predict(self, feerate, currtime):
         '''Predict the wait time of a transaction with specified feerate.
@@ -184,7 +182,7 @@ class TransientStats(object):
         '''
         if feerate < self.feepoints[0]:
             return None
-        waitpercentiles = [w(feerate) for w in self.waitpercentiles]
+        waitpercentiles = [w(feerate) for w in self.waitmatrix]
         return TxPrediction(waitpercentiles, feerate, currtime)
 
     def get_stats(self):
@@ -197,9 +195,7 @@ class TransientStats(object):
             'feepoints': self.feepoints,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
-            'waitpercentiles': [w.waits for w in self.waitpercentiles],
-            'mempoolsize': self.mempoolsize,
-            'mempoolsize_with_fee': self.mempoolsize_with_fee
+            'waitpercentiles': [w.waits for w in self.waitmatrix],
         }
         return stats
 

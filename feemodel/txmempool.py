@@ -7,12 +7,14 @@ import decimal
 import logging
 from time import time
 from copy import copy
+from itertools import groupby
 
 from bitcoin.core import b2lx
 
 from feemodel.config import (datadir, txmempool_config,
                              MINRELAYTXFEE, PRIORITYTHRESH)
-from feemodel.util import proxy, StoppableThread, get_feerate, WorkerThread
+from feemodel.util import (proxy, StoppableThread, get_feerate, WorkerThread,
+                           cumsum_gen)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
@@ -81,7 +83,6 @@ class TxMempool(StoppableThread):
         self.dbfile = dbfile
         self.blocks_to_keep = blocks_to_keep
         self.poll_period = poll_period
-        self.starttime = time()
         super(TxMempool, self).__init__()
 
     @StoppableThread.auto_restart(60)
@@ -163,23 +164,16 @@ class TxMempool(StoppableThread):
 
         return memblocks
 
-    def get_status(self):
-        raise NotImplementedError
-        # # TODO: gotta tidy this up
-        # runtime = int(time() - self.starttime)
-        # # TODO: use self.best_height for this.
-        # currheight = proxy.getblockcount()
-        # numhistory = len(MemBlock.get_heights())
-        # if self.rawmempool:
-        #     mempool_status = 'running'
-        # else:
-        #     mempool_status = 'stopped'
-        # status = {
-        #     'runtime': runtime,
-        #     'height': currheight,
-        #     'numhistory': numhistory,
-        #     'mempool': mempool_status}
-        # return status
+    def get_stats(self):
+        state = self.state
+        if state is None:
+            return None
+        stats = {
+            "poll_period": self.poll_period,
+            "blocks_to_keep": self.blocks_to_keep,
+        }
+        stats.update(state.get_stats())
+        return stats
 
     def __nonzero__(self):
         return self.state is not None
@@ -199,6 +193,48 @@ class MempoolState(object):
         self.entries = {txid: MemEntry.from_rawentry(rawentry)
                         for txid, rawentry in rawmempool.iteritems()}
         self.time = int(time())
+
+    def get_stats(self, nsizepts=10):
+
+        def feerate_keyfn(entry):
+            return entry.feerate
+
+        entries = sorted(self.entries.values(),
+                         key=feerate_keyfn, reverse=True)
+        sizebyfee = [(feerate, sum([entry.size for entry in feegroup]))
+                     for feerate, feegroup in groupby(entries, feerate_keyfn)]
+
+        totalsize = 0
+        minfeesize = 0
+        for feerate, size in sizebyfee:
+            totalsize += size
+            if feerate >= MINRELAYTXFEE:
+                minfeesize += size
+
+        sidx = 1
+        cumsize = []
+        feerates = []
+        for idx, size in enumerate(
+                cumsum_gen(sizebyfee, mapfn=lambda tup: tup[1])):
+            if size > minfeesize:
+                break
+            if size < minfeesize * sidx/nsizepts:
+                continue
+            cumsize.append(size)
+            feerates.append(sizebyfee[idx][0])
+            while minfeesize * sidx/nsizepts <= size:
+                sidx += 1
+
+        feerates.reverse()
+        cumsize.reverse()
+
+        stats = {
+            "feerates": feerates,
+            "revcumsize": cumsize,
+            "totalsize": totalsize,
+            "currheight": self.height
+        }
+        return stats
 
     def __copy__(self):
         cpy = MempoolState(self.height, {})
@@ -550,22 +586,3 @@ class MemEntry(SimEntry):
 
 def get_mempool_state():
     return MempoolState(*proxy.poll_mempool())
-
-
-# ## TODO: maybe deprecate this?
-# #def get_mempool_size(minfeerate):
-# #    '''Get size of mempool.
-# #
-# #    Returns size of mempool in bytes for all transactions that have
-# #    a feerate >= minfeerate.
-# #    '''
-# #    rawmempool = proxy.getrawmempool(verbose=True)
-# #    txs = [MemEntry.from_rawentry(entry) for entry in rawmempool.values()]
-# #    return sum([tx.size for tx in txs if tx.feerate >= minfeerate])
-# #
-# #
-# ## Deprecate this.
-# #def get_mempool():
-# #    rawmempool = proxy.getrawmempool(verbose=True)
-# #    return {txid: MemEntry.from_rawentry(entry)
-# #            for txid, entry in rawmempool.items()}

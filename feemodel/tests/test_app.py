@@ -1,5 +1,6 @@
 import unittest
 import sqlite3
+import multiprocessing
 from time import sleep, time
 from pprint import pprint
 
@@ -12,15 +13,18 @@ from feemodel.app.simonline import SimOnline, PREDICT_SAVEFILE
 from feemodel.app.predict import Prediction
 from feemodel.config import txmempool_config, predict_config
 from feemodel.util import load_obj
+from feemodel.apiclient import APIClient
+from feemodel.app.main import main
 
 import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
 
 install()
 poll_period = txmempool_config['poll_period']
+apiclient = APIClient()
 
 
-class AppTests(unittest.TestCase):
+class BasicTests(unittest.TestCase):
 
     def setUp(self):
         self.time = get_mytime()
@@ -86,6 +90,38 @@ class AppTests(unittest.TestCase):
             proxy.set_rawmempool(333932)
             sleep(5)
             pprint(sim.get_txstats())
+
+
+class AppAPITests(unittest.TestCase):
+
+    def setUp(self):
+        self.time = get_mytime()
+        txmempool.time = self.time
+
+    def test_A(self):
+        with setup_tmpdatadir():
+            simonline.pools_config['minblocks'] = 1
+            process = multiprocessing.Process(target=self.maintarget)
+            process.start()
+            pprint(self.wait_for_resource(apiclient.get_pools))
+            pprint(self.wait_for_resource(apiclient.get_mempool))
+            pprint(self.wait_for_resource(apiclient.get_transient))
+            sleep(30)
+            print("Terminating main process.")
+            process.terminate()
+
+    def maintarget(self):
+        proxy.blockcount = 333953
+        main()
+
+    def wait_for_resource(self, fn):
+        while True:
+            try:
+                res = fn()
+            except Exception:
+                sleep(1)
+            else:
+                return res
 
 
 def get_mytime():

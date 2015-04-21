@@ -1,11 +1,21 @@
+import os
 import logging
 import logging.handlers
 import signal
-from flask import Flask, jsonify, make_response
-from feemodel.config import (applogfile, loglevel, app_port,
-                             pkgname, __version__)
+
+from flask import Flask, jsonify, make_response, request, abort
+from werkzeug.exceptions import default_exceptions, HTTPException
+
+from feemodel.config import app_port, pkgname, __version__, datadir
 from feemodel.app import SimOnline
 from feemodel.txmempool import TxMempool
+
+LOG_LEVELS = {
+    levelname: getattr(logging, levelname)
+    for levelname in ('DEBUG', 'INFO', 'WARNING', 'ERROR')
+}
+logger = logging.getLogger('feemodel')
+logfile = os.path.join(datadir, 'feemodel.log')
 
 
 def sigterm_handler(_signo, _stack_frame):
@@ -13,45 +23,46 @@ def sigterm_handler(_signo, _stack_frame):
 
 
 def main(mempool_only=False, port=app_port):
-    formatter = logging.Formatter(
-        '%(asctime)s:%(name)s [%(levelname)s] %(message)s')
-    filehandler = logging.handlers.RotatingFileHandler(
-        applogfile, maxBytes=1000000, backupCount=1)
-    filehandler.setLevel(loglevel)
-    filehandler.setFormatter(formatter)
-    logger = logging.getLogger('feemodel')
-    logger.setLevel(loglevel)
-    logger.addHandler(filehandler)
-
+    configure_logger()
     signal.signal(signal.SIGTERM, sigterm_handler)
-    app = Flask(__name__)
+
+    app = make_json_app(__name__)
     if mempool_only:
         sim = TxMempool()
     else:
         sim = SimOnline()
 
-    @app.route('/feemodel/status', methods=['GET'])
-    def get_status():
-        stats = sim.get_status()
-        stats = stats if stats else {}
+    @app.route('/feemodel/mempool', methods=['GET'])
+    def mempool():
+        stats = sim.get_stats()
+        if stats is None:
+            abort(503)
+        return jsonify(sim.get_stats())
+
+    @app.route('/feemodel/transient', methods=['GET'])
+    def transient():
+        try:
+            stats = sim.transient.stats
+        except AttributeError:
+            abort(501)
+        if stats is None:
+            # transient is waiting on resources
+            abort(503)
+        return jsonify(stats.get_stats())
+
+    @app.route('/feemodel/pools', methods=['GET'])
+    def pools():
+        try:
+            stats = sim.get_poolstats()
+        except AttributeError:
+            abort(501)
         return jsonify(stats)
 
     if not mempool_only:
-        @app.route('/feemodel/pools', methods=['GET'])
-        def get_pools():
-            stats = sim.peo.pe.get_stats()
-            stats = stats if stats else {}
-            return jsonify(stats)
 
         @app.route('/feemodel/steadystate', methods=['GET'])
         def get_steadystate():
             stats = sim.ss.stats.get_stats()
-            stats = stats if stats else {}
-            return jsonify(stats)
-
-        @app.route('/feemodel/transient', methods=['GET'])
-        def get_transient():
-            stats = sim.trans.stats.get_stats()
             stats = stats if stats else {}
             return jsonify(stats)
 
@@ -73,14 +84,61 @@ def main(mempool_only=False, port=app_port):
                 response = {'feerate': int(feerate), 'avgwait': waitminutes}
             return jsonify(response)
 
-    @app.errorhandler(404)
-    def not_found(err):
-        return make_response(jsonify({'error': 'Not found'}), 404)
+    @app.route('/feemodel/loglevel', methods=['GET', 'PUT'])
+    def loglevel():
+        if request.method == 'PUT':
+            try:
+                data = request.get_json(force=True)
+                levelname = data['level'].upper()
+                loglevel = LOG_LEVELS[levelname]
+            except Exception:
+                response = {'message': '400: bad log level.'}
+                return make_response(jsonify(response), 400)
+            else:
+                logger.setLevel(loglevel)
+        response = {"level": logging.getLevelName(logger.level)}
+        return jsonify(response)
+
+    # @app.route('/feemodel/status', methods=['GET'])
+    # def get_status():
+    #     stats = sim.get_status()
+    #     stats = stats if stats else {}
+    #     return jsonify(stats)
 
     with sim.context_start():
-        # app.run(port=port, debug=True, use_reloader=False)
+        app.run(port=port, debug=True, use_reloader=False)
         logger.info("{} {} APP START".format(pkgname, __version__))
-        app.run(port=port)
+        # app.run(port=port)
+
+
+def configure_logger():
+    formatter = logging.Formatter(
+        '%(asctime)s:%(name)s [%(levelname)s] %(message)s')
+    filehandler = logging.handlers.RotatingFileHandler(
+        logfile, maxBytes=1000000, backupCount=1)
+    filehandler.setFormatter(formatter)
+    logger.handlers = []
+    logger.setLevel(logging.INFO)
+    logger.addHandler(filehandler)
+
+    werkzeug_logger = logging.getLogger("werkzeug")
+    werkzeug_logger.setLevel(logging.ERROR)
+
+
+def make_json_app(import_name, **kwargs):
+
+    def make_json_error(ex):
+        response = jsonify(message=str(ex))
+        response.status_code = (
+            ex.code if isinstance(ex, HTTPException) else 500)
+        return response
+
+    app = Flask(import_name, **kwargs)
+
+    for code in default_exceptions.iterkeys():
+        app.error_handler_spec[None][code] = make_json_error
+
+    return app
 
 
 if __name__ == '__main__':

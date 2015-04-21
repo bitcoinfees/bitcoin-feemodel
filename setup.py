@@ -30,7 +30,7 @@ setup(
         "feemodel/stranding.pyx"
     ]),
     entry_points={
-        'console_scripts': ['feemodel-cli = feemodel.cli:cli']
+        'console_scripts': ['feemodel = feemodel.cli:cli']
     },
     package_data={
         'feemodel': ['knownpools/pools.json', 'default.cfg']

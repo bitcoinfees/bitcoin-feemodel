@@ -52,8 +52,8 @@ def load_config(section, option, opt_type=''):
     except Exception:
         getfn = getattr(defaultconfig, 'get' + opt_type)
         defaultval = getfn(section, option)
-        print("Unable to load %s/%s config; using default value of %s" %
-              (option, section, str(defaultval)))
+        # print("Unable to load %s/%s config; using default value of %s" %
+        #       (option, section, str(defaultval)))
         return defaultval
 
 

@@ -120,7 +120,7 @@ class TransientOnlineTests(unittest.TestCase):
                     txpredict.calc_pval(currtime+float("inf")), 0)
                 for pctl in [0.05, 0.5, 0.9]:
                     wait_idx = bisect(WAIT_PERCENTILE_PTS, pctl) - 1
-                    wait = stats.waitpercentiles[wait_idx](feerate)
+                    wait = stats.waitmatrix[wait_idx](feerate)
                     print("{} wait for feerate of {} is {}.".
                           format(pctl, feerate, wait))
                     blocktime = currtime + wait
