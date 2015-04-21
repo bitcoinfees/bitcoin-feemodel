@@ -97,31 +97,27 @@ class AppAPITests(unittest.TestCase):
     def setUp(self):
         self.time = get_mytime()
         txmempool.time = self.time
+        proxy.blockcount = 333953
+        proxy.set_rawmempool(333931)
+        simonline.pools_config['minblocks'] = 1
 
     def test_A(self):
         with setup_tmpdatadir():
-            simonline.pools_config['minblocks'] = 1
-            process = multiprocessing.Process(target=self.maintarget)
+            process = multiprocessing.Process(target=main)
             process.start()
-            pprint(self.wait_for_resource(apiclient.get_pools))
-            pprint(self.wait_for_resource(apiclient.get_mempool))
-            pprint(self.wait_for_resource(apiclient.get_transient))
+            while True:
+                try:
+                    apiclient.get_mempool()
+                except Exception:
+                    sleep(1)
+                else:
+                    break
+            pprint(apiclient.get_pools())
+            pprint(apiclient.get_mempool())
+            pprint(apiclient.get_transient())
             sleep(30)
             print("Terminating main process.")
             process.terminate()
-
-    def maintarget(self):
-        proxy.blockcount = 333953
-        main()
-
-    def wait_for_resource(self, fn):
-        while True:
-            try:
-                res = fn()
-            except Exception:
-                sleep(1)
-            else:
-                return res
 
 
 def get_mytime():

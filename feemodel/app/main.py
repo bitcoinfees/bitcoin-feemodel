@@ -42,13 +42,10 @@ def main(mempool_only=False, port=app_port):
     @app.route('/feemodel/transient', methods=['GET'])
     def transient():
         try:
-            stats = sim.transient.stats
+            stats = sim.get_transientstats()
         except AttributeError:
             abort(501)
-        if stats is None:
-            # transient is waiting on resources
-            abort(503)
-        return jsonify(stats.get_stats())
+        return jsonify(stats)
 
     @app.route('/feemodel/pools', methods=['GET'])
     def pools():

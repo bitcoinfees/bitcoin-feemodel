@@ -79,10 +79,15 @@ def pools():
     except Exception as e:
         click.echo(repr(e))
         return
+    params = stats['params']
+    table = [(paramname, param) for paramname, param in params.items()]
+    click.echo("Params:")
+    click.echo(tabulate(table))
     if 'pools' not in stats:
         # No valid estimates ready.
-        click.echo("No estimate ready, next update at {}".
-                   format(time.ctime(stats['next_update'])))
+        click.echo(
+            "Block shortfall of {}; trying next update at {}".
+            format(stats['block_shortfall'], time.ctime(stats['next_update'])))
         return
     pools = stats['pools']
     headers = [
@@ -118,8 +123,10 @@ def pools():
     click.echo('')
     click.echo(tabulate(table, headers=headers))
     click.echo('')
+    click.echo("Total hashrate (Thps): {}".
+               format(stats['totalhashrate']*1e-12))
+    click.echo("Block interval (s): {}".format(stats['blockinterval']))
     click.echo("Timestamp: {}".format(time.ctime(stats['timestamp'])))
-    click.echo("Block interval: {}".format(stats['blockinterval']))
     click.echo("Next update: {}".format(time.ctime(stats['next_update'])))
 
 
@@ -133,6 +140,13 @@ def transient():
         stats = client.get_transient()
     except Exception as e:
         click.echo(repr(e))
+        return
+    params = stats['params']
+    table = [(paramname, param) for paramname, param in params.items()]
+    click.echo("Params:")
+    click.echo(tabulate(table))
+
+    if 'expectedwaits' not in stats:
         return
 
     headers = [
@@ -157,11 +171,11 @@ def transient():
     click.echo('\nCapacity\n========')
     click.echo(tabulate(table, headers=headers))
 
-    click.echo('\nMisc Stats\n==========')
-    click.echo('Mempool size: %d' % stats['mempoolsize'])
-    click.echo('Stable feerate: %d' % stats['stablefeerate'])
-    click.echo('Timestamp: %s' % time.ctime(stats['timestamp']))
-    click.echo('Time spent: %s' % int(stats['timespent']))
+    click.echo('')
+    click.echo('Mempool size: {}'.format(stats['mempoolsize']))
+    click.echo('Stable feerate: {}'.format(stats['stablefeerate']))
+    click.echo('Timestamp: {}'.format(time.ctime(stats['timestamp'])))
+    click.echo('Time spent: {}'.format(stats['timespent']))
 
 
 @cli.command()
@@ -170,12 +184,27 @@ def mempool():
 
     level must be in ['debug', 'info', 'warning', 'error'].
     '''
+    from tabulate import tabulate
     try:
-        res = client.get_mempool()
+        stats = client.get_mempool()
     except Exception as e:
         click.echo(repr(e))
-    else:
-        click.echo(res)
+        return
+
+    params = stats['params']
+    table = [(paramname, param) for paramname, param in params.items()]
+    click.echo("Params:")
+    click.echo(tabulate(table))
+
+    headers = ['Feerate', 'Cumul Size (bytes)']
+    table = zip(stats['feerates'], stats['revcumsize'])
+    click.echo('\nMempool size\n===============')
+    click.echo(tabulate(table, headers=headers))
+
+    click.echo('')
+    click.echo("Num txs: {}".format(stats['numtxs']))
+    click.echo("Total size (bytes): {}".format(stats['totalsize']))
+    click.echo("Current block height: {}".format(stats['currheight']))
 
 
 @cli.command()

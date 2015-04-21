@@ -165,14 +165,15 @@ class TxMempool(StoppableThread):
         return memblocks
 
     def get_stats(self):
-        state = self.state
-        if state is None:
-            return None
         stats = {
-            "poll_period": self.poll_period,
-            "blocks_to_keep": self.blocks_to_keep,
+            "params": {
+                "poll_period": self.poll_period,
+                "blocks_to_keep": self.blocks_to_keep
+            }
         }
-        stats.update(state.get_stats())
+        state = self.state
+        if state is not None:
+            stats.update(state.get_stats())
         return stats
 
     def __nonzero__(self):
@@ -232,7 +233,8 @@ class MempoolState(object):
             "feerates": feerates,
             "revcumsize": cumsize,
             "totalsize": totalsize,
-            "currheight": self.height
+            "currheight": self.height,
+            "numtxs": len(self.entries)
         }
         return stats
 

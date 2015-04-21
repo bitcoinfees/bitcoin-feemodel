@@ -2,7 +2,6 @@ from __future__ import division
 
 import logging
 from time import time
-from bisect import bisect
 from math import ceil
 
 from feemodel.config import MINRELAYTXFEE
@@ -33,7 +32,6 @@ class TransientOnline(StoppableThread):
 
         self.stats = None
         self.next_update = 0
-        self._updating = None
         super(TransientOnline, self).__init__()
 
     @StoppableThread.auto_restart(60)
@@ -41,7 +39,6 @@ class TransientOnline(StoppableThread):
         try:
             logger.info("Starting transient online sim.")
             self.wait_for_resources()
-            self._updating = False
             self.sleep_till_next()
             while not self.is_stopped():
                 self.next_update = time() + self.update_period
@@ -54,7 +51,6 @@ class TransientOnline(StoppableThread):
             # Ensures that Prediction.update_predictions doesn't get outdated
             # values, if this thread has bugged out
             self.stats = None
-            self._updating = None
 
     def wait_for_resources(self):
         '''Check and wait for all required resources to be ready.'''
@@ -67,8 +63,6 @@ class TransientOnline(StoppableThread):
         self.sleep(max(0, self.next_update-time()))
 
     def update(self):
-        self._updating = True
-
         tx_source = self.txonline.get_txsource()
         pools = self.poolsonline.get_pools()
         sim = Simul(pools, tx_source)
@@ -96,7 +90,6 @@ class TransientOnline(StoppableThread):
 
         self.stats = TransientStats(feepoints, waittimes, timespent, numiters,
                                     mempoolsize, sim)
-        self._updating = False
 
     def calc_feepoints(self, sim):
         """Get feepoints at which to evaluate wait times.
@@ -130,22 +123,18 @@ class TransientOnline(StoppableThread):
             sorted(set(feepoints)))
         return feepoints
 
-    @staticmethod
-    def _calc_mempoolsize(entries, feerates):
-        '''Calculate the reverse cumulative (wrt feerate) mempool size.
-
-        feerates is assumed sorted.
-        '''
-        mempoolsize_with_fee = 0
-        sizebins = [0]*len(feerates)
-        for entry in entries.values():
-            fidx = bisect(feerates, entry.feerate)
-            if fidx:
-                sizebins[fidx-1] += entry.size
-            if entry.feerate >= MINRELAYTXFEE:
-                mempoolsize_with_fee += entry.size
-        mempoolsize = [sum(sizebins[idx:]) for idx in range(len(sizebins))]
-        return mempoolsize, mempoolsize_with_fee
+    def get_stats(self):
+        stats = {
+            'params': {
+                'miniters': self.miniters,
+                'maxiters': self.maxiters,
+                'update_period': self.update_period
+            }
+        }
+        tstats = self.stats
+        if tstats is not None:
+            stats.update(tstats.get_stats())
+        return stats
 
 
 class TransientStats(object):
@@ -196,6 +185,7 @@ class TransientStats(object):
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
             'waitpercentiles': [w.waits for w in self.waitmatrix],
+            'mempoolsize': self.mempoolsize
         }
         return stats
 

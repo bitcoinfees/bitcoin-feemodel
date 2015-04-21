@@ -64,10 +64,7 @@ class SimOnline(TxMempool):
         return self.prediction.get_stats()
 
     def get_transientstats(self):
-        stats = self.transient.stats
-        if stats is None:
-            return None
-        return stats.get_stats()
+        return self.transient.get_stats()
 
     def get_poolstats(self):
         return self.poolsonline.get_stats()

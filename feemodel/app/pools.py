@@ -26,6 +26,7 @@ class PoolsOnlineEstimator(object):
         self.update_period = update_period
         self.minblocks = minblocks
         self.best_diff_interval = None
+        self.block_shortfall = 0
         self.lock = threading.Lock()
         try:
             self.load_estimates()
@@ -82,9 +83,19 @@ class PoolsOnlineEstimator(object):
         return self.poolsestimate
 
     def get_stats(self):
-        stats = {'next_update': self.next_update}
+        params = {
+            'window': self.window,
+            'update_period': self.update_period,
+            'minblocks': self.minblocks,
+        }
+        stats = {
+            'next_update': self.next_update,
+            'best_diff_interval': self.best_diff_interval,
+            'params': params
+        }
         est = self.poolsestimate
         if not est:
+            stats.update({'block_shortfall': self.block_shortfall})
             return stats
         totalhashrate = est.calc_totalhashrate()
         stats.update({
@@ -117,8 +128,8 @@ class PoolsOnlineEstimator(object):
             if len(have_heights) >= self.minblocks:
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
-                block_shortfall = self.minblocks - len(have_heights)
-                retry_interval = block_shortfall*600
+                self.block_shortfall = self.minblocks - len(have_heights)
+                retry_interval = self.block_shortfall*600
                 logger.info("Only {} blocks out of required {}, "
                             "trying again in {}m.".
                             format(len(have_heights), self.minblocks,
