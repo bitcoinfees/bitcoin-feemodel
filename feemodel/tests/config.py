@@ -8,20 +8,8 @@ from feemodel.config import datadir
 
 
 @contextmanager
-def setup_tmpdatadir():
-    # 1. Create the tmp data dir
-    # 2. Copy the test memblock db there
-    # 3. yield the tmp data dir path
-    # 4. Remove the whole dir afterward
-    README = ("This is a temporary directory for feemodel unit tests,\n"
-              "and is meant to be removed after every test. Feel free\n"
-              "to delete it if it failed to be removed.\n")
-    if not os.path.exists(tmpdatadir):
-        os.makedirs(tmpdatadir)
-    with open(os.path.join(tmpdatadir, 'README'), 'w') as f:
-        f.write(README)
-    from feemodel.txmempool import MEMBLOCK_DBFILE
-    shutil.copyfile(test_memblock_dbfile, MEMBLOCK_DBFILE)
+def tmpdatadir_context():
+    tmpdatadir = mk_tmpdatadir()
     yield tmpdatadir
     rm_tmpdatadir()
 
@@ -33,13 +21,26 @@ def load_obj(filename):
     return obj
 
 
+def mk_tmpdatadir():
+    README = ("This is a temporary directory for feemodel unit tests,\n"
+              "and is meant to be removed after every test. Feel free\n"
+              "to delete it if it failed to be removed.\n")
+    if not os.path.exists(tmpdatadir):
+        os.makedirs(tmpdatadir)
+    with open(os.path.join(tmpdatadir, 'README'), 'w') as f:
+        f.write(README)
+    from feemodel.txmempool import MEMBLOCK_DBFILE
+    shutil.copyfile(test_memblock_dbfile, MEMBLOCK_DBFILE)
+    return tmpdatadir
+
+
 def rm_tmpdatadir():
     if os.path.exists(tmpdatadir):
-        assert tmpdatadir.endswith("_tmp")
+        assert tmpdatadir.endswith("_tmp_datadir")
         shutil.rmtree(tmpdatadir)
 
 
-tmpdatadir = os.path.join(datadir, '_tmp')
+tmpdatadir = os.path.join(datadir, '_tmp_datadir')
 feemodel.config.datadir = tmpdatadir
 
 # TODO: use pkg_resources for this

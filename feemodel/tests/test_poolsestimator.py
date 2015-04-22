@@ -4,7 +4,7 @@ import threading
 from copy import copy
 
 from feemodel.tests.config import (test_memblock_dbfile as dbfile, poolsref,
-                                   setup_tmpdatadir)
+                                   tmpdatadir_context)
 from feemodel.tests.pseudoproxy import install
 
 from feemodel.util import save_obj, load_obj
@@ -30,7 +30,7 @@ class PoolEstimateTest(unittest.TestCase):
         self.assertEqual(poolsref, pe)
 
     def test_saveload(self):
-        with setup_tmpdatadir() as datadir:
+        with tmpdatadir_context() as datadir:
             savefile = os.path.join(datadir, '_test_tmp.pickle')
             save_obj(pe, savefile)
             pe_load = load_obj(savefile)

@@ -18,6 +18,12 @@ class APIClient(object):
     def get_mempool(self):
         return self._get_resource("mempool")
 
+    def get_prediction(self):
+        return self._get_resource("prediction")
+
+    def get_txrate(self):
+        return self._get_resource("txrate")
+
     def get_loglevel(self):
         return self._get_resource("loglevel")["level"]
 

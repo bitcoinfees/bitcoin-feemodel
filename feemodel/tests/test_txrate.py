@@ -8,7 +8,7 @@ from random import expovariate, random
 from math import log
 
 from feemodel.tests.config import (test_memblock_dbfile as dbfile, txref,
-                                   setup_tmpdatadir)
+                                   tmpdatadir_context)
 from feemodel.txmempool import MemBlock, MemEntry
 from feemodel.estimate import RectEstimator, ExpEstimator
 from feemodel.simul.simul import SimMempool
@@ -73,7 +73,7 @@ class SamplingTest(unittest.TestCase):
 
     def test_A(self):
         _dum, txref_rates = txref.get_byterates(feerates=FEERATES)
-        with setup_tmpdatadir() as datadir:
+        with tmpdatadir_context() as datadir:
             # RectEstimator
             self.gen_blockrange = (0, 100)
             self.tmpdbfile = os.path.join(datadir, '_tmp.db')

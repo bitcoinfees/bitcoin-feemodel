@@ -63,12 +63,10 @@ class TxRateOnlineEstimator(object):
         meanbyterate, meanstd = est.calc_mean_byterate()
         stats = {
             "halflife": est.halflife,
-            "numsamples": len(est.txsample),
+            "samplesize": len(est.txsample),
             "txrate": est.txrate,
-            "byterate": {
-                "mean": meanbyterate,
-                "mean_std": meanstd
-            },
+            "expected_byterate": meanbyterate,
+            "expected_byterate_err": meanstd,
             "totaltime": est.totaltime
         }
         return stats

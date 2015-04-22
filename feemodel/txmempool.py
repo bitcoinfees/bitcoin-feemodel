@@ -169,7 +169,8 @@ class TxMempool(StoppableThread):
             "params": {
                 "poll_period": self.poll_period,
                 "blocks_to_keep": self.blocks_to_keep
-            }
+            },
+            "num_memblocks": len(MemBlock.get_heights())
         }
         state = self.state
         if state is not None:
@@ -204,35 +205,28 @@ class MempoolState(object):
                          key=feerate_keyfn, reverse=True)
         sizebyfee = [(feerate, sum([entry.size for entry in feegroup]))
                      for feerate, feegroup in groupby(entries, feerate_keyfn)]
-
-        totalsize = 0
-        minfeesize = 0
-        for feerate, size in sizebyfee:
-            totalsize += size
-            if feerate >= MINRELAYTXFEE:
-                minfeesize += size
+        totalsize = sum([size for feerate, size in sizebyfee])
 
         sidx = 1
         cumsize = []
         feerates = []
         for idx, size in enumerate(
                 cumsum_gen(sizebyfee, mapfn=lambda tup: tup[1])):
-            if size > minfeesize:
-                break
-            if size < minfeesize * sidx/nsizepts:
+            if size < totalsize * sidx/nsizepts:
                 continue
             cumsize.append(size)
             feerates.append(sizebyfee[idx][0])
-            while minfeesize * sidx/nsizepts <= size:
+            while totalsize * sidx/nsizepts <= size and sidx <= nsizepts:
                 sidx += 1
+            if sidx > nsizepts:
+                break
 
         feerates.reverse()
         cumsize.reverse()
 
         stats = {
             "feerates": feerates,
-            "revcumsize": cumsize,
-            "totalsize": totalsize,
+            "cumsize": cumsize,
             "currheight": self.height,
             "numtxs": len(self.entries)
         }

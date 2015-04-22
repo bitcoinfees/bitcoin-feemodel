@@ -179,11 +179,48 @@ def transient():
 
 
 @cli.command()
-def mempool():
-    '''Set log level.
+def prediction():
+    '''Get prediction scores.'''
+    from tabulate import tabulate
+    try:
+        stats = client.get_prediction()
+    except Exception as e:
+        click.echo(repr(e))
+        return
+    params = stats['params']
+    table = [(paramname, param) for paramname, param in params.items()]
+    click.echo("Params:")
+    click.echo(tabulate(table))
 
-    level must be in ['debug', 'info', 'warning', 'error'].
-    '''
+    if 'pval_ecdf' not in stats:
+        return
+
+    headers = ['x', 'y']
+    table = zip(*stats['pval_ecdf'])
+    click.echo("P-Value ECDF")
+    click.echo("============")
+    click.echo(tabulate(table, headers=headers))
+    click.echo('')
+    click.echo('p-distance: {}'.format(stats['pdistance']))
+    click.echo('Num txs: {}'.format(stats['numtxs']))
+
+
+@cli.command()
+def txrate():
+    from tabulate import tabulate
+    try:
+        stats = client.get_txrate()
+    except Exception as e:
+        click.echo(repr(e))
+        return
+
+    table = [(stat, name) for stat, name in stats.items()]
+    click.echo(tabulate(table))
+
+
+@cli.command()
+def mempool():
+    '''Get mempool stats.'''
     from tabulate import tabulate
     try:
         stats = client.get_mempool()
@@ -196,15 +233,18 @@ def mempool():
     click.echo("Params:")
     click.echo(tabulate(table))
 
+    if 'feerates' not in stats:
+        return
+
     headers = ['Feerate', 'Cumul Size (bytes)']
-    table = zip(stats['feerates'], stats['revcumsize'])
+    table = zip(stats['feerates'], stats['cumsize'])
     click.echo('\nMempool size\n===============')
     click.echo(tabulate(table, headers=headers))
 
     click.echo('')
-    click.echo("Num txs: {}".format(stats['numtxs']))
-    click.echo("Total size (bytes): {}".format(stats['totalsize']))
     click.echo("Current block height: {}".format(stats['currheight']))
+    click.echo("Num memblocks: {}".format(stats['num_memblocks']))
+    click.echo("Num txs: {}".format(stats['numtxs']))
 
 
 @cli.command()
@@ -220,74 +260,6 @@ def setloglevel(level):
         click.echo(repr(e))
     else:
         click.echo(res)
-
-
-@cli.command()
-def status():
-    '''Get the app status.
-
-    [mempool]
-
-        'running' if everything is OK, else 'stopped'. While running,
-        mempool data at each block is collected and written to disk.
-
-    [height]
-
-        The current best height of the Bitcoin block chain.
-
-    [runtime]
-
-        Time in seconds that the app has been running.
-
-    [numhistory]
-
-        Number of MemBlocks that have been written and are available on disk.
-
-    Only if --mempool was not used -
-
-    [poolestimator, steadystate, transient]
-
-        'running' if the stats are being computed, 'idle' if waiting for
-        the next update period, 'stopped' if there's a problem (it's
-        configured to auto-restart, though), or it's waiting for data
-        (more blocks, or e.g. sim waiting on pool estimates).
-    '''
-    try:
-        status = client.get_status()
-    except:
-        pass
-    click.echo('')
-    baseorder = ['mempool', 'height', 'runtime', 'numhistory']
-    for key in baseorder:
-        click.echo("%s: %s" % (key, status[key]))
-
-    simorder = ['poolestimator', 'steadystate', 'transient']
-    try:
-        for key in simorder:
-            click.echo("%s: %s" % (key, status[key]))
-    except KeyError:
-        pass
-    click.echo('')
-
-
-@cli.command()
-def predictscores():
-    '''Get prediction scores.'''
-    from tabulate import tabulate
-    try:
-        scores = client.get_predictscores()
-    except:
-        pass
-    headers = [
-        'Feerate',
-        'Numtxs',
-        'Score']
-    table = zip(
-        scores['feerates'],
-        scores['num_txs'],
-        scores['scores'])
-    click.echo('\nPredict Scores\n==============')
-    click.echo(tabulate(table, headers=headers))
 
 
 @cli.command()

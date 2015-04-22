@@ -1,11 +1,12 @@
 import unittest
 import sqlite3
 import multiprocessing
+import threading
 from time import sleep, time
 from pprint import pprint
 
 from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
-                                   setup_tmpdatadir)
+                                   mk_tmpdatadir, rm_tmpdatadir)
 from feemodel.tests.pseudoproxy import install, proxy
 
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
@@ -29,22 +30,22 @@ class BasicTests(unittest.TestCase):
     def setUp(self):
         self.time = get_mytime()
         txmempool.time = self.time
+        mk_tmpdatadir()
+        proxy.blockcount = 333952
+        proxy.rawmempool = {}
+
+        db = sqlite3.connect(MEMBLOCK_DBFILE)
+        with db:
+            db.execute("DELETE FROM blocks WHERE height=333953")
+            db.execute("DELETE FROM txs WHERE height=333953")
+        db.close()
 
     def test_A(self):
         """Basic tests."""
         simonline.pools_config['minblocks'] = 1
         sim = SimOnline()
-        proxy.blockcount = 333952
         print("Starting test A thread.")
-        with setup_tmpdatadir(), sim.context_start():
-            db = sqlite3.connect(MEMBLOCK_DBFILE)
-            with db:
-                db.execute("DELETE FROM blocks WHERE height=333953")
-                db.execute("DELETE FROM txs WHERE height=333953")
-            db.close()
-            for method in ['get_predictstats', 'get_poolstats',
-                           'get_transientstats', 'get_txstats']:
-                self.assertIsNone(getattr(sim, method)())
+        with sim.context_start():
             while not sim.txonline:
                 sleep(0.1)
             while not sim.transient.stats:
@@ -85,44 +86,73 @@ class BasicTests(unittest.TestCase):
         proxy.blockcount = 333930
         proxy.set_rawmempool(333931)
         print("Starting test B thread.")
-        with setup_tmpdatadir(), sim.context_start():
+        with sim.context_start():
             sleep(5)
             proxy.set_rawmempool(333932)
             sleep(5)
             pprint(sim.get_txstats())
 
+    def tearDown(self):
+        rm_tmpdatadir()
+
 
 class AppAPITests(unittest.TestCase):
 
     def setUp(self):
+        mk_tmpdatadir()
         self.time = get_mytime()
         txmempool.time = self.time
-        proxy.blockcount = 333953
-        proxy.set_rawmempool(333931)
         simonline.pools_config['minblocks'] = 1
 
+        db = sqlite3.connect(MEMBLOCK_DBFILE)
+        with db:
+            db.execute("DELETE FROM blocks WHERE height=333953")
+            db.execute("DELETE FROM txs WHERE height=333953")
+        db.close()
+
     def test_A(self):
-        with setup_tmpdatadir():
-            process = multiprocessing.Process(target=main)
-            process.start()
-            while True:
-                try:
-                    apiclient.get_mempool()
-                except Exception:
-                    sleep(1)
-                else:
-                    break
-            pprint(apiclient.get_pools())
-            pprint(apiclient.get_mempool())
-            pprint(apiclient.get_transient())
-            sleep(30)
-            print("Terminating main process.")
-            process.terminate()
+        process = multiprocessing.Process(target=self.maintarget)
+        process.start()
+        while True:
+            try:
+                apiclient.set_loglevel("debug")
+                apiclient.get_txrate()
+            except Exception:
+                sleep(1)
+            else:
+                break
+        pprint(apiclient.get_pools())
+        pprint(apiclient.get_mempool())
+        pprint(apiclient.get_transient())
+        pprint(apiclient.get_prediction())
+        sleep(30)
+        pprint(apiclient.get_pools())
+        pprint(apiclient.get_mempool())
+        pprint(apiclient.get_transient())
+        pprint(apiclient.get_prediction())
+        pprint(apiclient.get_txrate())
+        print("Terminating main process.")
+        process.terminate()
+
+    def maintarget(self):
+        threading.Thread(target=self.proxyschedule).start()
+        sleep(1)
+        main()
+
+    def proxyschedule(self):
+        proxy.blockcount = 333952
+        proxy.set_rawmempool(333953)
+        sleep(10)
+        print("*** Incrementing block count ***")
+        proxy.blockcount += 1
+
+    def tearDown(self):
+        rm_tmpdatadir()
 
 
 def get_mytime():
     starttime = time()
-    b = MemBlock.read(333953, dbfile=memblock_dbfile)
+    b = MemBlock.read(333952, dbfile=memblock_dbfile)
     reftime = b.time
 
     def mytime():

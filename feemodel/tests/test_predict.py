@@ -6,8 +6,9 @@ from math import exp
 from random import random, expovariate
 
 from feemodel.tests.config import (transientstatsref as transientstats,
-                                   setup_tmpdatadir)
-from feemodel.app.predict import Prediction, DEFAULT_BLOCKS_TO_KEEP
+                                   tmpdatadir_context)
+from feemodel.app.predict import (Prediction, DEFAULT_BLOCKS_TO_KEEP,
+                                  NUM_PVAL_POINTS)
 from feemodel.txmempool import MemBlock
 
 HALFLIFE = 1000
@@ -17,7 +18,7 @@ class PredictTests(unittest.TestCase):
 
     def setUp(self):
         self.pred = Prediction(HALFLIFE)
-        with setup_tmpdatadir():
+        with tmpdatadir_context():
             self.b = MemBlock.read(333931)
             extra_entries = MemBlock.read(333932)
         self.pred.update_predictions(self.b, transientstats)
@@ -76,8 +77,9 @@ class PredictTests(unittest.TestCase):
         pred.process_blocks([b], dbfile=None)
         pdistance = pred.pval_ecdf.pdistance
         print("p-distance is {}.".format(pdistance))
-        self.assertEqual(pdistance, 0.99)
-        self.assertEqual(pred.pval_ecdf(0.99), 0)
+        binsize = 1 / NUM_PVAL_POINTS
+        self.assertEqual(pdistance, 1-binsize)
+        self.assertEqual(pred.pval_ecdf(1-binsize), 0)
 
     def test_C(self):
         # inf wait time
@@ -88,9 +90,10 @@ class PredictTests(unittest.TestCase):
                 txpredict.entrytime = -float("inf")
         pred.process_blocks([b], dbfile=None)
         pdistance = pred.pval_ecdf.pdistance
+        binsize = 1 / NUM_PVAL_POINTS
         print("p-distance is {}.".format(pdistance))
-        self.assertEqual(pdistance, 0.99)
-        self.assertEqual(pred.pval_ecdf(0.01), 1)
+        self.assertEqual(pdistance, 1-binsize)
+        self.assertEqual(pred.pval_ecdf(binsize), 1)
 
     def test_D(self):
         # empty block entries
@@ -101,7 +104,7 @@ class PredictTests(unittest.TestCase):
 
     def test_E(self):
         # DB checks
-        with setup_tmpdatadir():
+        with tmpdatadir_context():
             pred = self.pred
             b = self.b
             blocktime = b.time

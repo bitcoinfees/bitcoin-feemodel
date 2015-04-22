@@ -55,19 +55,25 @@ def main(mempool_only=False, port=app_port):
             abort(501)
         return jsonify(stats)
 
+    @app.route('/feemodel/prediction', methods=['GET'])
+    def prediction():
+        try:
+            stats = sim.get_predictstats()
+        except AttributeError:
+            abort(501)
+        return jsonify(stats)
+
+    @app.route('/feemodel/txrate', methods=['GET'])
+    def txrate():
+        try:
+            stats = sim.get_txstats()
+        except AttributeError:
+            abort(501)
+        if stats is None:
+            abort(503)
+        return jsonify(stats)
+
     if not mempool_only:
-
-        @app.route('/feemodel/steadystate', methods=['GET'])
-        def get_steadystate():
-            stats = sim.ss.stats.get_stats()
-            stats = stats if stats else {}
-            return jsonify(stats)
-
-        @app.route('/feemodel/predictscores', methods=['GET'])
-        def get_predicts():
-            stats = sim.prediction.get_stats()
-            stats = stats if stats else {}
-            return jsonify(stats)
 
         @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])
         def estimatefee(waitminutes):

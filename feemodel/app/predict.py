@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Should not include 0. Equi-spacing not necessary.
 WAIT_PERCENTILE_PTS = [0.05*i for i in range(1, 21)]
-NUM_PVAL_POINTS = 100
+NUM_PVAL_POINTS = 20
 WAIT_MEDIAN_IDX = bisect(WAIT_PERCENTILE_PTS, 0.5) - 1
 
 PVALS_DB_SCHEMA = {
@@ -96,8 +96,8 @@ class PValECDF(Function):
     '''
 
     def __init__(self, pvalcounts):
-        totalcount = sum(pvalcounts)
-        if not totalcount:
+        self.totalcount = sum(pvalcounts)
+        if not self.totalcount:
             raise ValueError("No p-values.")
         x = []
         y = []
@@ -105,7 +105,7 @@ class PValECDF(Function):
         cumsum = 0
         for idx, count in enumerate(pvalcounts):
             cumsum += count
-            p = cumsum / totalcount
+            p = cumsum / self.totalcount
             y.append(p)
             p_ref = (idx+1) / len(pvalcounts)
             x.append(p_ref)
@@ -292,12 +292,20 @@ class Prediction(object):
         print("Predict-distance: {}".format(self.pdistance))
 
     def get_stats(self):
+        stats = {
+            "params": {
+                "block_halflife": self.block_halflife,
+                "blocks_to_keep": self.blocks_to_keep
+            }
+        }
         pval_ecdf = self.pval_ecdf
-        if not pval_ecdf:
-            return None
-        return {
-            "pval_ecdf": [pval_ecdf._x, pval_ecdf._y],
-            "pdistance": pval_ecdf.pdistance}
+        if pval_ecdf:
+            stats.update({
+                "pval_ecdf": [pval_ecdf._x, pval_ecdf._y],
+                "pdistance": pval_ecdf.pdistance,
+                "numtxs": pval_ecdf.totalcount
+            })
+        return stats
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__

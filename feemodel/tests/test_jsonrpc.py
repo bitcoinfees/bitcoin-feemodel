@@ -6,7 +6,8 @@ from feemodel.util import CacheProxy, BlockingProxy, proxy
 
 
 class RPCTests(unittest.TestCase):
-    def test_pollMempool(self):
+
+    def test_pollmempool(self):
         blockcount, rawmempool = proxy.poll_mempool()
         if not rawmempool:
             self.fail("No transactions in mempool!")
