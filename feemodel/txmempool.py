@@ -14,7 +14,7 @@ from bitcoin.core import b2lx
 from feemodel.config import (datadir, txmempool_config,
                              MINRELAYTXFEE, PRIORITYTHRESH)
 from feemodel.util import (proxy, StoppableThread, get_feerate, WorkerThread,
-                           cumsum_gen)
+                           cumsum_gen, get_block_name)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
@@ -287,6 +287,7 @@ class MemBlock(MempoolState):
         self.blockheight = state.height + 1
         block = proxy.getblock(proxy.getblockhash(self.blockheight))
         self.blocksize = len(block.serialize())
+        blockname = get_block_name(self.blockheight)
 
         blocktxids = [b2lx(tx.GetHash()) for tx in block.vtx]
         entries_inblock = set(self.entries) & set(blocktxids)
@@ -296,8 +297,9 @@ class MemBlock(MempoolState):
             # if there are > 1 blocks in this update cycle.
             del state.entries[txid]
 
-        incl_text = 'Block {}: {}/{} in mempool'.format(
-            self.blockheight, len(entries_inblock), len(blocktxids)-1)
+        incl_text = 'Block {} ({} bytes) by {}: {}/{} in mempool'.format(
+            self.blockheight, self.blocksize, blockname,
+            len(entries_inblock), len(blocktxids)-1)
         logger.info(incl_text)
 
         # As a measure of our node's connectivity, we want to note the

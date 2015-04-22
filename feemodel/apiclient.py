@@ -24,24 +24,15 @@ class APIClient(object):
     def get_txrate(self):
         return self._get_resource("txrate")
 
+    def estimatefee(self, conftime):
+        return self._get_resource("estimatefee/" + str(int(conftime)))
+
     def get_loglevel(self):
         return self._get_resource("loglevel")["level"]
 
     def set_loglevel(self, level):
         data = {"level": level}
         return self._put_resource('loglevel', data)["level"]
-
-    # def get_status(self):
-    #     return self._get_resource('status')
-
-    # def get_steadystate(self):
-    #     return self._get_resource("steadystate")
-
-    # def get_predictscores(self):
-    #     return self._get_resource("predictscores")
-
-    # def estimatefee(self, conftime):
-    #     return self._get_resource("estimatefee/" + str(int(conftime)))
 
     def _put_resource(self, path, data):
         headers = {"Content-type:": "application/json"}

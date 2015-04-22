@@ -73,19 +73,20 @@ def main(mempool_only=False, port=app_port):
             abort(503)
         return jsonify(stats)
 
-    if not mempool_only:
+    @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])
+    def estimatefee(waitminutes):
+        try:
+            stats = sim.transient.stats
+        except AttributeError:
+            abort(501)
+        if stats is None:
+            abort(503)
 
-        @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])
-        def estimatefee(waitminutes):
-            stats = sim.trans.stats
-            if not stats:
-                response = {}
-            else:
-                feerate = sim.trans.stats.avgwaits.inv(waitminutes*60)
-                if feerate is None:
-                    feerate = -1
-                response = {'feerate': int(feerate), 'avgwait': waitminutes}
-            return jsonify(response)
+        feerate = stats.expectedwaits.inv(waitminutes*60)
+        if feerate is None:
+            feerate = -1
+        response = {'feerate': int(round(feerate)), 'avgwait': waitminutes}
+        return jsonify(response)
 
     @app.route('/feemodel/loglevel', methods=['GET', 'PUT'])
     def loglevel():
@@ -102,16 +103,10 @@ def main(mempool_only=False, port=app_port):
         response = {"level": logging.getLevelName(logger.level)}
         return jsonify(response)
 
-    # @app.route('/feemodel/status', methods=['GET'])
-    # def get_status():
-    #     stats = sim.get_status()
-    #     stats = stats if stats else {}
-    #     return jsonify(stats)
-
     with sim.context_start():
-        app.run(port=port, debug=True, use_reloader=False)
+        # app.run(port=port, debug=True, use_reloader=False)
         logger.info("{} {} APP START".format(pkgname, __version__))
-        # app.run(port=port)
+        app.run(port=port)
 
 
 def configure_logger():

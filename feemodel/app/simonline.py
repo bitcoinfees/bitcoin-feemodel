@@ -41,6 +41,7 @@ class SimOnline(TxMempool):
             self.predictworker.start()
             super(SimOnline, self).run()
             self.predictworker.stop()
+        self.save_predicts()
 
     def update(self):
         state = super(SimOnline, self).update()
@@ -81,12 +82,15 @@ class SimOnline(TxMempool):
             self.prediction = Prediction(
                 predict_config['block_halflife'],
                 blocks_to_keep=predict_config['blocks_to_keep'])
+        else:
+            logger.info("Prediction loaded with {} saved predicts.".
+                        format(len(self.prediction.predicts)))
 
     def save_predicts(self):
         try:
             save_obj(self.prediction, PREDICT_SAVEFILE)
         except Exception:
-            logger.info("Unable to save predicts.")
+            logger.warning("Unable to save predicts.")
 
 
 # #class SimOnline(TxMempool):

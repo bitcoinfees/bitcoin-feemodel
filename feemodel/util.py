@@ -18,6 +18,8 @@ from bitcoin.rpc import Proxy, JSONRPCException
 from bitcoin.wallet import CBitcoinAddress, CBitcoinAddressError
 from bitcoin.core import COIN
 
+import feemodel.config
+
 
 logger = logging.getLogger(__name__)
 
@@ -437,19 +439,7 @@ def get_coinbase_info(blockheight):
 
 # TODO: deprecate this in favour of get_hashesperblock
 def get_pph(blockheight):
-    '''Get probability p of finding a block, per hash performed.'''
-    block = proxy.getblock(proxy.getblockhash(blockheight))
-    nbits = hex(block.nBits)[2:]
-    assert len(nbits) == 8
-    significand = int(nbits[2:], base=16)
-    exponent = (int(nbits[:2], base=16)-3)*8
-    logtarget = log(significand, 2) + exponent
-
-    # This is not technically correct because the target is fulfilled in the
-    # case of equality. It should more correctly be:
-    # (2**logtarget + 1) / 2**256,
-    # but of course the difference is negligible.
-    return 2**(logtarget - 256)
+    raise NotImplementedError
 
 
 def get_hashesperblock(blockheight):
@@ -478,6 +468,45 @@ def get_block_size(blockheight):
     '''Get the size of a block specified by height, in bytes.'''
     block = proxy.getblock(proxy.getblockhash(blockheight))
     return len(block.serialize())
+
+
+def get_block_name(blockheight):
+    """Assign a name to a block, denoting the entity that mined it.
+
+    Uses blockchain.info's knownpools.json.
+    """
+    knownpools = feemodel.config.knownpools
+    baddrs, btag = get_coinbase_info(blockheight)
+    name = None
+    for paddr, pattrs in knownpools['payout_addresses'].items():
+        candidate_name = pattrs['name']
+        if paddr in baddrs:
+            if name is not None and name != candidate_name:
+                logger.warning("> 1 pools mapped to block %d" % blockheight)
+            name = candidate_name
+
+    for ptag, pattrs in knownpools['coinbase_tags'].items():
+        candidate_name = pattrs['name']
+        if ptag in btag:
+            if name is not None and name != candidate_name:
+                logger.warning("> 1 pools mapped to block %d" % blockheight)
+            name = candidate_name
+
+    if name is None:
+        for addr in sorted(baddrs):
+            if addr is not None:
+                # Underscore indicates that the pool is not in the
+                # list of known pools. We use the first valid
+                # coinbase addr as the name.
+                name = addr[:12] + '_'
+                break
+
+    if name is None:
+        logger.warning(
+            "Unable to identify pool of block %d." % blockheight)
+        name = 'U' + str(blockheight) + '_'
+
+    return name
 
 
 def get_feerate(rawentry):

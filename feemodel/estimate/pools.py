@@ -6,9 +6,8 @@ from itertools import groupby
 
 from tabulate import tabulate
 
-from feemodel.config import knownpools
-from feemodel.util import (get_coinbase_info, get_block_timestamp,
-                           get_block_size, get_hashesperblock)
+from feemodel.util import (get_block_timestamp, get_block_size,
+                           get_hashesperblock, get_block_name)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
@@ -101,7 +100,6 @@ class PoolsEstimator(SimPools):
         self.pools = {}
         self.blockrate = None
         self.blockmap = {}
-        self.poolinfo = knownpools
         self.timestamp = 0.
 
     def update(self):
@@ -125,7 +123,7 @@ class PoolsEstimator(SimPools):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             try:
-                name = get_blockname(height)
+                name = get_block_name(height)
                 blocksize = get_block_size(height)
                 numhashes = get_hashesperblock(height)
             except IndexError:
@@ -207,41 +205,3 @@ class PoolsEstimator(SimPools):
         print(tabulate(table, headers=headers))
         print("Avg block interval is %.2f" % (1./self.blockrate,))
         print("Total hashrate is {} Thps.".format(totalhashrate*1e-12))
-
-
-def get_blockname(height):
-    """Assign a name to a block, denoting the entity that mined it.
-
-    Uses blockchain.info's knownpools.json.
-    """
-    baddrs, btag = get_coinbase_info(height)
-    name = None
-    for paddr, pattrs in knownpools['payout_addresses'].items():
-        candidate_name = pattrs['name']
-        if paddr in baddrs:
-            if name is not None and name != candidate_name:
-                logger.warning("> 1 pools mapped to block %d" % height)
-            name = candidate_name
-
-    for ptag, pattrs in knownpools['coinbase_tags'].items():
-        candidate_name = pattrs['name']
-        if ptag in btag:
-            if name is not None and name != candidate_name:
-                logger.warning("> 1 pools mapped to block %d" % height)
-            name = candidate_name
-
-    if name is None:
-        for addr in sorted(baddrs):
-            if addr is not None:
-                # Underscore indicates that the pool is not in the
-                # list of known pools. We use the first valid
-                # coinbase addr as the name.
-                name = addr[:12] + '_'
-                break
-
-    if name is None:
-        logger.warning(
-            "Unable to identify pool of block %d." % height)
-        name = 'U' + str(height) + '_'
-
-    return name

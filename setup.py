@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 from Cython.Build import cythonize
 
 name = 'bitcoin-feemodel'
-version = '0.0.4'
+version = '0.0.5'
 
 with open('README', 'r') as f:
     readme = f.read()

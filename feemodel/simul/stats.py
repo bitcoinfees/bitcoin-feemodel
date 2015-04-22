@@ -58,6 +58,9 @@ class Capacity(object):
             bidx = bisect_left(txfeerates, feerate)
             pidx = bisect(poolfeerates, feerate)
             txbyterate = txbyterates[bidx] if bidx < n else 0
+            # This will not raise IndexError, because:
+            #     1. we ensure that poolfeerates includes 0
+            #     2. tx feerate is assumed to be >= 0
             cap = caps[pidx-1]
             cap_ratio = txbyterate / cap if cap else float("inf")
 
@@ -90,6 +93,7 @@ class Capacity(object):
     def get_stats(self, numpoints=20):
         cap_idxs = [
             self.cap_ratio_index(i/numpoints) for i in range(1, numpoints+1)]
+        cap_idxs.append(0)
         cap_idxs = sorted(set(cap_idxs))
         stats = {
             'feerates': [self.feerates[idx] for idx in cap_idxs],

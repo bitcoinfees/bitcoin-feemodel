@@ -147,6 +147,7 @@ def transient():
     click.echo(tabulate(table))
 
     if 'expectedwaits' not in stats:
+        click.echo("No stats at this time.")
         return
 
     headers = [
@@ -172,10 +173,12 @@ def transient():
     click.echo(tabulate(table, headers=headers))
 
     click.echo('')
-    click.echo('Mempool size: {}'.format(stats['mempoolsize']))
+    click.echo('Mempool size (bytes): {}'.format(stats['mempoolsize']))
+    click.echo('Max cap (bytes/s): {}'.format(stats['cap']['maxcap']))
     click.echo('Stable feerate: {}'.format(stats['stablefeerate']))
     click.echo('Timestamp: {}'.format(time.ctime(stats['timestamp'])))
     click.echo('Time spent: {}'.format(stats['timespent']))
+    click.echo('Num iters: {}'.format(stats['numiters']))
 
 
 @cli.command()
@@ -193,6 +196,7 @@ def prediction():
     click.echo(tabulate(table))
 
     if 'pval_ecdf' not in stats:
+        click.echo("No stats at this time.")
         return
 
     headers = ['x', 'y']
@@ -207,6 +211,7 @@ def prediction():
 
 @cli.command()
 def txrate():
+    """Get tx rate statistics."""
     from tabulate import tabulate
     try:
         stats = client.get_txrate()
@@ -216,6 +221,22 @@ def txrate():
 
     table = [(stat, name) for stat, name in stats.items()]
     click.echo(tabulate(table))
+
+
+@cli.command()
+@click.argument('conftime', type=click.INT, required=True)
+def estimatefee(conftime):
+    '''Feerate estimation.
+
+    Estimate feerate (satoshis) to have an average wait / confirmation
+    time of CONFTIME minutes.
+    '''
+    try:
+        res = client.estimatefee(conftime)
+    except Exception as e:
+        click.echo(repr(e))
+        return
+    click.echo(res['feerate'])
 
 
 @cli.command()
@@ -260,16 +281,3 @@ def setloglevel(level):
         click.echo(repr(e))
     else:
         click.echo(res)
-
-
-@cli.command()
-@click.argument('conftime', type=click.FLOAT, required=True)
-def estimatefee(conftime):
-    '''Estimate feerate (satoshis) to have an average wait / confirmation
-    time of CONFTIME minutes.
-    '''
-    try:
-        res = client.estimatefee(conftime)
-    except:
-        pass
-    click.echo(res['feerate'])
