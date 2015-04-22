@@ -84,7 +84,7 @@ class TransientOnline(StoppableThread):
                      "%d iterations - mempool size was %d bytes" %
                      (timespent, numiters, mempoolsize))
         # Warn if we reached miniters
-        if timespent > self.update_period:
+        if timespent > 1.1*self.update_period:
             logger.warning("Transient sim took %.2fs to do %d iters." %
                            (timespent, numiters))
 
