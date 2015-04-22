@@ -2,6 +2,7 @@ from __future__ import division
 
 from libc.stdlib cimport rand, srand, RAND_MAX
 from libc.time cimport time
+from libc.limits cimport ULONG_MAX
 from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Realloc as realloc,
                           PyMem_Free as free)
@@ -19,6 +20,8 @@ from feemodel.util import DataSample, cumsum_gen
 DEF OVERALLOCATE = 2  # This better be > 1.
 
 DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)
+
+cdef unsigned long MAX_FEERATE = ULONG_MAX - 1
 
 
 class SimTx(object):
@@ -149,7 +152,7 @@ cdef class TxSampleArray:
         cdef TxStruct tx
         self.txsample = txarray_init(len(txsample))
         for idx, simtx in enumerate(txsample):
-            tx.feerate = simtx.feerate
+            tx.feerate = min(simtx.feerate, MAX_FEERATE)
             tx.size = simtx.size
             txarray_append(&self.txsample, tx)
         if self.txsample.size:

@@ -335,6 +335,26 @@ class BasicSimTests(unittest.TestCase):
                                             mempoolsize))
         self.sim.cap.print_cap()
 
+    def test_insane_feerates(self):
+        # Test the restriction of feerates to unsigned int.
+        for entry in self.init_entries.values():
+            entry.feerate = 100000000000000000000000000000000
+            entry.size = 9927
+        print("Insane feerates:")
+        print("Height\tNumtxs\tSize\tSFR\tMPsize")
+        for idx, simblock in enumerate(
+                self.sim.run(init_entries=self.init_entries)):
+            if idx >= 50:
+                break
+            mempoolsize = sum([entry.size for entry in
+                               self.sim.mempool.get_entries().values()])
+            self.assertEqual(simblock.size,
+                             sum([tx.size for tx in simblock.txs]))
+            print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
+                                            simblock.size, simblock.sfr,
+                                            mempoolsize))
+        self.sim.cap.print_cap()
+
 
 class CustomMempoolTests(unittest.TestCase):
     # TODO: needs more detailed tests

@@ -1,6 +1,6 @@
 cdef struct TxStruct:
-    unsigned long long feerate
-    unsigned int size
+    unsigned long feerate
+    unsigned long size
 
 
 cdef struct TxArray:

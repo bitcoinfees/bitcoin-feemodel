@@ -1,14 +1,16 @@
 from __future__ import division
 
-from feemodel.simul.txsources cimport *
+from libc.limits cimport ULONG_MAX
 from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Realloc as realloc,
                           PyMem_Free as free)
+from feemodel.simul.txsources cimport *
 
 from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimTx
 
 cap_ratio_thresh = 0.9
+cdef unsigned long MAX_FEERATE = ULONG_MAX - 1
 
 
 class SimEntry(SimTx):
@@ -77,7 +79,7 @@ cdef class SimMempool:
         for idx, (txid, entry) in enumerate(init_entries.items()):
             txidmap[txid] = idx
             self.txidlist[idx] = txid
-            tx.feerate = entry.feerate
+            tx.feerate = min(entry.feerate, MAX_FEERATE)
             tx.size = entry.size
             txarray_append(&self.init_array, tx)
             if not entry.depends:
@@ -141,18 +143,17 @@ cdef class SimMempool:
 
     cdef void _process_block(self, SimBlock simblock):
         cdef:
-            int newblocksize, maxblocksize, blocksize, blocksize_ltd
+            unsigned long newblocksize, maxblocksize, blocksize, blocksize_ltd
             # TODO: see if, on 32 bit systems, changing the feerate to uint
             #       would speed things up
-            unsigned long long MAXFEE = -2
-            unsigned long long minfeerate, sfr
+            unsigned long minfeerate, sfr
             TxStruct *newtx
             OrphanTx orphantx
             TxPtrArray blocktxs
 
-        minfeerate = min(simblock.pool.minfeerate, MAXFEE)
+        minfeerate = min(simblock.pool.minfeerate, MAX_FEERATE)
         maxblocksize = simblock.pool.maxblocksize
-        sfr = MAXFEE
+        sfr = MAX_FEERATE
         blocksize = 0
         blocksize_ltd = 0
         blocktxs = txptrarray_init(self.txqueue.size)
