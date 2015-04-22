@@ -131,6 +131,7 @@ class AppAPITests(unittest.TestCase):
         pprint(apiclient.get_transient())
         pprint(apiclient.get_prediction())
         pprint(apiclient.get_txrate())
+        sleep(3)
         print("Terminating main process.")
         process.terminate()
 
