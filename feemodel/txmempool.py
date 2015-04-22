@@ -151,12 +151,8 @@ class TxMempool(StoppableThread):
             logger.warning("process_blocks: {} bytes of conflicts removed.".
                            format(conflicts_size))
 
-        for memblock in memblocks:
-            stats = memblock.calc_stranding_feerate(bootstrap=False)
-            if stats:
-                logger.info("Block {}: stranding feerate is {}".
-                            format(memblock.blockheight, stats['sfr']))
-            if self.dbfile and self.is_alive():
+        if self.dbfile and self.is_alive():
+            for memblock in memblocks:
                 try:
                     memblock.write(self.dbfile, self.blocks_to_keep)
                 except Exception:
@@ -297,10 +293,14 @@ class MemBlock(MempoolState):
             # if there are > 1 blocks in this update cycle.
             del state.entries[txid]
 
-        incl_text = 'Block {} ({} bytes) by {}: {}/{} in mempool'.format(
-            self.blockheight, self.blocksize, blockname,
-            len(entries_inblock), len(blocktxids)-1)
-        logger.info(incl_text)
+        stats = self.calc_stranding_feerate(bootstrap=False)
+        stranding_feerate = stats['sfr'] if stats else None
+
+        blocktext = (
+            'Block {} ({} bytes) by {}: {}/{} in mempool, SFR is {}.'.
+            format(self.blockheight, self.blocksize, blockname,
+                   len(entries_inblock), len(blocktxids)-1, stranding_feerate))
+        logger.info(blocktext)
 
         # As a measure of our node's connectivity, we want to note the
         # ratio below. If it is low, it means that our node is not being
@@ -308,7 +308,9 @@ class MemBlock(MempoolState):
         if len(blocktxids) > 1:
             incl_ratio = len(entries_inblock) / (len(blocktxids)-1)
             if incl_ratio < 0.9:
-                logger.warning(incl_text)
+                logger.warning("Only {}/{} in block {}.".format(
+                               len(entries_inblock), len(blocktxids),
+                               self.blockheight))
 
         state.height += 1
 
