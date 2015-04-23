@@ -134,6 +134,7 @@ class AppAPITests(unittest.TestCase):
         sleep(3)
         print("Terminating main process.")
         process.terminate()
+        process.join()
 
     def maintarget(self):
         threading.Thread(target=self.proxyschedule).start()

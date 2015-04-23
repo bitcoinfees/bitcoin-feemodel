@@ -117,7 +117,7 @@ class PValECDF(Function):
         return self.__dict__ == other.__dict__
 
     def __ne__(self, other):
-        return self.__dict__ != other.__dict__
+        raise NotImplementedError
 
 
 class Prediction(object):
