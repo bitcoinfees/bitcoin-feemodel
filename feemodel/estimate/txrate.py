@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ExpEstimator(SimTxSource):
     '''Continuous rate estimation with an exponential smoother.'''
 
-    BATCH_INTERVAL = 60
+    BATCH_INTERVAL = 30
 
     def __init__(self, halflife):
         '''Specify the halflife of the exponential decay, in seconds.'''
@@ -23,55 +23,68 @@ class ExpEstimator(SimTxSource):
         self._alpha = 0.5**(1 / halflife)
         self._reset_params()
 
+    def _reset_params(self):
+        '''Reset the params; at init and upon (re)starting estimation.'''
+        self.txsample = []
+        self.txrate = None
+        self.totaltime = 0
+        self.prevstate = None
+
     def start(self, blockheight, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         self._reset_params()
         starttime = time()
         num_blocks_to_use = int(log(0.01) / log(self._alpha) / 600)
-        _startblock = blockheight - num_blocks_to_use + 1
-        blockrangetuple = (_startblock, blockheight+1)
+        startblock = blockheight - num_blocks_to_use + 1
+        blockrangetuple = (startblock, blockheight+1)
         logger.info("Starting TxRate estimation "
                     "from blockrange ({}, {}).".format(*blockrangetuple))
 
-        prevblock = None
-        block = None
         for height in range(*blockrangetuple):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             block = MemBlock.read(height, dbfile=dbfile)
-            try:
-                blockdelta = block - prevblock
-            except TypeError:
-                # Either block or prevblock is None
-                pass
-            else:
-                if blockdelta.height != 1:
-                    continue
-                newentries = sorted(blockdelta.entries.values(),
-                                    key=lambda entry: entry.time)
-                prevtime = prevblock.time
-                txbatch = []
-                for entry in newentries:
-                    tx = SimTx(entry.feerate, entry.size)
-                    txbatch.append(tx)
-                    interval = entry.time - prevtime
-                    if interval > self.BATCH_INTERVAL:
-                        self.update_txs(txbatch, interval, is_init=True)
-                        prevtime = entry.time
-                        txbatch = []
-                self.update_txs(
-                    txbatch, max(block.time-prevtime, 0), is_init=True)
-            finally:
-                prevblock = block
-
-        if self.totaltime == 0:
-            raise ValueError("Insufficient number of blocks.")
+            self.update(block, is_init=True)
         self._calc_txrate()
+
         logger.info("Finished TxRate estimation in %.2f seconds." %
                     (time()-starttime))
 
-        return block
+    def update(self, state, is_init=False):
+        try:
+            state_delta = state - self.prevstate
+        except TypeError:
+            pass
+        else:
+            if state_delta.time < 0:
+                raise ValueError("state time must be non-decreasing.")
+            if state_delta.time < self.BATCH_INTERVAL:
+                newtxs = [SimTx(entry.feerate, entry.size)
+                          for entry in state_delta.entries.values()]
+                self._add_txs(newtxs, state_delta.time, is_init)
+            else:
+                if isinstance(self.prevstate, MemBlock):
+                    height_thresh = 1
+                else:
+                    height_thresh = 0
+                if state_delta.height > height_thresh:
+                    return
+                # Add the transactions in batches
+                newentries = sorted(state_delta.entries.values(),
+                                    key=lambda entry: entry.time)
+                prevtime = self.prevstate.time
+                txbatch = []
+                for entry in newentries:
+                    txbatch.append(SimTx(entry.feerate, entry.size))
+                    interval = entry.time - prevtime
+                    if interval >= self.BATCH_INTERVAL:
+                        self._add_txs(txbatch, interval, is_init)
+                        prevtime = entry.time
+                        txbatch = []
+                self._add_txs(txbatch, state.time-prevtime, is_init)
+        finally:
+            self.prevstate = state
 
-    def update_txs(self, new_txs, interval, is_init=False):
+    def _add_txs(self, new_txs, interval, is_init):
         '''Update the estimator with a new set of transactions.
 
         new_txs is a list of SimTx instances which represent newly arrived txs
@@ -88,16 +101,9 @@ class ExpEstimator(SimTxSource):
 
     def _calc_txrate(self):
         '''Calculate the tx rate (arrivals per second).'''
-        if self.totaltime <= 0:
-            raise ValueError("Invalid total time.")
-        self.txrate = len(self.txsample) * log(self._alpha) / (
-            self._alpha**self.totaltime - 1)
-
-    def _reset_params(self):
-        '''Reset the params; at init and upon (re)starting estimation.'''
-        self.txsample = []
-        self.txrate = None
-        self.totaltime = 0
+        if self.totaltime > 0:
+            self.txrate = len(self.txsample) * log(self._alpha) / (
+                self._alpha**self.totaltime - 1)
 
 
 class RectEstimator(SimTxSource):
