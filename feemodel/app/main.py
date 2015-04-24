@@ -2,6 +2,7 @@ import os
 import logging
 import logging.handlers
 import signal
+from math import ceil
 
 from flask import Flask, jsonify, make_response, request, abort
 from werkzeug.exceptions import default_exceptions, HTTPException
@@ -85,7 +86,7 @@ def main(mempool_only=False, port=app_port):
         feerate = stats.expectedwaits.inv(waitminutes*60)
         if feerate is None:
             feerate = -1
-        response = {'feerate': int(round(feerate)), 'avgwait': waitminutes}
+        response = {'feerate': int(ceil(feerate)), 'avgwait': waitminutes}
         return jsonify(response)
 
     @app.route('/feemodel/loglevel', methods=['GET', 'PUT'])

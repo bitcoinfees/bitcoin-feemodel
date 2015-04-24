@@ -482,14 +482,16 @@ def get_block_name(blockheight):
         candidate_name = pattrs['name']
         if paddr in baddrs:
             if name is not None and name != candidate_name:
-                logger.warning("> 1 pools mapped to block %d" % blockheight)
+                logger.warning("Block {}: conflicting poolnames {} / {}".
+                               format(blockheight, name, candidate_name))
             name = candidate_name
 
     for ptag, pattrs in knownpools['coinbase_tags'].items():
         candidate_name = pattrs['name']
         if ptag in btag:
             if name is not None and name != candidate_name:
-                logger.warning("> 1 pools mapped to block %d" % blockheight)
+                logger.warning("Block {}: conflicting poolnames {} / {}".
+                               format(blockheight, name, candidate_name))
             name = candidate_name
 
     if name is None:
