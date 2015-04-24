@@ -46,7 +46,7 @@ class PoolSimTests(unittest.TestCase):
         numiters = 10000
         poolnames = []
         for idx, (simblock, blockinterval) in enumerate(
-                simpools.get_blockgen()):
+                simpools.blockgen()):
             if idx >= numiters:
                 break
             poolnames.append(simblock.poolname)
@@ -608,20 +608,18 @@ class PseudoPools(SimPools):
     def __init__(self):
         super(PseudoPools, self).__init__(pools=ref_pools)
 
-    def get_blockgen(self):
-        def blockgenfn():
-            poolitems = sorted(self.pools.items(),
-                               key=lambda poolitem: poolitem[1].hashrate,
-                               reverse=True)
-            numpools = len(poolitems)
-            idx = 0
-            while True:
-                poolname, pool = poolitems[idx % numpools]
-                blockinterval = 600
-                simblock = SimBlock(poolname, pool)
-                yield simblock, blockinterval
-                idx += 1
-        return blockgenfn()
+    def blockgen(self):
+        poolitems = sorted(self.pools.items(),
+                           key=lambda poolitem: poolitem[1].hashrate,
+                           reverse=True)
+        numpools = len(poolitems)
+        idx = 0
+        while True:
+            poolname, pool = poolitems[idx % numpools]
+            blockinterval = 600
+            simblock = SimBlock(poolname, pool)
+            yield simblock, blockinterval
+            idx += 1
 
 
 if __name__ == '__main__':

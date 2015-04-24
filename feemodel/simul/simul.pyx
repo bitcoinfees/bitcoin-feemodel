@@ -46,7 +46,7 @@ cdef class Simul:
         self.mempool = SimMempool(init_entries)
         self.tx_emitter = self.txsource.get_emitter(self.mempool, feeratethresh=self.stablefeerate)
         self.simtime = 0.
-        for simblock, blockinterval in self.pools.get_blockgen():
+        for simblock, blockinterval in self.pools.blockgen():
             self.simtime += blockinterval
             # Add new txs from the tx source to the queue
             self.tx_emitter(blockinterval)

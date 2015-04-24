@@ -52,7 +52,7 @@ class SimPools(object):
                 for pool in self.pools.values()]):
             raise ValueError("Bad pool stats.")
 
-    def get_blockgen(self):
+    def blockgen(self):
         self.check_pools()
         poolitems = sorted(self.pools.items(),
                            key=lambda item: item[1].hashrate)
@@ -61,15 +61,11 @@ class SimPools(object):
         totalhashrate = cumhashrates[-1]
         prop_table = map(lambda hashrate: hashrate/totalhashrate,
                          cumhashrates)
-
-        def blockgenfn():
-            while True:
-                poolidx = bisect_left(prop_table, random())
-                simblock = SimBlock(*poolitems[poolidx])
-                blockinterval = expovariate(self.blockrate)
-                yield simblock, blockinterval
-
-        return blockgenfn()
+        while True:
+            poolidx = bisect_left(prop_table, random())
+            simblock = SimBlock(*poolitems[poolidx])
+            blockinterval = expovariate(self.blockrate)
+            yield simblock, blockinterval
 
     def get_capacity(self):
         self.check_pools()
