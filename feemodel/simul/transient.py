@@ -1,6 +1,7 @@
 from __future__ import division
 
 import multiprocessing
+import logging
 from time import time
 from bisect import bisect_left
 
@@ -8,6 +9,8 @@ from feemodel.simul.simul import cap_ratio_thresh
 
 ITERSCHUNK = 100
 PROCESS_COMPLETE = 'process_complete'
+
+logger = logging.getLogger(__name__)
 
 
 def transientsim_core(sim, init_entries, feepoints):
@@ -56,6 +59,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
     ]
     for process in processes:
         process.start()
+    logger.debug("Subprocesses started.")
 
     starttime = time()
     elapsedtime = 0
@@ -66,6 +70,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
         waitvectors.extend(resultqueue.get())
         elapsedtime = time() - starttime
     process_stopflag.set()
+    logger.debug("Subprocesses sent stop signal.")
 
     num_process_complete = 0
     while num_process_complete < numprocesses:
@@ -74,11 +79,13 @@ def transientsim(sim, feepoints=None, init_entries=None,
             num_process_complete += 1
         else:
             waitvectors.extend(res)
+    logger.debug("Received PROCESS_COMPLETE from all subprocesses.")
 
     for process in processes:
         process.join()
     if stopflag and stopflag.is_set():
         raise StopIteration
+    logger.debug("Subprocesses joined and completed.")
 
     waittimes = zip(*waitvectors)
     return feepoints, waittimes, elapsedtime, len(waitvectors)
@@ -87,15 +94,20 @@ def transientsim(sim, feepoints=None, init_entries=None,
 def transientsim_process(sim, init_entries, feepoints, resultqueue,
                          stopflag):
     waitvectors = []
-    for waitvector in transientsim_core(sim, init_entries, feepoints):
-        waitvectors.append(waitvector)
-        if stopflag.is_set():
-            resultqueue.put(waitvectors)
-            resultqueue.put(PROCESS_COMPLETE)
-            break
-        if len(waitvectors) == ITERSCHUNK:
-            resultqueue.put(waitvectors)
-            waitvectors = []
+    try:
+        for waitvector in transientsim_core(sim, init_entries, feepoints):
+            waitvectors.append(waitvector)
+            if stopflag.is_set():
+                resultqueue.put(waitvectors)
+                resultqueue.put(PROCESS_COMPLETE)
+                break
+            if len(waitvectors) == ITERSCHUNK:
+                resultqueue.put(waitvectors)
+                waitvectors = []
+    except Exception:
+        # Because transientsim_process is called in a child process,
+        # we must catch all errors if we want to see a stack trace.
+        logger.exception("Exception in transientsim_process.")
 
 
 def _get_default_feepoints(cap, stablefeerate):
@@ -108,109 +120,3 @@ def _get_default_feepoints(cap, stablefeerate):
     feepoints = sorted(set(feepoints))
     assert feepoints[0] >= stablefeerate
     return feepoints
-
-
-# #def transientsim(sim, feepoints=None, init_entries=None,
-# #                 miniters=1000, maxiters=10000, maxtime=60, stopflag=None):
-# #    '''Transient waittimes simulation.'''
-# #    if init_entries is None:
-# #        init_entries = []
-# #    if not feepoints:
-# #        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
-# #    numiters = 0
-# #    stranded = set(feepoints)
-# #    waittimes = defaultdict(list)
-# #    starttime = time()
-# #    elapsedrealtime = 0
-# #
-# #    for block in sim.run(init_entries=init_entries):
-# #        if stopflag and stopflag.is_set():
-# #            raise StopIteration
-# #        stranding_feerate = block.sfr
-# #
-# #        for feerate in list(stranded):
-# #            if feerate >= stranding_feerate:
-# #                waittimes[feerate].append(sim.simtime)
-# #                stranded.remove(feerate)
-# #
-# #        if not stranded:
-# #            numiters += 1
-# #            elapsedrealtime = time() - starttime
-# #            if (numiters >= maxiters or
-# #                    numiters >= miniters and elapsedrealtime > maxtime):
-# #                break
-# #            else:
-# #                sim.simtime = 0.
-# #                stranded = set(feepoints)
-# #                sim.mempool.reset()
-# #
-# #    return waittimes, elapsedrealtime, numiters
-# #
-# #
-# #def transient_multiproc(sim, feepoints=None, init_entries=None,
-# #                        miniters=1000, maxiters=10000, maxtime=60,
-# #                        numprocesses=None, stopflag=None):
-# #    '''Multiprocessing of transientsim.'''
-# #    starttime = time()
-# #    if init_entries is None:
-# #        init_entries = []
-# #    if not feepoints:
-# #        feepoints = _get_feepoints(sim.cap, sim.stablefeerate)
-# #    numprocesses = (
-# #        numprocesses if numprocesses is not None
-# #        else multiprocessing.cpu_count())
-# #    if numprocesses == 1:
-# #        waittimes, _dum, numiters = transientsim(
-# #            sim, feepoints=feepoints, init_entries=init_entries,
-# #            miniters=miniters, maxiters=maxiters, maxtime=maxtime,
-# #            stopflag=stopflag)
-# #    else:
-# #        resultconns = [multiprocessing.Pipe() for i in range(numprocesses)]
-# #        parentconns, childconns = zip(*resultconns)
-# #        maxiterschunk = maxiters // numprocesses
-# #        miniterschunk = miniters // numprocesses
-# #        processes = [
-# #            multiprocessing.Process(
-# #                target=_multiproc_target,
-# #                args=(sim, feepoints, init_entries,
-# #                      miniterschunk, maxiterschunk, maxtime,
-# #                      stopflag, childconns[i])
-# #            )
-# #            for i in range(numprocesses)]
-# #        for process in processes:
-# #            process.start()
-# #
-# #        waittimes = defaultdict(list)
-# #        numiters = 0
-# #
-# #        for conn in parentconns:
-# #            result = conn.recv()
-# #            if stopflag and stopflag.is_set():
-# #                raise StopIteration
-# #            waittimeschunk, numiterschunk = result
-# #            for feerate, waitsample in waittimeschunk.items():
-# #                waittimes[feerate].extend(waitsample)
-# #            numiters += numiterschunk
-# #
-# #        for process in processes:
-# #            process.join()
-# #
-# #    return waittimes, time()-starttime, numiters
-# #
-# #
-# #def _multiproc_target(sim, feepoints, init_entries,
-# #                      miniters, maxiters, maxtime, stopflag, resultconn):
-# #    '''Multiprocessing wrapper for transientsim.'''
-# #    try:
-# #        waittimes, _dum, numiters = transientsim(
-# #            sim,
-# #            feepoints=feepoints,
-# #            init_entries=init_entries,
-# #            miniters=miniters,
-# #            maxiters=maxiters,
-# #            maxtime=maxtime,
-# #            stopflag=stopflag)
-# #    except StopIteration:
-# #        waittimes = None
-# #        numiters = None
-# #    resultconn.send((waittimes, numiters))

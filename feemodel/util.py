@@ -9,7 +9,6 @@ from math import ceil, log
 from contextlib import contextmanager
 from random import random
 from functools import wraps
-from time import time
 from collections import OrderedDict
 
 from tabulate import tabulate
@@ -580,37 +579,11 @@ def cumsum_gen(seq, base=0, mapfn=None):
 
 # TODO: Deprecate this and itertimer
 def try_wrap(fn):
-    '''Decorator to try a function and log all exceptions without raising.'''
-    @wraps(fn)
-    def nicetry(*args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except Exception:
-            logger.exception('try_wrap exception')
-    return nicetry
+    raise NotImplementedError
 
 
 def itertimer(maxiters=None, maxtime=None, stopflag=None):
-    '''Generator function which iterates till specified limits.
-
-    maxiters - max number of iterations
-    maxtime - max time in seconds that should be spent on the iteration
-    stopflag - threading.Event() object. Stop iteration immediately if this
-               is set.
-    '''
-    if maxiters is None:
-        maxiters = float("inf")
-    if maxtime is None:
-        maxtime = float("inf")
-    starttime = time()
-    i = 0
-    while True:
-        elapsedtime = time() - starttime
-        if stopflag and stopflag.is_set() or (
-                elapsedtime > maxtime or i >= maxiters):
-            break
-        yield i, elapsedtime
-        i += 1
+    raise NotImplementedError
 
 
 proxy = BatchProxy()
