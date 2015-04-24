@@ -12,6 +12,11 @@ class APIClient(object):
     def get_pools(self):
         return self._get_resource("pools")
 
+    def get_poolsobj(self):
+        from feemodel.util import pickle
+        return pickle.loads(
+            str(self._get_resource("poolsobj")["poolsestimate"]))
+
     def get_transient(self):
         return self._get_resource("transient")
 
@@ -45,3 +50,6 @@ class APIClient(object):
         res = requests.get(self.url + path)
         res.raise_for_status()
         return res.json()
+
+
+client = APIClient()

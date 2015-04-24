@@ -1,7 +1,5 @@
 import click
-from feemodel.apiclient import APIClient
-
-client = APIClient()
+from feemodel.apiclient import client
 
 
 @click.group()
@@ -116,7 +114,7 @@ def pools():
             pool[1]['belowkn'],
             pool[1]['mfrmean'],
             pool[1]['mfrstd'],
-            pool[1]['mfrstd'],
+            pool[1]['mfrbias'],
         ]
         table.append(row)
 

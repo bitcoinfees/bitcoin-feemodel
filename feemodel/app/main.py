@@ -8,6 +8,7 @@ from flask import Flask, jsonify, make_response, request, abort
 from werkzeug.exceptions import default_exceptions, HTTPException
 
 from feemodel.config import app_port, pkgname, __version__, datadir
+from feemodel.util import pickle
 from feemodel.app import SimOnline
 from feemodel.txmempool import TxMempool
 
@@ -55,6 +56,16 @@ def main(mempool_only=False, port=app_port):
         except AttributeError:
             abort(501)
         return jsonify(stats)
+
+    @app.route('/feemodel/poolsobj', methods=['GET'])
+    def poolsobj():
+        """Get the pickled representation of PoolsEstimator"""
+        try:
+            poolsestimate = sim.poolsonline.get_pools()
+        except AttributeError:
+            abort(501)
+        obj = {"poolsestimate": pickle.dumps(poolsestimate)}
+        return jsonify(obj)
 
     @app.route('/feemodel/prediction', methods=['GET'])
     def prediction():
