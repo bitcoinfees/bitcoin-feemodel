@@ -110,10 +110,10 @@ def transientsim_process(sim, init_entries, feepoints, resultqueue,
         logger.exception("Exception in transientsim_process.")
 
 
-def _get_default_feepoints(cap, stablefeerate):
-    NUMPOINTS = 20
-    cap_ratio_targets = [i/NUMPOINTS*cap_ratio_thresh
-                         for i in range(1, NUMPOINTS+1)]
+def _get_default_feepoints(cap, stablefeerate, numpoints=20):
+    numpoints = 20
+    cap_ratio_targets = [i/numpoints*cap_ratio_thresh
+                         for i in range(1, numpoints+1)]
     feepoints = [
         cap.feerates[cap.cap_ratio_index(cap_ratio)]
         for cap_ratio in reversed(cap_ratio_targets)]

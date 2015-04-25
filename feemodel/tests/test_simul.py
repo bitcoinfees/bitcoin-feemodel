@@ -113,6 +113,7 @@ class PoolSimTests(unittest.TestCase):
 class TxSourceTests(unittest.TestCase):
 
     def setUp(self):
+        seed(1)
         self.tx_source = SimTxSource(ref_txsample, ref_txrate)
         self.feerates = [0, 2000, 10999, 20000]
         byterates_binned = [
@@ -197,7 +198,6 @@ class TxSourceTests(unittest.TestCase):
 
         # Compare the tx rate.
         txrate = len(simtxs) / t
-        # We filtered out 1 out of 3 SimTxs by using feeratethresh = 2001
         diff = abs(txrate - ref_txrate)
         self.assertLess(diff, 0.01)
 

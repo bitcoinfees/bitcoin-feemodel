@@ -2,7 +2,6 @@ from __future__ import division
 
 import logging
 from time import time
-from math import ceil
 
 from feemodel.config import MINRELAYTXFEE
 from feemodel.util import StoppableThread, DataSample
@@ -91,7 +90,7 @@ class TransientOnline(StoppableThread):
         self.stats = TransientStats(feepoints, waittimes, timespent, numiters,
                                     mempoolsize, sim)
 
-    def calc_feepoints(self, sim):
+    def calc_feepoints(self, sim, max_wait_delta=60, min_num_pts=20):
         """Get feepoints at which to evaluate wait times.
 
         The feepoints are chosen so that the wait times are approximately
@@ -101,18 +100,18 @@ class TransientOnline(StoppableThread):
         If not stats have been computed yet, return None (i.e. use the
         default feepoints computed by transientsim)
         """
-        d = 60  # 1 min wait between feepoints
-        min_num_pts = 10  # minimum of 10 feepoints
         if not self.stats:
             return None
         waitfn = self.stats.expectedwaits
         minwait = waitfn._y[-1]
         maxwait = waitfn._y[0]
-        max_d = max(int(ceil((maxwait - minwait) / min_num_pts)), 1)
-        d = min(d, max_d)
-        feepoints = [
-            int(round(waitfn.inv(wait)))
-            for wait in range(int(ceil(minwait)), int(ceil(maxwait))+d, d)]
+        wait_delta = min(max_wait_delta,
+                         (maxwait - minwait) / (min_num_pts - 1))
+        wait_delta = max(wait_delta, 1)
+        num_pts = 1 + int(round((maxwait - minwait) / wait_delta))
+        wait_pts = [minwait + wait_delta*i for i in range(num_pts)]
+        feepoints = [int(round(waitfn.inv(wait))) for wait in wait_pts]
+
         minfeepoint = sim.stablefeerate
         maxfeepoint = sim.cap.feerates[sim.cap.cap_ratio_index(0.05)]
         for idx, cap in enumerate(sim.cap.caps):
