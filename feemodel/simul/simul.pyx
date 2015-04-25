@@ -144,8 +144,6 @@ cdef class SimMempool:
     cdef void _process_block(self, SimBlock simblock):
         cdef:
             unsigned long newblocksize, maxblocksize, blocksize, blocksize_ltd
-            # TODO: see if, on 32 bit systems, changing the feerate to uint
-            #       would speed things up
             unsigned long minfeerate, sfr
             TxStruct *newtx
             OrphanTx orphantx

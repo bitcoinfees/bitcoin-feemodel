@@ -102,13 +102,16 @@ class TransientOnline(StoppableThread):
         default feepoints computed by transientsim)
         """
         d = 60  # 1 min wait between feepoints
+        min_num_pts = 10  # minimum of 10 feepoints
         if not self.stats:
             return None
         waitfn = self.stats.expectedwaits
         minwait = waitfn._y[-1]
         maxwait = waitfn._y[0]
+        max_d = max(int(ceil((maxwait - minwait) / min_num_pts)), 1)
+        d = min(d, max_d)
         feepoints = [
-            int(waitfn.inv(wait))
+            int(round(waitfn.inv(wait)))
             for wait in range(int(ceil(minwait)), int(ceil(maxwait))+d, d)]
         minfeepoint = sim.stablefeerate
         maxfeepoint = sim.cap.feerates[sim.cap.cap_ratio_index(0.05)]
