@@ -189,7 +189,7 @@ class MempoolState(object):
                         for txid, rawentry in rawmempool.iteritems()}
         self.time = int(time())
 
-    def get_stats(self, size_delta=100000, min_num_pts=10):
+    def get_stats(self, max_size_delta=100000, min_num_pts=20):
 
         def feerate_keyfn(entry):
             return entry.feerate
@@ -199,20 +199,18 @@ class MempoolState(object):
         sizebyfee = [(feerate, sum([entry.size for entry in feegroup]))
                      for feerate, feegroup in groupby(entries, feerate_keyfn)]
         totalsize = sum([size for feerate, size in sizebyfee])
-        max_size_delta = totalsize // min_num_pts
-        size_delta = min(max_size_delta, size_delta)
+        size_delta = min(max_size_delta, totalsize // min_num_pts)
 
-        currtarget = size_delta
+        nextsize = size_delta
         cumsize = []
         feerates = []
         for idx, size in enumerate(
                 cumsum_gen(sizebyfee, mapfn=lambda tup: tup[1])):
-            if size < currtarget:
+            if size < nextsize:
                 continue
             cumsize.append(size)
             feerates.append(sizebyfee[idx][0])
-            currtarget += size_delta
-            currtarget = min(currtarget, totalsize)
+            nextsize = min(size_delta + size, totalsize)
 
         feerates.reverse()
         cumsize.reverse()
