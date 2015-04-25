@@ -5,7 +5,8 @@ import threading
 import os
 from time import time
 from copy import copy
-from feemodel.config import datadir, DIFF_RETARGET_INTERVAL
+from feemodel.config import (datadir, DIFF_RETARGET_INTERVAL,
+                             EXPECTED_BLOCK_INTERVAL)
 from feemodel.util import save_obj, load_obj
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.estimate.pools import PoolsEstimator
@@ -129,7 +130,7 @@ class PoolsOnlineEstimator(object):
                 rangetuple[0] = max(rangetuple[0], min(have_heights))
             else:
                 self.block_shortfall = self.minblocks - len(have_heights)
-                retry_interval = self.block_shortfall*600
+                retry_interval = self.block_shortfall*EXPECTED_BLOCK_INTERVAL/2
                 logger.info("Only {} blocks out of required {}, "
                             "trying again in {}m.".
                             format(len(have_heights), self.minblocks,

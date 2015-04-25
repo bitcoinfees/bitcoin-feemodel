@@ -3,9 +3,8 @@ from __future__ import division
 import os
 import logging
 
-from feemodel.txmempool import TxMempool, MEMBLOCK_DBFILE
-from feemodel.config import (datadir, pools_config, txrate_halflife,
-                             trans_config, predict_config)
+from feemodel.txmempool import TxMempool
+from feemodel.config import datadir, config
 from feemodel.util import load_obj, save_obj, WorkerThread
 from feemodel.app.pools import PoolsOnlineEstimator
 from feemodel.app.txrate import TxRateOnlineEstimator
@@ -19,22 +18,23 @@ PREDICT_SAVEFILE = os.path.join(datadir, 'savepredict.pickle')
 class SimOnline(TxMempool):
 
     def __init__(self):
-        super(SimOnline, self).__init__(dbfile=MEMBLOCK_DBFILE)
+        super(SimOnline, self).__init__()
         self.predictworker = WorkerThread(self.update_predicts)
         self.load_predicts()
 
         self.poolsonline = PoolsOnlineEstimator(
-            pools_config['window'],
-            update_period=pools_config['update_period'],
-            minblocks=pools_config['minblocks'])
-        self.txonline = TxRateOnlineEstimator(halflife=txrate_halflife)
+            config.getint("app", "pools_window"),
+            update_period=config.getint("app", "pools_update_period"),
+            minblocks=config.getint("app", "pools_minblocks"))
+        self.txonline = TxRateOnlineEstimator(
+            halflife=config.getint("app", "txrate_halflife"))
         self.transient = TransientOnline(
             self,
             self.poolsonline,
             self.txonline,
-            update_period=trans_config['update_period'],
-            miniters=trans_config['miniters'],
-            maxiters=trans_config['maxiters'])
+            update_period=config.getint("app", "trans_update_period"),
+            miniters=config.getint("app", "trans_miniters"),
+            maxiters=config.getint("app", "trans_maxiters"))
 
     def run(self):
         with self.transient.context_start():
@@ -80,8 +80,8 @@ class SimOnline(TxMempool):
             logger.info("Unable to load saved predicts; "
                         "starting from scratch.")
             self.prediction = Prediction(
-                predict_config['block_halflife'],
-                blocks_to_keep=predict_config['blocks_to_keep'])
+                config.getint("app", "predict_block_halflife"),
+                blocks_to_keep=config.getint("app", "predict_blocks_to_keep"))
         else:
             logger.info("Prediction loaded with {} saved predicts.".
                         format(len(self.prediction.predicts)))

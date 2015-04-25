@@ -11,14 +11,14 @@ from itertools import groupby
 
 from bitcoin.core import b2lx
 
-from feemodel.config import (datadir, txmempool_config,
-                             MINRELAYTXFEE, PRIORITYTHRESH)
+from feemodel.config import config, datadir, MINRELAYTXFEE, PRIORITYTHRESH
 from feemodel.util import (proxy, StoppableThread, get_feerate, WorkerThread,
                            cumsum_gen, get_block_name)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
 logger = logging.getLogger(__name__)
+db_lock = threading.Lock()
 
 MEMBLOCK_TABLE_SCHEMA = {
     'blocks': [
@@ -43,9 +43,6 @@ MEMBLOCK_TABLE_SCHEMA = {
     ]
 }
 MEMBLOCK_DBFILE = os.path.join(datadir, 'memblock.db')
-
-# We're having db concurrency problems, so add our own lock for now
-db_lock = threading.Lock()
 
 
 class TxMempool(StoppableThread):
@@ -76,8 +73,8 @@ class TxMempool(StoppableThread):
     '''
 
     def __init__(self, dbfile=MEMBLOCK_DBFILE,
-                 blocks_to_keep=txmempool_config['blocks_to_keep'],
-                 poll_period=txmempool_config['poll_period']):
+                 blocks_to_keep=config.getint("txmempool", "blocks_to_keep"),
+                 poll_period=config.getfloat("txmempool", "poll_period")):
         self.state = None
         self.blockworker = None
         self.dbfile = dbfile

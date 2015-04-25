@@ -7,7 +7,7 @@ from math import ceil
 from flask import Flask, jsonify, make_response, request, abort
 from werkzeug.exceptions import default_exceptions, HTTPException
 
-from feemodel.config import app_port, pkgname, __version__, datadir
+from feemodel.config import config, pkgname, __version__, datadir
 from feemodel.util import pickle
 from feemodel.app import SimOnline
 from feemodel.txmempool import TxMempool
@@ -24,7 +24,7 @@ def sigterm_handler(_signo, _stack_frame):
     raise SystemExit
 
 
-def main(mempool_only=False, port=app_port):
+def main(mempool_only=False, port=config.getint("app", "port")):
     configure_logger()
     signal.signal(signal.SIGTERM, sigterm_handler)
 

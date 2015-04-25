@@ -12,16 +12,15 @@ from feemodel.tests.pseudoproxy import install, proxy
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.app.simonline import SimOnline, PREDICT_SAVEFILE
 from feemodel.app.predict import Prediction
-from feemodel.config import txmempool_config, predict_config
+from feemodel.config import config
 from feemodel.util import load_obj
 from feemodel.apiclient import APIClient
 from feemodel.app.main import main
 
-import feemodel.app.simonline as simonline
 import feemodel.txmempool as txmempool
 
 install()
-poll_period = txmempool_config['poll_period']
+poll_period = config.getfloat("txmempool", "poll_period")
 apiclient = APIClient()
 
 
@@ -42,7 +41,7 @@ class BasicTests(unittest.TestCase):
 
     def test_A(self):
         """Basic tests."""
-        simonline.pools_config['minblocks'] = 1
+        config.set("app", "pools_minblocks", "1")
         sim = SimOnline()
         print("Starting test A thread.")
         with sim.context_start():
@@ -73,7 +72,8 @@ class BasicTests(unittest.TestCase):
             predictstats = sim.get_predictstats()
             pprint(zip(*predictstats['pval_ecdf']))
             print("p-distance is {}".format(predictstats['pdistance']))
-            pred_db = Prediction.from_db(predict_config['block_halflife'])
+            pred_db = Prediction.from_db(
+                config.getint("app", "predict_block_halflife"))
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
             self.assertEqual(sum(sim.prediction.pvalcounts), 79)
             predict_load = load_obj(PREDICT_SAVEFILE)
@@ -81,7 +81,7 @@ class BasicTests(unittest.TestCase):
 
     def test_B(self):
         """No memblocks."""
-        simonline.pools_config['minblocks'] = 432
+        config.set("app", "pools_minblocks", "432")
         sim = SimOnline()
         proxy.blockcount = 333930
         proxy.set_rawmempool(333931)
@@ -102,7 +102,7 @@ class AppAPITests(unittest.TestCase):
         mk_tmpdatadir()
         self.time = get_mytime()
         txmempool.time = self.time
-        simonline.pools_config['minblocks'] = 1
+        config.set("app", "pools_minblocks", "1")
 
         db = sqlite3.connect(MEMBLOCK_DBFILE)
         with db:
@@ -131,6 +131,8 @@ class AppAPITests(unittest.TestCase):
         pprint(apiclient.get_transient())
         pprint(apiclient.get_prediction())
         pprint(apiclient.get_txrate())
+        pprint(apiclient.estimatefee(12))
+        apiclient.get_poolsobj()
         sleep(3)
         print("Terminating main process.")
         process.terminate()

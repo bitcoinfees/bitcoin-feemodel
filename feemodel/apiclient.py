@@ -1,12 +1,12 @@
 import json
 import requests
-from feemodel.config import app_port
+from feemodel.config import config
 
 
 class APIClient(object):
     '''Client for accessing model stats through the API.'''
 
-    def __init__(self, host='localhost', port=app_port):
+    def __init__(self, host='localhost', port=config.getint("app", "port")):
         self.url = 'http://{}:{}/feemodel/'.format(host, str(port))
 
     def get_pools(self):

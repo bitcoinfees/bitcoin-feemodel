@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 import cPickle as pickle
 from contextlib import contextmanager
 
@@ -47,6 +48,9 @@ feemodel.config.datadir = tmpdatadir
 testdatadir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'data/')
 test_memblock_dbfile = os.path.join(testdatadir, 'test.db')
 blockdata = os.path.join(testdatadir, 'blockdata.pickle')
+with open(os.path.join(testdatadir, 'pools.json'), 'r') as f:
+    testknownpools = json.load(f)
+feemodel.config.knownpools = testknownpools
 
 poolsref = load_obj(os.path.join(testdatadir, "pe_ref.pickle"))
 txref = load_obj(os.path.join(testdatadir, "tr_ref.pickle"))
