@@ -3,6 +3,7 @@ import sqlite3
 import os
 from copy import copy
 from time import sleep
+from pprint import pprint
 
 from feemodel.tests.config import (mk_tmpdatadir, rm_tmpdatadir,
                                    test_memblock_dbfile as dbfile)
@@ -63,11 +64,13 @@ class BasicTests(unittest.TestCase):
             refsize = sum([entry.size for entry in state.entries.values()
                            if entry.feerate >= feerate])
             self.assertEqual(refsize, stats['cumsize'][idx])
+        pprint(zip(stats['feerates'], stats['cumsize']))
 
         state.entries = {}
         stats = state.get_stats()
         self.assertFalse(stats['feerates'])
         self.assertFalse(stats['cumsize'])
+        pprint(zip(stats['feerates'], stats['cumsize']))
 
 
 class WriteReadTests(unittest.TestCase):
