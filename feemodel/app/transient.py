@@ -31,45 +31,37 @@ class TransientOnline(StoppableThread):
         self.maxiters = maxiters
 
         self.stats = None
-        self.next_update = 0
         super(TransientOnline, self).__init__()
 
     @StoppableThread.auto_restart(60)
     def run(self):
-        try:
-            logger.info("Starting transient online sim.")
-            self.wait_for_resources()
-            while not self.is_stopped():
-                self.next_update = time() + self.update_period
+        logger.info("Starting transient online sim.")
+        while not self.is_stopped():
+            try:
                 self.update()
-                self.sleep_till_next()
-        except StopIteration:
-            pass
-        finally:
-            logger.info("Stopped transient online sim.")
-            # Ensures that Prediction.update_predictions doesn't get outdated
-            # values, if this thread has bugged out
-            self.stats = None
-
-    def wait_for_resources(self):
-        '''Check and wait for all required resources to be ready.'''
-        while not self.is_stopped() and not (
-                self.txonline and self.poolsonline and self.mempool):
-            self.sleep(5)
+            except StopIteration:
+                pass
+            self.sleep_till_next()
+        logger.info("Stopped transient online sim.")
+        # Ensures that Prediction.update_predictions doesn't get outdated
+        # values, if this thread has bugged out
+        self.stats = None
 
     def sleep_till_next(self):
         '''Sleep till the next update.'''
-        self.sleep(max(0, self.next_update-time()))
+        stats = self.stats
+        if stats is not None:
+            time_till_next = max(
+                stats.timestamp + self.update_period - time(), 0)
+            self.sleep(time_till_next)
 
     def update(self):
-        tx_source = self.txonline.get_txsource()
-        pools = self.poolsonline.get_pools()
-        sim = Simul(pools, tx_source)
+        sim, init_entries = self._get_resources()
         feepoints = self.calc_feepoints(sim)
-        init_entries = self.mempool.state.entries
         mempoolsize = sum([entry.size for entry in init_entries.values()
                            if entry.feerate >= MINRELAYTXFEE])
 
+        timestamp = time()
         feepoints, waittimes, timespent, numiters = transientsim(
             sim,
             feepoints=feepoints,
@@ -87,8 +79,23 @@ class TransientOnline(StoppableThread):
             logger.warning("Transient sim took %.2fs to do %d iters." %
                            (timespent, numiters))
 
-        self.stats = TransientStats(feepoints, waittimes, timespent, numiters,
-                                    mempoolsize, sim)
+        self.stats = TransientStats(timestamp, feepoints, waittimes, timespent,
+                                    numiters, mempoolsize, sim)
+
+    def _get_resources(self):
+        """Get transient sim resources.
+
+        Get the Simul instance (which requires SimPools and SimTxSource)
+        and mempool entries. If any are not ready, retry every 5 seconds.
+        """
+        while not self.is_stopped():
+            pools = self.poolsonline.get_pools()
+            tx_source = self.txonline.get_txsource()
+            state = self.mempool.state
+            if state and pools and tx_source:
+                return Simul(pools, tx_source), state.entries
+            self.sleep(5)
+        raise StopIteration
 
     def calc_feepoints(self, sim, max_wait_delta=60, min_num_pts=20):
         """Get feepoints at which to evaluate wait times.
@@ -139,11 +146,13 @@ class TransientOnline(StoppableThread):
         return stats
 
 
+# TODO: Make simul.transient.transientsim return this directly. Or maybe not.
+#       Also, timespent / numiters is redundant - forget it!
 class TransientStats(object):
 
-    def __init__(self, feepoints, waittimes, timespent, numiters,
+    def __init__(self, timestamp, feepoints, waittimes, timespent, numiters,
                  mempoolsize, sim):
-        self.timestamp = time()
+        self.timestamp = timestamp
         self.timespent = timespent
         self.numiters = numiters
         self.mempoolsize = mempoolsize

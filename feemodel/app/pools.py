@@ -7,7 +7,7 @@ from time import time
 from copy import copy
 from feemodel.config import (datadir, DIFF_RETARGET_INTERVAL,
                              EXPECTED_BLOCK_INTERVAL)
-from feemodel.util import save_obj, load_obj
+from feemodel.util import save_obj, load_obj, logexceptions
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.estimate.pools import PoolsEstimator
 
@@ -121,6 +121,7 @@ class PoolsOnlineEstimator(object):
         stats.update({'pools': poolstats})
         return stats
 
+    @logexceptions
     def _update_pools(self, currheight, stopflag):
         with self.lock:
             rangetuple = [currheight-self.window+1, currheight+1]
@@ -152,6 +153,7 @@ class PoolsOnlineEstimator(object):
             except Exception:
                 logger.exception("Unable to save pools.")
 
+    @logexceptions
     def _update_blockrate(self, currheight, curr_diff_interval):
         with self.lock:
             poolsestimate = copy(self.poolsestimate)
