@@ -478,6 +478,22 @@ class TransientSimTests(unittest.TestCase):
                 break
             print(waitvector)
 
+        # Check that ValueError is raised if there are feepoints below
+        # sim.stablefeerate
+        with self.assertRaises(ValueError):
+            transientsim_core(self.sim, self.init_entries,
+                              [self.sim.stablefeerate-1]).next()
+
+        # No feepoints >= stablefeerate
+        with self.assertRaises(ValueError):
+            feepoints, waittimes, elapsedtime, numiters = transientsim(
+                self.sim,
+                feepoints=[self.sim.stablefeerate-1],
+                init_entries=init_entries,
+                miniters=0,
+                maxiters=1000,
+                maxtime=60)
+
     def test_monoprocess(self):
         NUMPROCESSES = 1
 

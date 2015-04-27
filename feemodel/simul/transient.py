@@ -17,9 +17,11 @@ def transientsim_core(sim, init_entries, feepoints):
     """Transient wait time generator.
 
     Each iteration yields one realization of the wait time random vector.
-    feepoints must not include any feerates lower than sim.stablefeerate,
-    otherwise the simulation could be unstable.
+    feepoints should be sorted, and should not include any feerates lower than
+    sim.stablefeerate.
     """
+    if min(feepoints) < sim.stablefeerate:
+        raise ValueError("All feepoints must be >= sim.stablefeerate.")
     waittimes = [None]*len(feepoints)
     min_sfr_idx = len(feepoints)
     for block in sim.run(init_entries=init_entries):
@@ -42,10 +44,12 @@ def transientsim(sim, feepoints=None, init_entries=None,
     if init_entries is None:
         init_entries = {}
     if not feepoints:
-        feepoints = _get_default_feepoints(sim.cap, sim.stablefeerate)
+        feepoints = _get_default_feepoints(sim)
     else:
         feepoints = filter(lambda feerate: feerate >= sim.stablefeerate,
                            feepoints)
+        if not feepoints:
+            raise ValueError("No feepoints >= stablefeerate.")
     if not numprocesses:
         numprocesses = multiprocessing.cpu_count()
     resultqueue = multiprocessing.Queue()
@@ -110,13 +114,13 @@ def transientsim_process(sim, init_entries, feepoints, resultqueue,
         logger.exception("Exception in transientsim_process.")
 
 
-def _get_default_feepoints(cap, stablefeerate, numpoints=20):
+def _get_default_feepoints(sim, numpoints=20):
     numpoints = 20
     cap_ratio_targets = [i/numpoints*cap_ratio_thresh
                          for i in range(1, numpoints+1)]
     feepoints = [
-        cap.feerates[cap.cap_ratio_index(cap_ratio)]
+        sim.cap.feerates[sim.cap.cap_ratio_index(cap_ratio)]
         for cap_ratio in reversed(cap_ratio_targets)]
     feepoints = sorted(set(feepoints))
-    assert feepoints[0] >= stablefeerate
+    assert feepoints[0] >= sim.stablefeerate
     return feepoints
