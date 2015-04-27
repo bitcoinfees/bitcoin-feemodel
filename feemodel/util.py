@@ -88,6 +88,23 @@ class StoppableThread(threading.Thread):
         return decorator
 
 
+def logexceptions(fn):
+    """Decorator that logs exceptions.
+
+    Logs all exceptions / stack traces in the decorated function before
+    reraising.
+    """
+    @wraps(fn)
+    def logged_fn(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            logger.exception(
+                "{} in {}.".format(e.__class__.__name__, fn.__name__))
+            raise e
+    return logged_fn
+
+
 class WorkerThread(threading.Thread):
     """Worker thread.
 
@@ -102,6 +119,7 @@ class WorkerThread(threading.Thread):
         self._workqueue = Queue.Queue()
         super(WorkerThread, self).__init__()
 
+    @logexceptions
     def run(self):
         """Main loop."""
         while True:
@@ -360,39 +378,6 @@ class Function(object):
         return iter(zip(self._x, self._y))
 
 
-# TODO: deprecate this
-class Table(object):
-    def __init__(self, colwidths=None, padding=2):
-        self.colwidths = colwidths
-        self.rows = []
-        self.justifs = []
-        self.padding = padding
-
-    def add_row(self, row, justifs=None):
-        if self.colwidths is None:
-            self.colwidths = [0]*len(row)
-        newrow = [str(el) for el in row]
-        self.rows.append(newrow)
-        self._adjust_colwidths(newrow)
-
-        if justifs is None:
-            justifs = '>'*len(row)
-        self.justifs.append(justifs)
-
-    def _adjust_colwidths(self, row):
-        for idx, el in enumerate(row):
-            self.colwidths[idx] = max(len(el), self.colwidths[idx])
-
-    def print_table(self):
-        print("")
-        for row, justifs in zip(self.rows, self.justifs):
-            s = ''
-            for just, colwidth in zip(justifs, self.colwidths):
-                s += '{:' + just + str(colwidth + self.padding) + '}'
-            print(s.format(*row))
-        print("")
-
-
 def save_obj(obj, filename):
     '''Convenience function to pickle an object to disk.'''
     with open(filename, 'wb') as f:
@@ -434,11 +419,6 @@ def get_coinbase_info(blockheight):
     tag = str(coinbase_tx.vin[0].scriptSig).decode('utf-8', 'ignore')
 
     return addresses, tag
-
-
-# TODO: deprecate this in favour of get_hashesperblock
-def get_pph(blockheight):
-    raise NotImplementedError
 
 
 def get_hashesperblock(blockheight):
@@ -577,13 +557,25 @@ def cumsum_gen(seq, base=0, mapfn=None):
         yield cumsum
 
 
-# TODO: Deprecate this and itertimer
+# =======================
+# TODO: Deprecate these
 def try_wrap(fn):
     raise NotImplementedError
 
 
 def itertimer(maxiters=None, maxtime=None, stopflag=None):
     raise NotImplementedError
+
+
+class Table(object):
+
+    def __init__(self, colwidths=None, padding=2):
+        raise NotImplementedError
+
+
+def get_pph(blockheight):
+    raise NotImplementedError
+# =======================
 
 
 proxy = BatchProxy()

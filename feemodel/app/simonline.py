@@ -5,7 +5,7 @@ import logging
 
 from feemodel.txmempool import TxMempool
 from feemodel.config import datadir, config
-from feemodel.util import load_obj, save_obj, WorkerThread
+from feemodel.util import load_obj, save_obj, logexceptions, WorkerThread
 from feemodel.app.pools import PoolsOnlineEstimator
 from feemodel.app.txrate import TxRateOnlineEstimator
 from feemodel.app.transient import TransientOnline
@@ -36,6 +36,7 @@ class SimOnline(TxMempool):
             miniters=config.getint("app", "trans_miniters"),
             maxiters=config.getint("app", "trans_maxiters"))
 
+    @logexceptions
     def run(self):
         with self.transient.context_start():
             self.predictworker.start()

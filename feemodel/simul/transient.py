@@ -5,6 +5,7 @@ import logging
 from time import time
 from bisect import bisect_left
 
+from feemodel.util import logexceptions
 from feemodel.simul.simul import cap_ratio_thresh
 
 ITERSCHUNK = 100
@@ -95,23 +96,19 @@ def transientsim(sim, feepoints=None, init_entries=None,
     return feepoints, waittimes, elapsedtime, len(waitvectors)
 
 
+@logexceptions
 def transientsim_process(sim, init_entries, feepoints, resultqueue,
                          stopflag):
     waitvectors = []
-    try:
-        for waitvector in transientsim_core(sim, init_entries, feepoints):
-            waitvectors.append(waitvector)
-            if stopflag.is_set():
-                resultqueue.put(waitvectors)
-                resultqueue.put(PROCESS_COMPLETE)
-                break
-            if len(waitvectors) == ITERSCHUNK:
-                resultqueue.put(waitvectors)
-                waitvectors = []
-    except Exception:
-        # Because transientsim_process is called in a child process,
-        # we must catch all errors if we want to see a stack trace.
-        logger.exception("Exception in transientsim_process.")
+    for waitvector in transientsim_core(sim, init_entries, feepoints):
+        waitvectors.append(waitvector)
+        if stopflag.is_set():
+            resultqueue.put(waitvectors)
+            resultqueue.put(PROCESS_COMPLETE)
+            break
+        if len(waitvectors) == ITERSCHUNK:
+            resultqueue.put(waitvectors)
+            waitvectors = []
 
 
 def _get_default_feepoints(sim, numpoints=20):

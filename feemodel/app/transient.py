@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class TransientOnline(StoppableThread):
+
     def __init__(self, mempool, poolsonline, txonline,
                  update_period=default_update_period,
                  miniters=default_miniters,
@@ -38,7 +39,6 @@ class TransientOnline(StoppableThread):
         try:
             logger.info("Starting transient online sim.")
             self.wait_for_resources()
-            self.sleep_till_next()
             while not self.is_stopped():
                 self.next_update = time() + self.update_period
                 self.update()
