@@ -51,7 +51,6 @@ class BasicTests(unittest.TestCase):
                 sleep(0.1)
             transient_stats = sim.transient.stats
             transient_stats.expectedwaits.print_fn()
-            transient_stats._cap.print_cap()
             lowest_feerate = transient_stats.feepoints[0]
             print("*** Setting rawmempool to 333931 ***")
             proxy.set_rawmempool(333953)

@@ -58,7 +58,7 @@ class TransientOnline(StoppableThread):
         sim, init_entries = self._get_resources()
         feepoints = self.calc_feepoints(sim)
 
-        stats = TransientStats(sim, init_entries)
+        stats = TransientStats()
         feepoints, waittimes = transientsim(
             sim,
             feepoints=feepoints,
@@ -69,9 +69,8 @@ class TransientOnline(StoppableThread):
             stopflag=self.get_stop_object())
         stats.record_waittimes(feepoints, waittimes)
 
-        logger.debug("Finished transient simulation in %.2fs and "
-                     "%d iterations - mempool size was %d bytes" %
-                     (stats.timespent, stats.numiters, stats.mempoolsize))
+        logger.debug("Finished transient sim in %.2fs and %d iterations" %
+                     (stats.timespent, stats.numiters))
         # Warn if we reached miniters
         if stats.timespent > 1.1*self.update_period:
             logger.warning("Transient sim took %.2fs to do %d iters." %
@@ -142,14 +141,10 @@ class TransientOnline(StoppableThread):
         return stats
 
 
-# TODO: a lot of cleanup
 class TransientStats(object):
 
-    def __init__(self, sim, init_entries):
+    def __init__(self):
         self.timestamp = time()
-        self.mempoolsize = sum([entry.size for entry in init_entries.values()])
-        self.stablefeerate = sim.stablefeerate
-        self._cap = sim.cap
 
     def record_waittimes(self, feepoints, waittimes):
         self.timespent = time() - self.timestamp
@@ -157,19 +152,19 @@ class TransientStats(object):
 
         expectedwaits = []
         expectedwaits_err = []
-        waitmatrix = []
+        waitpercentiles = []
         for waitsample in waittimes:
             waitdata = DataSample(waitsample)
             waitdata.calc_stats()
             expectedwaits.append(waitdata.mean)
             expectedwaits_err.append(waitdata.mean_interval[1]-waitdata.mean)
-            waitmatrix.append(
+            waitpercentiles.append(
                 [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
         self.feepoints = feepoints
         self.expectedwaits = WaitFn(feepoints, expectedwaits,
                                     expectedwaits_err)
-        self.waitmatrix = [WaitFn(feepoints, w) for w in zip(*waitmatrix)]
+        self.waitmatrix = [WaitFn(feepoints, w) for w in zip(*waitpercentiles)]
 
     def predict(self, feerate, currtime):
         '''Predict the wait time of a transaction with specified feerate.
@@ -186,11 +181,9 @@ class TransientStats(object):
             'timestamp': self.timestamp,
             'timespent': self.timespent,
             'numiters': self.numiters,
-            'stablefeerate': self.stablefeerate,
             'feepoints': self.feepoints,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
-            'waitpercentiles': zip(*[w.waits for w in self.waitmatrix]),
-            'mempoolsize': self.mempoolsize
+            'waitmatrix': [w.waits for w in self.waitmatrix],
         }
         return stats

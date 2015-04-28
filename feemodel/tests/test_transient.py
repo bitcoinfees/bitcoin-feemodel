@@ -114,7 +114,6 @@ class TransientOnlineTests(unittest.TestCase):
             print("===========")
             print("Expected wait:")
             stats.expectedwaits.print_fn()
-            print("Stablefeerate is {}".format(stats.stablefeerate))
             # print("Cap:")
             # stats.cap.print_cap()
             self.assertEqual(stats.expectedwaits(44640),
@@ -169,9 +168,6 @@ class TransientOnlineTests(unittest.TestCase):
             print("===========")
             print("Expected wait:")
             stats.expectedwaits.print_fn()
-            print("Stablefeerate is {}".format(stats.stablefeerate))
-            print("Cap:")
-            stats._cap.print_cap()
 
         # Moderately high tx rate.
         txref_high = deepcopy(txref)
@@ -192,9 +188,6 @@ class TransientOnlineTests(unittest.TestCase):
             print("===========")
             print("Expected wait:")
             stats.expectedwaits.print_fn()
-            print("Stablefeerate is {}".format(stats.stablefeerate))
-            print("Cap:")
-            stats._cap.print_cap()
 
     def test_C(self):
         # Test iter limits.

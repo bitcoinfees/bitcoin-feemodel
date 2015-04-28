@@ -159,20 +159,7 @@ def transient():
     click.echo('\nTransient statistics\n=======================')
     click.echo(tabulate(table, headers=headers))
 
-    # headers = [
-    #     'Feerate',
-    #     'Tx byterate',
-    #     'Cap']
-    # table = zip(
-    #     stats['cap']['feerates'],
-    #     stats['cap']['txbyterates'],
-    #     stats['cap']['caps'])
-    # click.echo('\nCapacity\n========')
-    # click.echo(tabulate(table, headers=headers))
-
     click.echo('')
-    click.echo('Mempool size (bytes): {}'.format(stats['mempoolsize']))
-    click.echo('Stable feerate: {}'.format(stats['stablefeerate']))
     click.echo('Timestamp: {}'.format(time.ctime(stats['timestamp'])))
     click.echo('Time spent: {}'.format(stats['timespent']))
     click.echo('Num iters: {}'.format(stats['numiters']))
