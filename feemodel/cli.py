@@ -87,6 +87,7 @@ def pools():
             "Block shortfall of {}; trying next update at {}".
             format(stats['block_shortfall'], time.ctime(stats['next_update'])))
         return
+
     pools = stats['pools']
     headers = [
         'Name',
@@ -121,11 +122,13 @@ def pools():
     click.echo('')
     click.echo(tabulate(table, headers=headers))
     click.echo('')
-    click.echo("Total hashrate (Thps): {}".
-               format(stats['totalhashrate']*1e-12))
-    click.echo("Block interval (s): {}".format(stats['blockinterval']))
-    click.echo("Timestamp: {}".format(time.ctime(stats['timestamp'])))
-    click.echo("Next update: {}".format(time.ctime(stats['next_update'])))
+    table = [
+        ("Total hashrate (Thps)", stats['totalhashrate']*1e-12),
+        ("Block interval", stats['blockinterval']),
+        ("Timestamp", time.ctime(stats['timestamp'])),
+        ("Next update", time.ctime(stats['next_update']))
+    ]
+    click.echo(tabulate(table))
 
 
 @cli.command()
@@ -150,19 +153,24 @@ def transient():
 
     headers = [
         'Feerate',
-        'Expected wait',
+        'Wait',
         'Error']
     table = zip(
         stats['feepoints'],
         stats['expectedwaits'],
         stats['expectedwaits_errors'],)
-    click.echo('\nTransient statistics\n=======================')
+    click.echo("")
+    click.echo("Expected Wait by Feerate")
+    click.echo("===========================")
     click.echo(tabulate(table, headers=headers))
 
     click.echo('')
-    click.echo('Timestamp: {}'.format(time.ctime(stats['timestamp'])))
-    click.echo('Time spent: {}'.format(stats['timespent']))
-    click.echo('Num iters: {}'.format(stats['numiters']))
+    table = [
+        ("Timestamp", time.ctime(stats['timestamp'])),
+        ("Timespent", stats['timespent']),
+        ("Num iters", stats['numiters'])
+    ]
+    click.echo(tabulate(table))
 
 
 @cli.command()
@@ -185,12 +193,17 @@ def prediction():
 
     headers = ['x', 'y']
     table = zip(*stats['pval_ecdf'])
+    click.echo("")
     click.echo("P-Value ECDF")
-    click.echo("============")
+    click.echo("===============")
     click.echo(tabulate(table, headers=headers))
     click.echo('')
-    click.echo('p-distance: {}'.format(stats['pdistance']))
-    click.echo('Num txs: {}'.format(stats['numtxs']))
+
+    table = [
+        ("p-distance", stats['pdistance']),
+        ("Num txs", stats['numtxs'])
+    ]
+    click.echo(tabulate(table))
 
 
 @cli.command()
@@ -203,7 +216,32 @@ def txrate():
         click.echo(repr(e))
         return
 
-    table = [(stat, name) for stat, name in stats.items()]
+    params = stats['params']
+    table = [(paramname, param) for paramname, param in params.items()]
+    click.echo("Params:")
+    click.echo(tabulate(table))
+
+    if 'txrate' not in stats:
+        click.echo("No stats at this time.")
+        return
+
+    headers = ['Feerate', 'Bytes/s']
+    table = zip(stats['cumbyterate']['feerates'],
+                stats['cumbyterate']['byterates'])
+    click.echo('')
+    click.echo('Cumul. Tx Byterate')
+    click.echo("====================")
+    click.echo(tabulate(table, headers=headers))
+    click.echo('')
+
+    table = [
+        ("Sample size", stats['samplesize']),
+        ("Total time", stats['totaltime']),
+        ("Tx rate", stats['txrate']),
+        ("Expected byterate", stats['expected_byterate']),
+        ("Expected byterate std", stats['expected_byterate_std']),
+        ("Byterate with fee", stats['ratewithfee']),
+    ]
     click.echo(tabulate(table))
 
 
@@ -241,15 +279,21 @@ def mempool():
     if 'feerates' not in stats:
         return
 
-    headers = ['Feerate', 'Cumul Size (bytes)']
+    headers = ['Feerate', 'Size']
     table = zip(stats['feerates'], stats['cumsize'])
-    click.echo('\nMempool size\n===============')
+    click.echo("")
+    click.echo('Cumul. Mempool Size')
+    click.echo("===================")
     click.echo(tabulate(table, headers=headers))
-
     click.echo('')
-    click.echo("Current block height: {}".format(stats['currheight']))
-    click.echo("Num memblocks: {}".format(stats['num_memblocks']))
-    click.echo("Num txs: {}".format(stats['numtxs']))
+
+    table = [
+        ("Current block height", stats['currheight']),
+        ("Num txs", stats['numtxs']),
+        ("Size with fee", stats['sizewithfee']),
+        ("Num memblocks", stats['num_memblocks']),
+    ]
+    click.echo(tabulate(table))
 
 
 @cli.command()

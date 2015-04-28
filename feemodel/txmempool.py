@@ -206,8 +206,11 @@ class MempoolState(object):
         nextsize = size_delta
         cumsize = []
         feerates = []
+        size_with_fee = 0
         for idx, size in enumerate(
                 cumsum_gen(sizebyfee, mapfn=lambda tup: tup[1])):
+            if sizebyfee[idx][0] >= MINRELAYTXFEE:
+                size_with_fee = size
             if size < nextsize:
                 continue
             cumsize.append(size)
@@ -221,7 +224,8 @@ class MempoolState(object):
             "feerates": feerates,
             "cumsize": cumsize,
             "currheight": self.height,
-            "numtxs": len(self.entries)
+            "numtxs": len(self.entries),
+            "sizewithfee": size_with_fee
         }
         return stats
 

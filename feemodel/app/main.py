@@ -81,8 +81,6 @@ def main(mempool_only=False, port=config.getint("app", "port")):
             stats = sim.get_txstats()
         except AttributeError:
             abort(501)
-        if stats is None:
-            abort(503)
         return jsonify(stats)
 
     @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])

@@ -88,10 +88,10 @@ class SimTxSource(object):
         def byterate_groupsum(grouptuple):
             return sum([tx.size for tx in grouptuple[1]])*self.txrate/n
 
-        self.txsample.sort(key=feerate_keyfn, reverse=True)
-        _feerates = sorted(set(map(feerate_keyfn, self.txsample)))
+        txsample = sorted(self.txsample, key=feerate_keyfn, reverse=True)
+        _feerates = sorted(set(map(feerate_keyfn, txsample)))
         _byterates = list(cumsum_gen(
-            groupby(self.txsample, feerate_keyfn), mapfn=byterate_groupsum))
+            groupby(txsample, feerate_keyfn), mapfn=byterate_groupsum))
         _byterates.reverse()
 
         if not _feerates:

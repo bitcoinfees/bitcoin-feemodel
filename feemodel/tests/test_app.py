@@ -6,13 +6,14 @@ from time import sleep, time
 from pprint import pprint
 
 from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
-                                   mk_tmpdatadir, rm_tmpdatadir)
+                                   mk_tmpdatadir, rm_tmpdatadir, txref)
 from feemodel.tests.pseudoproxy import install, proxy
 
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 from feemodel.app.simonline import SimOnline, PREDICT_SAVEFILE
 from feemodel.app.predict import Prediction
-from feemodel.config import config
+from feemodel.app.txrate import TxRateOnlineEstimator
+from feemodel.config import config, MINRELAYTXFEE
 from feemodel.util import load_obj
 from feemodel.apiclient import APIClient
 from feemodel.app.main import main
@@ -24,7 +25,29 @@ poll_period = config.getfloat("txmempool", "poll_period")
 apiclient = APIClient()
 
 
-class BasicTests(unittest.TestCase):
+class TxRateOnlineTests(unittest.TestCase):
+
+    def setUp(self):
+        self.txonline = TxRateOnlineEstimator()
+        self.txonline.tx_estimator = txref
+
+    def test_stats(self):
+        stats = self.txonline.get_stats()
+        feerates = stats['cumbyterate']['feerates']
+        byterates = stats['cumbyterate']['byterates']
+        for feerate, byterate in zip(feerates, byterates):
+            self.assertAlmostEqual(byterate, self.get_refbyterate(feerate))
+        self.assertAlmostEqual(stats['ratewithfee'],
+                               self.get_refbyterate(MINRELAYTXFEE))
+
+    def get_refbyterate(self, feerate):
+        txsample = txref.txsample
+        txrate = txref.txrate
+        return sum([tx.size for tx in txsample
+                    if tx.feerate >= feerate])*txrate/len(txsample)
+
+
+class BasicAppTests(unittest.TestCase):
 
     def setUp(self):
         self.time = get_mytime()
