@@ -3,6 +3,7 @@ from __future__ import division
 import unittest
 import threading
 import multiprocessing
+from time import time
 from collections import Counter
 from copy import deepcopy, copy
 from random import seed, expovariate
@@ -486,7 +487,7 @@ class TransientSimTests(unittest.TestCase):
 
         # No feepoints >= stablefeerate
         with self.assertRaises(ValueError):
-            feepoints, waittimes, elapsedtime, numiters = transientsim(
+            feepoints, waittimes = transientsim(
                 self.sim,
                 feepoints=[self.sim.stablefeerate-1],
                 init_entries=init_entries,
@@ -499,7 +500,7 @@ class TransientSimTests(unittest.TestCase):
 
         MAXITERS = 2000
         print("Testing maxiters:")
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
@@ -509,13 +510,13 @@ class TransientSimTests(unittest.TestCase):
             numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
+        numiters = len(waittimes[0])
         self.assertLess(numiters, MAXITERS*1.2)
 
         print("Testing maxtime:")
         MAXTIME = 1
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        starttime = time()
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
@@ -523,15 +524,14 @@ class TransientSimTests(unittest.TestCase):
             maxiters=10000,
             maxtime=MAXTIME,
             numprocesses=NUMPROCESSES)
+        timespent = time() - starttime
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
-        self.assertLess(elapsedtime, MAXTIME*1.2)
+        self.assertLess(timespent, MAXTIME*1.2)
 
         print("Testing miniters: ")
         MINITERS = 2000
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
@@ -541,12 +541,11 @@ class TransientSimTests(unittest.TestCase):
             numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
+        numiters = len(waittimes[0])
         self.assertLess(numiters, MINITERS*1.1)
 
         print("Testing auto feepoints:")
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        feepoints, waittimes = transientsim(
             self.sim,
             init_entries=init_entries,
             miniters=0,
@@ -555,14 +554,12 @@ class TransientSimTests(unittest.TestCase):
             numprocesses=NUMPROCESSES)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
 
         print("Testing stopflag:")
         stopflag = threading.Event()
         threading.Timer(1, stopflag.set).start()
         with self.assertRaises(StopIteration):
-            feepoints, waittimes, elapsedtime, numiters = transientsim(
+            feepoints, waittimes = transientsim(
                 self.sim,
                 init_entries=init_entries,
                 miniters=0,
@@ -574,7 +571,7 @@ class TransientSimTests(unittest.TestCase):
     def test_multiprocess(self):
         MAXITERS = 2000
         print("Testing maxiters:")
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
@@ -583,28 +580,27 @@ class TransientSimTests(unittest.TestCase):
             maxtime=60)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
+        numiters = len(waittimes[0])
         self.assertLess(numiters, MAXITERS*1.2)
 
         print("Testing maxtime:")
         MAXTIME = 1
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        starttime = time()
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
             miniters=0,
             maxiters=10000,
             maxtime=MAXTIME)
+        timespent = time() - starttime
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
-        self.assertLess(elapsedtime, MAXTIME*1.2)
+        self.assertLess(timespent, MAXTIME*1.2)
 
         print("Testing miniters: ")
         MINITERS = 2000
-        feepoints, waittimes, elapsedtime, numiters = transientsim(
+        feepoints, waittimes = transientsim(
             self.sim,
             feepoints=self.feepoints,
             init_entries=init_entries,
@@ -613,8 +609,7 @@ class TransientSimTests(unittest.TestCase):
             maxtime=0)
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         pprint(zip(feepoints, avgwaittimes))
-        print("numiters is {}.".format(numiters))
-        print("elapsedtime is {}.".format(elapsedtime))
+        numiters = len(waittimes[0])
         self.assertLess(numiters, MINITERS*1.2)
 
 

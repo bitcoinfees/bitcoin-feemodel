@@ -88,8 +88,10 @@ class TxMempool(StoppableThread):
 
         Updates mempool every poll_period seconds.
         """
-        logger.info("Starting TxMempool with dbfile/blocks_to_keep: {}/{}".
-                    format(self.dbfile, self.blocks_to_keep))
+        # logger.info("Starting TxMempool with dbfile/blocks_to_keep: {}/{}".
+        logger.info("Starting TxMempool with {} blocks_to_keep.".
+                    format(self.blocks_to_keep))
+        logger.info("memblock dbfile is at {}".format(self.dbfile))
         self.blockworker = WorkerThread(self.process_blocks)
         self.blockworker.start()
         try:

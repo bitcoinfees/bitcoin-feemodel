@@ -3,7 +3,6 @@ from __future__ import division
 import logging
 from time import time
 
-from feemodel.config import MINRELAYTXFEE
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
 from feemodel.simul.stats import WaitFn
@@ -58,11 +57,9 @@ class TransientOnline(StoppableThread):
     def update(self):
         sim, init_entries = self._get_resources()
         feepoints = self.calc_feepoints(sim)
-        mempoolsize = sum([entry.size for entry in init_entries.values()
-                           if entry.feerate >= MINRELAYTXFEE])
 
-        timestamp = time()
-        feepoints, waittimes, timespent, numiters = transientsim(
+        stats = TransientStats(sim, init_entries)
+        feepoints, waittimes = transientsim(
             sim,
             feepoints=feepoints,
             init_entries=init_entries,
@@ -70,17 +67,16 @@ class TransientOnline(StoppableThread):
             maxiters=self.maxiters,
             maxtime=self.update_period,
             stopflag=self.get_stop_object())
+        stats.record_waittimes(feepoints, waittimes)
 
         logger.debug("Finished transient simulation in %.2fs and "
                      "%d iterations - mempool size was %d bytes" %
-                     (timespent, numiters, mempoolsize))
+                     (stats.timespent, stats.numiters, stats.mempoolsize))
         # Warn if we reached miniters
-        if timespent > 1.1*self.update_period:
+        if stats.timespent > 1.1*self.update_period:
             logger.warning("Transient sim took %.2fs to do %d iters." %
-                           (timespent, numiters))
-
-        self.stats = TransientStats(timestamp, feepoints, waittimes, timespent,
-                                    numiters, mempoolsize, sim)
+                           (stats.timespent, stats.numiters))
+        self.stats = stats
 
     def _get_resources(self):
         """Get transient sim resources.
@@ -146,18 +142,18 @@ class TransientOnline(StoppableThread):
         return stats
 
 
-# TODO: Make simul.transient.transientsim return this directly. Or maybe not.
-#       Also, timespent / numiters is redundant - forget it!
+# TODO: a lot of cleanup
 class TransientStats(object):
 
-    def __init__(self, timestamp, feepoints, waittimes, timespent, numiters,
-                 mempoolsize, sim):
-        self.timestamp = timestamp
-        self.timespent = timespent
-        self.numiters = numiters
-        self.mempoolsize = mempoolsize
-        self.cap = sim.cap
+    def __init__(self, sim, init_entries):
+        self.timestamp = time()
+        self.mempoolsize = sum([entry.size for entry in init_entries.values()])
         self.stablefeerate = sim.stablefeerate
+        self._cap = sim.cap
+
+    def record_waittimes(self, feepoints, waittimes):
+        self.timespent = time() - self.timestamp
+        self.numiters = len(waittimes[0])
 
         expectedwaits = []
         expectedwaits_err = []
@@ -190,12 +186,11 @@ class TransientStats(object):
             'timestamp': self.timestamp,
             'timespent': self.timespent,
             'numiters': self.numiters,
-            'cap': self.cap.get_stats(),
             'stablefeerate': self.stablefeerate,
             'feepoints': self.feepoints,
             'expectedwaits': self.expectedwaits.waits,
             'expectedwaits_errors': self.expectedwaits.errors,
-            'waitpercentiles': [w.waits for w in self.waitmatrix],
+            'waitpercentiles': zip(*[w.waits for w in self.waitmatrix]),
             'mempoolsize': self.mempoolsize
         }
         return stats

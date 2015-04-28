@@ -48,7 +48,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
         feepoints = _get_default_feepoints(sim)
     else:
         feepoints = filter(lambda feerate: feerate >= sim.stablefeerate,
-                           feepoints)
+                           sorted(set(feepoints)))
         if not feepoints:
             raise ValueError("No feepoints >= stablefeerate.")
     if not numprocesses:
@@ -93,7 +93,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
     logger.debug("Subprocesses joined and completed.")
 
     waittimes = zip(*waitvectors)
-    return feepoints, waittimes, elapsedtime, len(waitvectors)
+    return feepoints, waittimes
 
 
 @logexceptions

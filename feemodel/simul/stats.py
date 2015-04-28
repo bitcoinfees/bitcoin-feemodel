@@ -93,13 +93,11 @@ class Capacity(object):
     def get_stats(self, numpoints=20):
         cap_idxs = [
             self.cap_ratio_index(i/numpoints) for i in range(1, numpoints+1)]
-        cap_idxs.append(0)
         cap_idxs = sorted(set(cap_idxs))
         stats = {
             'feerates': [self.feerates[idx] for idx in cap_idxs],
             'txbyterates': [self.txbyterates[idx] for idx in cap_idxs],
             'caps': [self.caps[idx] for idx in cap_idxs],
-            'maxcap': self.caps[-1]
         }
         return stats
 

@@ -5,7 +5,6 @@ import cPickle as pickle
 from contextlib import contextmanager
 
 import feemodel.config
-from feemodel.config import datadir
 
 
 @contextmanager
@@ -41,8 +40,9 @@ def rm_tmpdatadir():
         shutil.rmtree(tmpdatadir)
 
 
-tmpdatadir = os.path.join(datadir, '_tmp_datadir')
+tmpdatadir = os.path.join(feemodel.config.datadir, '_tmp_datadir')
 feemodel.config.datadir = tmpdatadir
+feemodel.config.config.set("app", "port", "8351")
 
 # TODO: use pkg_resources for this
 testdatadir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'data/')

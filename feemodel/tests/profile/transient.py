@@ -12,13 +12,12 @@ init_entries = MemBlock.read(333931, dbfile=dbfile).entries
 sim = Simul(poolsref, txref)
 
 print("Starting transientsim.")
-cProfile.run("feepoints, waittimes, realtime, numiters = transientsim("
+cProfile.run("feepoints, waittimes = transientsim("
              "sim, init_entries=init_entries, numprocesses=1)")
-print("Completed in {}s with {} iters.".format(realtime, numiters))
+print("Completed with {} iters.".format(len(waittimes[0])))
 
 print("Feerate\tMean wait")
 for feerate, waitsample in zip(feepoints, waittimes):
     waitdata = DataSample(waitsample)
     waitdata.calc_stats()
     print("{}\t{}".format(feerate, waitdata.mean))
-sim.cap.print_cap()

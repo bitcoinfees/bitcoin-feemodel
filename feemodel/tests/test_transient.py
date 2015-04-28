@@ -1,7 +1,7 @@
 '''Test app.transient.'''
 import unittest
 import logging
-from time import sleep
+from time import sleep, time
 from bisect import bisect
 from math import log
 from pprint import pprint
@@ -26,12 +26,15 @@ class TransientRefCmp(unittest.TestCase):
 
     def test_A(self):
         sim = Simul(poolsref, txref)
-        feepoints, waittimes, timespent, numiters = transientsim(
+        starttime = time()
+        feepoints, waittimes = transientsim(
             sim,
             init_entries=init_entries,
             maxtime=600,
             maxiters=10000,
         )
+        numiters = len(waittimes[0])
+        timespent = time() - starttime
 
         print("Complete in {}s with {} iters.".format(timespent, numiters))
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
@@ -67,7 +70,7 @@ class TransientSamplingDist(unittest.TestCase):
         means = []
         stds = []
         for i in range(100):
-            feerates, waittimes, elapsedtime, numiters = transientsim(
+            feerates, waittimes = transientsim(
                 sim,
                 feepoints=feepoints,
                 maxiters=400,
@@ -112,8 +115,8 @@ class TransientOnlineTests(unittest.TestCase):
             print("Expected wait:")
             stats.expectedwaits.print_fn()
             print("Stablefeerate is {}".format(stats.stablefeerate))
-            print("Cap:")
-            stats.cap.print_cap()
+            # print("Cap:")
+            # stats.cap.print_cap()
             self.assertEqual(stats.expectedwaits(44640),
                              stats.expectedwaits(44641))
             minwait = stats.expectedwaits.waits[-1]
@@ -168,7 +171,7 @@ class TransientOnlineTests(unittest.TestCase):
             stats.expectedwaits.print_fn()
             print("Stablefeerate is {}".format(stats.stablefeerate))
             print("Cap:")
-            stats.cap.print_cap()
+            stats._cap.print_cap()
 
         # Moderately high tx rate.
         txref_high = deepcopy(txref)
@@ -191,7 +194,7 @@ class TransientOnlineTests(unittest.TestCase):
             stats.expectedwaits.print_fn()
             print("Stablefeerate is {}".format(stats.stablefeerate))
             print("Cap:")
-            stats.cap.print_cap()
+            stats._cap.print_cap()
 
     def test_C(self):
         # Test iter limits.
