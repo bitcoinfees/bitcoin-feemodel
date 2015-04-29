@@ -7,7 +7,8 @@ class APIClient(object):
     '''Client for accessing model stats through the API.'''
 
     def __init__(self, host='localhost', port=config.getint("app", "port")):
-        self.url = 'http://{}:{}/feemodel/'.format(host, str(port))
+        self.host = host
+        self.port = port
 
     def get_pools(self):
         return self._get_resource("pools")
@@ -38,6 +39,10 @@ class APIClient(object):
     def set_loglevel(self, level):
         data = {"level": level}
         return self._put_resource('loglevel', data)["level"]
+
+    @property
+    def url(self):
+        return 'http://{}:{}/feemodel/'.format(self.host, str(self.port))
 
     def _put_resource(self, path, data):
         headers = {"Content-type:": "application/json"}

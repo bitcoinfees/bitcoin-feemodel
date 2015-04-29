@@ -1,10 +1,14 @@
+from __future__ import division
+
 import click
 from feemodel.apiclient import client
 
 
 @click.group()
-def cli():
-    pass
+@click.option('--port', type=click.INT, default=None)
+def cli(port):
+    if port is not None:
+        client.port = port
 
 
 @cli.command()
@@ -72,6 +76,8 @@ def pools():
     '''
     import time
     from tabulate import tabulate
+    from itertools import groupby
+    from feemodel.util import cumsum_gen
     try:
         stats = client.get_pools()
     except Exception as e:
@@ -104,24 +110,57 @@ def pools():
     table = []
     pitems = sorted(pools.items(),
                     key=lambda p: p[1]['proportion'], reverse=True)
-    for pool in pitems:
+    for name, pool in pitems:
         row = [
-            pool[0],
-            pool[1]['hashrate']*1e-12,
-            pool[1]['proportion'],
-            pool[1]['maxblocksize'],
-            pool[1]['minfeerate'],
-            pool[1]['abovekn'],
-            pool[1]['belowkn'],
-            pool[1]['mfrmean'],
-            pool[1]['mfrstd'],
-            pool[1]['mfrbias'],
+            name,
+            pool['hashrate']*1e-12,
+            pool['proportion'],
+            pool['maxblocksize'],
+            pool['minfeerate'],
+            pool['abovekn'],
+            pool['belowkn'],
+            pool['mfrmean'],
+            pool['mfrstd'],
+            pool['mfrbias'],
         ]
         table.append(row)
-
     click.echo('')
     click.echo(tabulate(table, headers=headers))
     click.echo('')
+
+    def mfr_keyfn(poolitem):
+        return poolitem[1]['minfeerate']
+
+    def sumgroupbyterates(grouptuple):
+        feerate, feegroup = grouptuple
+        blockrate = 1 / stats['blockinterval']
+        totalhashrate = stats['totalhashrate']
+        groupbyterate = sum([
+            pool['hashrate']*pool['maxblocksize']
+            for name, pool in feegroup]) * blockrate / totalhashrate
+        return (feerate, groupbyterate)
+
+    pitems.sort(key=mfr_keyfn)
+    byterate_by_fee = map(sumgroupbyterates, groupby(pitems, mfr_keyfn))
+    feerates, byterates = zip(*byterate_by_fee)
+    maxbyterate = sum(byterates)
+    rate_delta = maxbyterate / 20
+    table = []
+    next_rate = rate_delta
+    for feerate, cumbyterate in zip(feerates, cumsum_gen(byterates)):
+        if feerate == float("inf"):
+            break
+        if cumbyterate < next_rate:
+            continue
+        table.append((feerate, cumbyterate))
+        next_rate = min(cumbyterate + rate_delta, maxbyterate)
+
+    headers = ['Feerate', 'Capacity (bytes/s)']
+    click.echo("Cumul. Capacity Byterate")
+    click.echo("===============================")
+    click.echo(tabulate(table, headers=headers))
+    click.echo("")
+
     table = [
         ("Total hashrate (Thps)", stats['totalhashrate']*1e-12),
         ("Block interval", stats['blockinterval']),
@@ -153,8 +192,8 @@ def transient():
 
     headers = [
         'Feerate',
-        'Wait',
-        'Error']
+        'Wait (s)',
+        'Error (s)']
     table = zip(
         stats['feepoints'],
         stats['expectedwaits'],
@@ -225,7 +264,7 @@ def txrate():
         click.echo("No stats at this time.")
         return
 
-    headers = ['Feerate', 'Bytes/s']
+    headers = ['Feerate', 'bytes/s']
     table = zip(stats['cumbyterate']['feerates'],
                 stats['cumbyterate']['byterates'])
     click.echo('')
@@ -279,11 +318,11 @@ def mempool():
     if 'feerates' not in stats:
         return
 
-    headers = ['Feerate', 'Size']
+    headers = ['Feerate', 'Size (bytes)']
     table = zip(stats['feerates'], stats['cumsize'])
     click.echo("")
     click.echo('Cumul. Mempool Size')
-    click.echo("===================")
+    click.echo("=========================")
     click.echo(tabulate(table, headers=headers))
     click.echo('')
 
