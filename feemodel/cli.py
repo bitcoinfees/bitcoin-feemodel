@@ -140,23 +140,22 @@ def pools():
             for name, pool in feegroup]) * blockrate / totalhashrate
         return (feerate, groupbyterate)
 
-    pitems.sort(key=mfr_keyfn)
+    pitems = filter(lambda pitem: pitem[1]['minfeerate'] < float("inf"),
+                    sorted(pitems, key=mfr_keyfn))
     byterate_by_fee = map(sumgroupbyterates, groupby(pitems, mfr_keyfn))
     feerates, byterates = zip(*byterate_by_fee)
     maxbyterate = sum(byterates)
-    rate_delta = maxbyterate / 20
+    rate_delta = maxbyterate / 50
     table = []
     next_rate = rate_delta
     for feerate, cumbyterate in zip(feerates, cumsum_gen(byterates)):
-        if feerate == float("inf"):
-            break
         if cumbyterate < next_rate:
             continue
         table.append((feerate, cumbyterate))
         next_rate = min(cumbyterate + rate_delta, maxbyterate)
 
     headers = ['Feerate', 'Capacity (bytes/s)']
-    click.echo("Cumul. Capacity Byterate")
+    click.echo("Cumul. Capacity")
     click.echo("===============================")
     click.echo(tabulate(table, headers=headers))
     click.echo("")
