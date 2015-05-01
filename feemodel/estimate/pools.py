@@ -2,12 +2,13 @@ from __future__ import division
 
 import logging
 from time import time
-from itertools import groupby
+from collections import defaultdict
 
 from tabulate import tabulate
 
+import feemodel.config
 from feemodel.util import (get_block_timestamp, get_block_size,
-                           get_hashesperblock, get_block_name)
+                           get_coinbase_info, get_hashesperblock)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
@@ -17,42 +18,64 @@ logger = logging.getLogger(__name__)
 MAX_TXS = 20000
 
 
+class BlockMetadata(object):
+    """Contains info relevant to pool clustering."""
+
+    def __init__(self, height):
+        self.height = height
+        self.addrs, self.tag = get_coinbase_info(height)
+        self.size = get_block_size(height)
+        self.hashes = get_hashesperblock(height)
+
+    def __and__(self, other):
+        return set(self.addrs) & set(other.addrs)
+
+    def __repr__(self):
+        return ("BlockMetaData(height: {}, size: {})".
+                format(self.height, self.size))
+
+
 class PoolEstimate(SimPool):
 
-    def __init__(self, blockheights, hashrate, maxblocksize):
-        self.blockheights = blockheights
-        self.hashrate = hashrate
+    def __init__(self):
+        self.blocks = []
         self.feelimitedblocks = None
         self.sizelimitedblocks = None
         self.mfrstats = None
-        super(PoolEstimate, self).__init__(
-            hashrate, maxblocksize, float("inf"))
+        super(PoolEstimate, self).__init__(None, None, float("inf"))
 
-    def estimate_minfeerate(self, stopflag=None, dbfile=MEMBLOCK_DBFILE):
+    def estimate(self, windowlen, stopflag=None, dbfile=MEMBLOCK_DBFILE):
+        totalhashes = sum([block.hashes for block in self.blocks])
+        self.hashrate = totalhashes / windowlen
+        self.maxblocksize = max([block.size for block in self.blocks])
+
         txs = []
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
 
         nummissingblocks = 0
-        for height in sorted(self.blockheights, reverse=True):
+        # for height in sorted(self.blockheights, reverse=True):
+        for blockmeta in sorted(self.blocks,
+                                key=lambda b: b.height, reverse=True):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            block = MemBlock.read(height, dbfile=dbfile)
-            if block is None:
+            height = blockmeta.height
+            memblock = MemBlock.read(height, dbfile=dbfile)
+            if memblock is None:
                 nummissingblocks += 1
                 continue
-            _inblocktxs = filter(lambda tx: tx.inblock, block.entries.values())
+            _inblocktxs = filter(lambda tx: tx.inblock,
+                                 memblock.entries.values())
             if _inblocktxs:
                 avgtxsize = (
                     sum([tx.size for tx in _inblocktxs]) / len(_inblocktxs))
             else:
                 avgtxsize = 0.
             # We assume a block is fee-limited if its size is smaller than
-            # the maxblocksize, minus a margin of the block avg tx size.
-            if self.maxblocksize - block.blocksize > avgtxsize:
-                self.feelimitedblocks.append(
-                    (block.blockheight, block.blocksize))
-                txs.extend(tx_preprocess(block))
+            # the maxblocksize, minus a margin of 3 times the blk avg tx size.
+            if self.maxblocksize - memblock.blocksize > 3*avgtxsize:
+                self.feelimitedblocks.append(blockmeta)
+                txs.extend(tx_preprocess(memblock))
                 # Only take up to MAX_TXS of the most recent transactions.
                 # If MAX_TXS is sufficiently high, this helps the adaptivity
                 # of the estimation (i.e. react more quickly to changes in
@@ -64,16 +87,16 @@ class PoolEstimate(SimPool):
                 if len(txs) >= MAX_TXS:
                     break
             else:
-                self.sizelimitedblocks.append(
-                    (block.blockheight, block.blocksize))
+                self.sizelimitedblocks.append(blockmeta)
 
         if not txs and self.sizelimitedblocks:
             # All the blocks are close to the max block size.
             # This should happen rarely, so we just choose the smallest block.
-            smallestheight = min(self.sizelimitedblocks, key=lambda x: x[1])[0]
-            block = MemBlock.read(smallestheight, dbfile=dbfile)
-            if block:
-                txs.extend(tx_preprocess(block))
+            smallestheight = min(
+                self.sizelimitedblocks, key=lambda b: b.size).height
+            memblock = MemBlock.read(smallestheight, dbfile=dbfile)
+            if memblock:
+                txs.extend(tx_preprocess(memblock))
 
         if txs:
             self.mfrstats = calc_stranding_feerate(txs)
@@ -93,13 +116,17 @@ class PoolEstimate(SimPool):
             logger.warning("MFR estimation: {} missing blocks.".
                            format(nummissingblocks))
 
+    def get_addresses(self):
+        "Get the coinbase output addresses of blocks by this pool."
+        return set(sum([b.addrs for b in self.blocks], []))
+
 
 class PoolsEstimator(SimPools):
 
     def __init__(self):
         self.pools = {}
         self.blockrate = None
-        self.blockmap = {}
+        self.blocksmetadata = {}
         self.timestamp = 0.
 
     def update(self):
@@ -109,71 +136,97 @@ class PoolsEstimator(SimPools):
         logger.info("Beginning pool estimation "
                     "from blockrange({}, {})".format(*blockrangetuple))
         starttime = time()
-        self.id_blocks(blockrangetuple, stopflag=stopflag)
+        self.get_blocksmetadata(blockrangetuple, stopflag=stopflag)
+        self.clusterpools()
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
         self.calc_blockrate()
         self.timestamp = starttime
         logger.info("Finished pool estimation in %.2f seconds." %
                     (time()-starttime))
 
-    def id_blocks(self, blockrangetuple, stopflag=None):
+    def get_blocksmetadata(self, blockrangetuple, stopflag=None):
         for height in range(*blockrangetuple):
-            if height in self.blockmap:
+            if height in self.blocksmetadata:
                 continue
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            try:
-                name = get_block_name(height)
-                blocksize = get_block_size(height)
-                numhashes = get_hashesperblock(height)
-            except IndexError:
-                raise IndexError("Bad block range.")
+            self.blocksmetadata[height] = BlockMetadata(height)
 
-            self.blockmap[height] = (name, blocksize, numhashes)
-
-        for height in self.blockmap.keys():
+        # Remove irrelevant blocks
+        for height in self.blocksmetadata.keys():
             if not blockrangetuple[0] <= height < blockrangetuple[1]:
-                del self.blockmap[height]
+                del self.blocksmetadata[height]
 
-        if not self.blockmap:
+        logger.info("Finished getting block metadata.")
+
+    def clusterpools(self):
+        if not self.blocksmetadata:
             raise ValueError("Empty block range.")
 
-        logger.info("Finished identifying blocks.")
+        clusters = []
+        # Cluster by address
+        for block in self.blocksmetadata.values():
+            matched_existing = False
+            for cluster in clusters:
+                if any([self.blocksmetadata[height] & block
+                        for height in cluster]):
+                    cluster.add(block.height)
+                    matched_existing = True
+                    break
+            if not matched_existing:
+                clusters.append(set((block.height,)))
+
+        # TODO: Only add cluster if more than a certain percentage of its
+        #       blocks have the tag.
+        #       Also, consider not adding, if there is a assignment conflict
+        # Cluster by tags
+        knowntags = feemodel.config.knowntags
+        pools = defaultdict(PoolEstimate)
+        for idx, cluster in enumerate(clusters):
+            assigned_name = None
+            for name, taglist in knowntags.items():
+                if any([tag in self.blocksmetadata[height].tag
+                        for tag in taglist for height in cluster]):
+                    if not assigned_name:
+                        assigned_name = name
+                    else:
+                        logger.error(
+                            "Cluster {} assigned to names {} and {}.".
+                            format(idx, name, assigned_name))
+            if assigned_name is None:
+                clusterblocks = [self.blocksmetadata[height]
+                                 for height in cluster]
+                addrs = sorted(sum([b.addrs for b in clusterblocks], []))
+                for addr in addrs:
+                    if addr is not None:
+                        assigned_name = addr[:12] + "_"
+                        break
+            if assigned_name is None:
+                logger.warning("No name for cluster {}.".format(idx))
+                assigned_name = "Cluster" + str(idx)
+            clusterblocks = [self.blocksmetadata[height] for height in cluster]
+            pools[assigned_name].blocks.extend(clusterblocks)
+
+        newnames = set(pools) - set(self.pools)
+        for name in newnames:
+            logger.info("New pool name: {}".format(name))
+        self.pools = dict(pools)
 
     def estimate_pools(self, stopflag=None, dbfile=MEMBLOCK_DBFILE):
-        if len(self.blockmap) < 2:
+        if len(self.blocksmetadata) < 2:
             raise ValueError("Not enough blocks.")
-        self.pools = {}
-        _windowstart = get_block_timestamp(max(self.blockmap))
-        _windowend = get_block_timestamp(min(self.blockmap))
-        windowlen = _windowstart - _windowend
-
-        def poolname_keyfn(blocktuple):
-            '''Select the pool name for itertools.groupby.'''
-            return blocktuple[1][0]
-
-        blockmap_items = sorted(self.blockmap.items(), key=poolname_keyfn)
-        for poolname, items_namegroup in groupby(
-                blockmap_items, poolname_keyfn):
+        _windowend = get_block_timestamp(max(self.blocksmetadata))
+        _windowstart = get_block_timestamp(min(self.blocksmetadata))
+        windowlen = _windowend - _windowstart
+        for name, pool in self.pools.items():
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            blockheights = []
-            blocksizes = []
-            totalhashes = 0.
-            for height, (name, blocksize, numhashes) in items_namegroup:
-                blockheights.append(height)
-                blocksizes.append(blocksize)
-                totalhashes += numhashes
-            maxblocksize = max(blocksizes)
-            hashrate = totalhashes / windowlen
-            pool = PoolEstimate(blockheights, hashrate, maxblocksize)
-            pool.estimate_minfeerate(stopflag=stopflag, dbfile=dbfile)
-            logger.debug("Estimated %s: %s" % (poolname, repr(pool)))
-            self.pools[poolname] = pool
+            pool.estimate(windowlen, stopflag=stopflag, dbfile=dbfile)
+            logger.debug("Estimated {}: {}".format(name, repr(pool)))
 
     def calc_blockrate(self, height=None):
         if not height:
-            height = max(self.blockmap)
+            height = max(self.blocksmetadata)
         totalhashrate = self.calc_totalhashrate()
         if not totalhashrate:
             raise ValueError("No pools.")
@@ -181,6 +234,7 @@ class PoolsEstimator(SimPools):
         self.blockrate = totalhashrate / curr_hashesperblock
 
     def print_pools(self):
+        # TODO: consolidate with CLI's printing
         poolitems = sorted(self.pools.items(),
                            key=lambda poolitem: poolitem[1].hashrate,
                            reverse=True)

@@ -28,3 +28,6 @@ defaultconfigfile = resource_stream(__name__, 'default.cfg')
 configfilename = os.path.join(datadir, 'feemodel.cfg')
 config.readfp(defaultconfigfile)
 config.read(configfilename)
+
+with open(os.path.join(datadir, 'tags.json'), 'r') as f:
+    knowntags = json.load(f)

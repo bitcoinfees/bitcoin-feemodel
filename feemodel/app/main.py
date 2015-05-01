@@ -3,6 +3,7 @@ import logging
 import logging.handlers
 import signal
 from math import ceil
+from base64 import b64encode
 
 from flask import Flask, jsonify, make_response, request, abort
 from werkzeug.exceptions import default_exceptions, HTTPException
@@ -64,7 +65,8 @@ def main(mempool_only=False, port=config.getint("app", "port")):
             poolsestimate = sim.poolsonline.get_pools()
         except AttributeError:
             abort(501)
-        obj = {"poolsestimate": pickle.dumps(poolsestimate)}
+        poolspickle_b64 = b64encode(pickle.dumps(poolsestimate, protocol=2))
+        obj = {"poolspickle_b64": poolspickle_b64}
         return jsonify(obj)
 
     @app.route('/feemodel/prediction', methods=['GET'])

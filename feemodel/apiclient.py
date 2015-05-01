@@ -14,9 +14,10 @@ class APIClient(object):
         return self._get_resource("pools")
 
     def get_poolsobj(self):
+        from base64 import b64decode
         from feemodel.util import pickle
-        return pickle.loads(
-            str(self._get_resource("poolsobj")["poolsestimate"]))
+        poolspickle_b64 = self._get_resource("poolsobj")["poolspickle_b64"]
+        return pickle.loads(b64decode(poolspickle_b64))
 
     def get_transient(self):
         return self._get_resource("transient")

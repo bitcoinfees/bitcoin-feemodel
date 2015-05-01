@@ -378,10 +378,10 @@ class Function(object):
         return iter(zip(self._x, self._y))
 
 
-def save_obj(obj, filename):
+def save_obj(obj, filename, protocol=2):
     '''Convenience function to pickle an object to disk.'''
     with open(filename, 'wb') as f:
-        pickle.dump(obj, f)
+        pickle.dump(obj, f, protocol=protocol)
 
 
 def load_obj(filename):

@@ -2,15 +2,14 @@
 from __future__ import division
 
 import unittest
-import os
 import threading
 from time import sleep, time
 
 from feemodel.tests.config import mk_tmpdatadir, rm_tmpdatadir, poolsref
 from feemodel.tests.pseudoproxy import install
 
-from feemodel.util import save_obj, get_hashesperblock, load_obj
-from feemodel.app.pools import PoolsOnlineEstimator
+from feemodel.util import save_obj, get_hashesperblock
+from feemodel.app.pools import PoolsOnlineEstimator, SAVEFILE as pools_savefile
 
 install()
 
@@ -32,30 +31,21 @@ class PoolsOnlineTests(unittest.TestCase):
         # Rejected by lock
         self.assertIsNone(t2)
         t.join()
-        poolsonline.get_pools().print_pools()
+        pe = poolsonline.get_pools()
+        pe.print_pools()
         print(poolsonline.get_stats())
 
-        # Test that it was saved properly
-        pools_load = load_obj(
-            os.path.join(self.datadir, 'pools', 'pe0333953.pickle'))
-        self.assertEqual(pools_load, poolsonline.get_pools())
-
         self.assertEqual(
-            min(poolsonline.get_pools().blockmap.keys()), 333931)
+            min(pe.blocksmetadata.keys()), 333931)
         t2 = poolsonline.update_async(333953)
         # Rejected because next_update not yet reached
         self.assertIsNone(t2)
 
     def test_B(self):
         print("Test B:")
-        os.mkdir(os.path.join(self.datadir, 'pools'))
         # Test loading of saved pools
-        # Ensure that the most recent is loaded
-        save_obj(1, os.path.join(self.datadir, 'pools', 'pe0000000.pickle'))
         poolsref.timestamp = time()
-        save_obj(poolsref,
-                 os.path.join(self.datadir, 'pools', 'pe0333953.pickle'))
-        # update_period = int(time()) - _timestamp + 1
+        save_obj(poolsref, pools_savefile)
         poolsonline = PoolsOnlineEstimator(2016, update_period=1,
                                            minblocks=1)
         self.assertTrue(poolsonline)
@@ -70,11 +60,11 @@ class PoolsOnlineTests(unittest.TestCase):
         t.join()
         self.assertFalse(poolsonline)
 
-        # test that we keep blockmap even if pools are outdated
+        # test that we keep blocksmetadata even if pools are outdated
         poolsonline = PoolsOnlineEstimator(2016, update_period=0,
                                            minblocks=1)
         self.assertFalse(poolsonline)
-        self.assertTrue(poolsonline.get_pools().blockmap)
+        self.assertTrue(poolsonline.get_pools().blocksmetadata)
         t = poolsonline.update_async(333953)
         self.assertIsNotNone(t)
         t.join()
@@ -82,19 +72,15 @@ class PoolsOnlineTests(unittest.TestCase):
 
     def test_C(self):
         print("Test C:")
-        os.mkdir(os.path.join(self.datadir, 'pools'))
-        # Test loading of saved pools
-        # Ensure that the most recent is loaded
         poolsref.timestamp = time() - 1
-        save_obj(poolsref,
-                 os.path.join(self.datadir, 'pools', 'pe0333953.pickle'))
+        save_obj(poolsref, pools_savefile)
         # Test small window
         poolsonline = PoolsOnlineEstimator(5, update_period=0, minblocks=1)
         self.assertFalse(poolsonline)
-        self.assertTrue(poolsonline.get_pools().blockmap)
+        self.assertTrue(poolsonline.get_pools().blocksmetadata)
         t = poolsonline.update_async(333953)
         t.join()
-        self.assertEqual(min(poolsonline.get_pools().blockmap.keys()),
+        self.assertEqual(min(poolsonline.get_pools().blocksmetadata.keys()),
                          333949)
 
     def test_D(self):

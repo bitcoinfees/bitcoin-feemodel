@@ -50,10 +50,13 @@ test_memblock_dbfile = os.path.join(testdatadir, 'test.db')
 blockdata = os.path.join(testdatadir, 'blockdata.pickle')
 with open(os.path.join(testdatadir, 'pools.json'), 'r') as f:
     testknownpools = json.load(f)
+with open(os.path.join(testdatadir, 'tags.json'), 'r') as f:
+    testknowntags = json.load(f)
 feemodel.config.knownpools = testknownpools
+feemodel.config.knowntags = testknowntags
 
-poolsref = load_obj(os.path.join(testdatadir, "pe_ref.pickle"))
-txref = load_obj(os.path.join(testdatadir, "tr_ref.pickle"))
+poolsref = load_obj(os.path.join(testdatadir, "poolsref.pickle"))
+txref = load_obj(os.path.join(testdatadir, "txref.pickle"))
 transientwaitsref = load_obj(
     os.path.join(testdatadir, "transientwaits_ref.pickle"))
 transientstatsref = load_obj(

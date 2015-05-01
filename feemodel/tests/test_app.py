@@ -10,11 +10,10 @@ from feemodel.tests.config import (test_memblock_dbfile as memblock_dbfile,
 from feemodel.tests.pseudoproxy import install, proxy
 
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
-from feemodel.app.simonline import SimOnline, PREDICT_SAVEFILE
+from feemodel.app.simonline import SimOnline
 from feemodel.app.predict import Prediction
 from feemodel.app.txrate import TxRateOnlineEstimator
 from feemodel.config import config, MINRELAYTXFEE
-from feemodel.util import load_obj
 from feemodel.apiclient import APIClient
 from feemodel.app.main import main
 
@@ -98,8 +97,18 @@ class BasicAppTests(unittest.TestCase):
                 config.getint("app", "predict_block_halflife"))
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
             self.assertEqual(sum(sim.prediction.pvalcounts), 79)
-            predict_load = load_obj(PREDICT_SAVEFILE)
-            self.assertEqual(predict_load, sim.prediction)
+
+            poolsref = sim.poolsonline.get_pools()
+            predictionref = sim.prediction
+
+        # Test loading of predicts and pools
+        config.set("app", "pools_minblocks", "432")
+        sim = SimOnline()
+        with sim.context_start():
+            sleep(1)
+            self.assertTrue(sim.poolsonline)
+            self.assertEqual(poolsref, sim.poolsonline.get_pools())
+            self.assertEqual(predictionref, sim.prediction)
 
     def test_B(self):
         """No memblocks."""
@@ -154,8 +163,8 @@ class AppAPITests(unittest.TestCase):
         pprint(apiclient.get_prediction())
         pprint(apiclient.get_txrate())
         pprint(apiclient.estimatefee(12))
-        apiclient.get_poolsobj()
-        sleep(3)
+        pe = apiclient.get_poolsobj()
+        print(pe)
         print("Terminating main process.")
         process.terminate()
         process.join()

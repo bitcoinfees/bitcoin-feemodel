@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_UPDATE_PERIOD = 86400
 DEFAULT_MINBLOCKS = 432  # 3 days' worth
-SAVEDIR = os.path.join(datadir, 'pools/')
+SAVEFILE = os.path.join(datadir, 'pools.pickle')
 
 
 class PoolsOnlineEstimator(object):
@@ -32,7 +32,7 @@ class PoolsOnlineEstimator(object):
         try:
             self.load_estimates()
             assert self.poolsestimate
-            bestheight = max(self.poolsestimate.blockmap)
+            bestheight = max(self.poolsestimate.blocksmetadata)
         except Exception:
             logger.info("Unable to load saved pools; "
                         "starting from scratch.")
@@ -47,8 +47,6 @@ class PoolsOnlineEstimator(object):
                             bestheight)
                 self.best_diff_interval = bestheight // DIFF_RETARGET_INTERVAL
         self.next_update = self.poolsestimate.timestamp + update_period
-        if not os.path.exists(SAVEDIR):
-            os.makedirs(SAVEDIR)
 
     def update_async(self, currheight, stopflag=None):
         '''Update pool estimates in a new thread.
@@ -147,11 +145,7 @@ class PoolsOnlineEstimator(object):
                 return
             self.poolsestimate = poolsestimate
             self.best_diff_interval = max(
-                self.poolsestimate.blockmap) // DIFF_RETARGET_INTERVAL
-            try:
-                self.save_estimates(currheight)
-            except Exception:
-                logger.exception("Unable to save pools.")
+                self.poolsestimate.blocksmetadata) // DIFF_RETARGET_INTERVAL
 
     @logexceptions
     def _update_blockrate(self, currheight, curr_diff_interval):
@@ -164,18 +158,10 @@ class PoolsOnlineEstimator(object):
                         format(poolsestimate.blockrate))
 
     def load_estimates(self):
-        savefiles = sorted([f for f in os.listdir(SAVEDIR)
-                            if f.startswith('pe') and f.endswith('pickle')])
-        # This works until ~ 2190 CE
-        savefile = os.path.join(SAVEDIR, savefiles[-1])
-        self.poolsestimate = load_obj(savefile)
+        self.poolsestimate = load_obj(SAVEFILE)
 
-    def save_estimates(self, currheight):
-        currheightstr = str(currheight)
-        currheightstr = (7 - len(currheightstr)) * '0' + currheightstr
-        savefilename = 'pe' + currheightstr + '.pickle'
-        savefile = os.path.join(SAVEDIR, savefilename)
-        save_obj(self.poolsestimate, savefile)
+    def save_estimates(self):
+        save_obj(self.poolsestimate, SAVEFILE)
 
     def __nonzero__(self):
         return bool(self.poolsestimate)
