@@ -7,7 +7,7 @@ from feemodel.appdirs import user_data_dir
 pkgname = 'bitcoin-feemodel'
 __version__ = get_distribution(pkgname).version
 
-knownpools = json.load(resource_stream(__name__, 'knownpools/pools.json'))
+pooltags = json.load(resource_stream(__name__, 'pooltags.json'))
 
 DIFF_RETARGET_INTERVAL = 2016
 PRIORITYTHRESH = 57600000
@@ -28,6 +28,3 @@ defaultconfigfile = resource_stream(__name__, 'default.cfg')
 configfilename = os.path.join(datadir, 'feemodel.cfg')
 config.readfp(defaultconfigfile)
 config.read(configfilename)
-
-with open(os.path.join(datadir, 'tags.json'), 'r') as f:
-    knowntags = json.load(f)

@@ -450,44 +450,29 @@ def get_block_size(blockheight):
 
 
 def get_block_name(blockheight):
-    """Assign a name to a block, denoting the entity that mined it.
+    """Get name of the pool which produced the block.
 
-    Uses blockchain.info's knownpools.json.
+    Matches the block coinbase tag with pool tags in pooltags.json.
+    This is for info purposes only and not for pool clustering / pool
+    parameter estimation.
     """
-    knownpools = feemodel.config.knownpools
-    baddrs, btag = get_coinbase_info(blockheight)
-    name = None
-    for paddr, pattrs in knownpools['payout_addresses'].items():
-        candidate_name = pattrs['name']
-        if paddr in baddrs:
-            if name is not None and name != candidate_name:
-                logger.warning("Block {}: conflicting poolnames {} / {}".
-                               format(blockheight, name, candidate_name))
-            name = candidate_name
-
-    for ptag, pattrs in knownpools['coinbase_tags'].items():
-        candidate_name = pattrs['name']
-        if ptag in btag:
-            if name is not None and name != candidate_name:
-                logger.warning("Block {}: conflicting poolnames {} / {}".
-                               format(blockheight, name, candidate_name))
-            name = candidate_name
-
-    if name is None:
-        for addr in sorted(baddrs):
+    pooltags = feemodel.config.pooltags
+    cb_addrs, cb_tag = get_coinbase_info(blockheight)
+    assigned_name = None
+    for name, taglist in pooltags.items():
+        if any([tag in cb_tag for tag in taglist]):
+            assigned_name = name
+            break
+    if assigned_name is None:
+        cb_addrs.sort()
+        for addr in cb_addrs:
             if addr is not None:
-                # Underscore indicates that the pool is not in the
-                # list of known pools. We use the first valid
-                # coinbase addr as the name.
-                name = addr[:12] + '_'
+                assigned_name = addr[:12] + "_"
                 break
+    if assigned_name is None:
+        assigned_name = "UNKNOWN"
 
-    if name is None:
-        logger.warning(
-            "Unable to identify pool of block %d." % blockheight)
-        name = 'U' + str(blockheight) + '_'
-
-    return name
+    return assigned_name
 
 
 def get_feerate(rawentry):

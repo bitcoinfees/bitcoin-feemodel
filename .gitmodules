@@ -1,3 +1,0 @@
-[submodule "feemodel/knownpools"]
-	path = feemodel/knownpools
-	url = https://github.com/bitcoinfees/Blockchain-Known-Pools.git

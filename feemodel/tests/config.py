@@ -48,12 +48,9 @@ feemodel.config.config.set("app", "port", "8351")
 testdatadir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'data/')
 test_memblock_dbfile = os.path.join(testdatadir, 'test.db')
 blockdata = os.path.join(testdatadir, 'blockdata.pickle')
-with open(os.path.join(testdatadir, 'pools.json'), 'r') as f:
-    testknownpools = json.load(f)
-with open(os.path.join(testdatadir, 'tags.json'), 'r') as f:
-    testknowntags = json.load(f)
-feemodel.config.knownpools = testknownpools
-feemodel.config.knowntags = testknowntags
+with open(os.path.join(testdatadir, 'pooltags.json'), 'r') as f:
+    testpooltags = json.load(f)
+feemodel.config.pooltags = testpooltags
 
 poolsref = load_obj(os.path.join(testdatadir, "poolsref.pickle"))
 txref = load_obj(os.path.join(testdatadir, "txref.pickle"))

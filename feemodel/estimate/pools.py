@@ -177,11 +177,11 @@ class PoolsEstimator(SimPools):
                 clusters.append(set((block.height,)))
 
         # Group clusters by tags
-        knowntags = feemodel.config.knowntags
+        pooltags = feemodel.config.pooltags
         pools = defaultdict(PoolEstimate)
         for idx, cluster in enumerate(clusters):
             assigned_name = None
-            for name, taglist in knowntags.items():
+            for name, taglist in pooltags.items():
                 num_tag_match = sum([
                     any([tag in self.blocksmetadata[height].tag
                          for tag in taglist])

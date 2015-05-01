@@ -33,6 +33,6 @@ setup(
         'console_scripts': ['feemodel = feemodel.cli:cli']
     },
     package_data={
-        'feemodel': ['knownpools/pools.json', 'default.cfg']
+        'feemodel': ['pooltags.json', 'default.cfg']
     }
 )
