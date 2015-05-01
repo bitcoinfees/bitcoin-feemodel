@@ -176,23 +176,31 @@ class PoolsEstimator(SimPools):
             if not matched_existing:
                 clusters.append(set((block.height,)))
 
-        # TODO: Only add cluster if more than a certain percentage of its
-        #       blocks have the tag.
-        #       Also, consider not adding, if there is a assignment conflict
-        # Cluster by tags
+        # Group clusters by tags
         knowntags = feemodel.config.knowntags
         pools = defaultdict(PoolEstimate)
         for idx, cluster in enumerate(clusters):
             assigned_name = None
             for name, taglist in knowntags.items():
-                if any([tag in self.blocksmetadata[height].tag
-                        for tag in taglist for height in cluster]):
+                num_tag_match = sum([
+                    any([tag in self.blocksmetadata[height].tag
+                         for tag in taglist])
+                    for height in cluster])
+                match_proportion = num_tag_match / len(cluster)
+                if match_proportion > 0.5:
+                    # More than half the blocks in the cluster have at least
+                    # one of the tags in taglist as a substring
                     if not assigned_name:
                         assigned_name = name
                     else:
+                        # A cluster is assigned to two separate names.
+                        # This means something weird is happening, so don't
+                        # assign it to any known name at all.
                         logger.error(
                             "Cluster {} assigned to names {} and {}.".
                             format(idx, name, assigned_name))
+                        assigned_name = None
+                        break
             if assigned_name is None:
                 clusterblocks = [self.blocksmetadata[height]
                                  for height in cluster]
