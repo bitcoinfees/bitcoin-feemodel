@@ -2,7 +2,6 @@ import os
 import logging
 import logging.handlers
 import signal
-from math import ceil
 from base64 import b64encode
 
 from flask import Flask, jsonify, make_response, request, abort
@@ -93,11 +92,10 @@ def main(mempool_only=False, port=config.getint("app", "port")):
             abort(501)
         if stats is None:
             abort(503)
-
-        feerate = stats.expectedwaits.inv(waitminutes*60)
+        feerate = stats.estimatefee(waitminutes)
         if feerate is None:
             feerate = -1
-        response = {'feerate': int(ceil(feerate)), 'avgwait': waitminutes}
+        response = {'feerate': feerate, 'avgwait': waitminutes}
         return jsonify(response)
 
     @app.route('/feemodel/loglevel', methods=['GET', 'PUT'])

@@ -2,6 +2,7 @@ from __future__ import division
 
 import logging
 from time import time
+from math import ceil
 
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
@@ -175,6 +176,12 @@ class TransientStats(object):
             return None
         waitpercentiles = [w(feerate) for w in self.waitmatrix]
         return TxPrediction(waitpercentiles, feerate, currtime)
+
+    def estimatefee(self, waitminutes):
+        feerate = self.expectedwaits.inv(waitminutes*60)
+        if feerate is not None:
+            feerate = int(ceil(feerate))
+        return feerate
 
     def get_stats(self):
         stats = {
