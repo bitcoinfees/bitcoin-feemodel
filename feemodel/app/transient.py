@@ -2,7 +2,7 @@ from __future__ import division
 
 import logging
 from time import time
-from math import ceil
+from math import ceil, sqrt
 
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
@@ -158,7 +158,7 @@ class TransientStats(object):
             waitdata = DataSample(waitsample)
             waitdata.calc_stats()
             expectedwaits.append(waitdata.mean)
-            expectedwaits_err.append(waitdata.mean_interval[1]-waitdata.mean)
+            expectedwaits_err.append(waitdata.std / sqrt(self.numiters))
             waitpercentiles.append(
                 [waitdata.get_percentile(p) for p in WAIT_PERCENTILE_PTS])
 
@@ -183,6 +183,52 @@ class TransientStats(object):
             feerate = int(ceil(feerate))
         return feerate
 
+    def decidefee(self, txsize, ten_minute_cost, waitcostfn="quadratic"):
+        """Compute the optimal transaction fee.
+
+        The cost of a transaction is modeled as:
+
+        C = txfee + f(waittime)
+
+        where f, the wait cost function, is non-decreasing and f(0) = 0.
+
+        This method thus computes the optimal fee (not feerate) in satoshis,
+        with respect to expected cost, for a transaction of size <txsize>
+        and a given wait cost function f. We restrict f by the following
+        two parameters:
+
+        1. <ten_minute_cost>: the cost in satoshis of a wait time of 10 min.
+        2. <waitcostfn> in ('linear', 'quadratic'): specify whether f is
+           linear or quadratic in the wait time.
+
+        In the future perhaps this method could be generalized to accept
+        arbitrary wait cost functions.
+        """
+        if waitcostfn == "linear":
+            waitcosts = [meanwait / 600 * ten_minute_cost
+                         for meanwait in self.expectedwaits.waits]
+        elif waitcostfn == "quadratic":
+            # mean squared wait = var(wait) + mean(wait)^2
+            meansq_waits = [
+                self.numiters*stderr**2 + meanwait**2
+                for stderr, meanwait in
+                zip(self.expectedwaits.errors, self.expectedwaits.waits)]
+            waitcosts = [meansq_wait / 360000 * ten_minute_cost
+                         for meansq_wait in meansq_waits]
+        else:
+            raise ValueError("waitcostfn keyword arg must be "
+                             "'linear' or 'quadratic'.")
+
+        C_array = [feerate*txsize/1000 + waitcost
+                   for feerate, waitcost in zip(self.feepoints, waitcosts)]
+
+        bestidx = min(enumerate(C_array), key=lambda c: c[1])[0]
+        C = C_array[bestidx]
+        best_feerate = self.feepoints[bestidx]
+        best_fee = int(ceil(best_feerate * txsize / 1000))
+        expectedwait = self.expectedwaits.waits[bestidx]
+        return best_fee, expectedwait, C
+
     def get_stats(self):
         stats = {
             'timestamp': self.timestamp,
@@ -190,7 +236,7 @@ class TransientStats(object):
             'numiters': self.numiters,
             'feepoints': self.feepoints,
             'expectedwaits': self.expectedwaits.waits,
-            'expectedwaits_errors': self.expectedwaits.errors,
+            'expectedwaits_stderr': self.expectedwaits.errors,
             'waitmatrix': [w.waits for w in self.waitmatrix],
         }
         return stats

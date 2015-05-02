@@ -192,11 +192,11 @@ def transient():
     headers = [
         'Feerate',
         'Wait (s)',
-        'Error (s)']
+        'Std Error (s)']
     table = zip(
         stats['feepoints'],
         stats['expectedwaits'],
-        stats['expectedwaits_errors'],)
+        stats['expectedwaits_stderr'],)
     click.echo("")
     click.echo("Expected Wait by Feerate")
     click.echo("===========================")
@@ -284,19 +284,37 @@ def txrate():
 
 
 @cli.command()
-@click.argument('conftime', type=click.INT, required=True)
-def estimatefee(conftime):
+@click.argument('waittime', type=click.INT, required=True)
+def estimatefee(waittime):
     '''Feerate estimation.
 
-    Estimate feerate (satoshis) to have an average wait / confirmation
-    time of CONFTIME minutes.
+    Estimate feerate (satoshis) to have an average wait time of
+    WAITTIME minutes.
     '''
     try:
-        res = client.estimatefee(conftime)
+        res = client.estimatefee(waittime)
     except Exception as e:
         click.echo(repr(e))
         return
     click.echo(res['feerate'])
+
+
+@cli.command()
+@click.option("--waitcostfn",
+              type=click.Choice(['linear', 'quadratic']),
+              default="quadratic")
+@click.argument("txsize", type=click.INT, required=True)
+@click.argument("tenmincost", type=click.INT, required=True)
+def decidefee(txsize, tenmincost, waitcostfn):
+    from tabulate import tabulate
+    try:
+        res = client.decidefee(txsize, tenmincost, waitcostfn)
+    except Exception as e:
+        click.echo(repr(e))
+        return
+
+    table = res.items()
+    click.echo(tabulate(table))
 
 
 @cli.command()

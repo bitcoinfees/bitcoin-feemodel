@@ -98,6 +98,39 @@ def main(mempool_only=False, port=config.getint("app", "port")):
         response = {'feerate': feerate, 'avgwait': waitminutes}
         return jsonify(response)
 
+    @app.route('/feemodel/decidefee', methods=['GET'])
+    def decidefee():
+        try:
+            stats = sim.transient.stats
+        except AttributeError:
+            abort(501)
+        if stats is None:
+            abort(503)
+        try:
+            data = request.get_json(force=True)
+            waitcostfn = data['waitcostfn']
+            txsize = data['txsize']
+            ten_minute_cost = data['tenmincost']
+        except Exception:
+            abort(400)
+        try:
+            fee, expectedwait, totalcost = stats.decidefee(
+                txsize, ten_minute_cost, waitcostfn=waitcostfn)
+            assert isinstance(txsize, int)
+            assert txsize > 0
+            assert isinstance(ten_minute_cost, int)
+            assert ten_minute_cost > 0
+        except (ValueError, AssertionError):
+            response = {'message': '400: bad arguments.'}
+            return make_response(jsonify(response), 400)
+        response = {
+            "fee": fee,
+            "feerate": fee*1000/txsize,
+            "expectedwait": expectedwait,
+            "totalcost": totalcost
+        }
+        return jsonify(response)
+
     @app.route('/feemodel/loglevel', methods=['GET', 'PUT'])
     def loglevel():
         if request.method == 'PUT':

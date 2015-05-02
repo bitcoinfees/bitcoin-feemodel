@@ -34,6 +34,14 @@ class APIClient(object):
     def estimatefee(self, conftime):
         return self._get_resource("estimatefee/" + str(int(conftime)))
 
+    def decidefee(self, txsize, ten_minute_cost, waitcostfn="quadratic"):
+        data = {
+            "txsize": txsize,
+            "tenmincost": ten_minute_cost,
+            "waitcostfn": waitcostfn
+        }
+        return self._get_resource("decidefee", data=data)
+
     def get_loglevel(self):
         return self._get_resource("loglevel")["level"]
 
@@ -52,8 +60,10 @@ class APIClient(object):
         res.raise_for_status()
         return res.json()
 
-    def _get_resource(self, path):
-        res = requests.get(self.url + path)
+    def _get_resource(self, path, data=None):
+        if data is not None:
+            data = json.dumps(data)
+        res = requests.get(self.url + path, data=data)
         res.raise_for_status()
         return res.json()
 
