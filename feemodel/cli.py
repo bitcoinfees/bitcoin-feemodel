@@ -300,12 +300,19 @@ def estimatefee(waittime):
 
 
 @cli.command()
-@click.option("--waitcostfn",
+@click.option("--waitcostfn", "-w",
               type=click.Choice(['linear', 'quadratic']),
               default="quadratic")
 @click.argument("txsize", type=click.INT, required=True)
 @click.argument("tenmincost", type=click.INT, required=True)
 def decidefee(txsize, tenmincost, waitcostfn):
+    """Compute optimal fee.
+
+    txsize is transaction size in bytes.
+    tenmincost is the cost in satoshis of waiting for the first ten minutes.
+    waitcostfn (default 'quadratic') is the type of wait cost fn: linear
+    or quadratic.
+    """
     from tabulate import tabulate
     try:
         res = client.decidefee(txsize, tenmincost, waitcostfn)
