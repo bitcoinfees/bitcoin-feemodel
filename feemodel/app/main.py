@@ -86,6 +86,7 @@ def main(mempool_only=False, port=config.getint("app", "port")):
 
     @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])
     def estimatefee(waitminutes):
+        # TODO: check if it transient stats are outdated.
         try:
             stats = sim.transient.stats
         except AttributeError:
@@ -147,6 +148,7 @@ def main(mempool_only=False, port=config.getint("app", "port")):
         return jsonify(response)
 
     with sim.context_start():
+        print("Logging to {}".format(logfile))
         # app.run(port=port, debug=True, use_reloader=False)
         logger.info("{} {} APP START".format(pkgname, __version__))
         app.run(port=port)

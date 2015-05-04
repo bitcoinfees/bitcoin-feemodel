@@ -19,6 +19,7 @@ def start(mempool):
 
     Use --mempool for memblock data collection only (no simulation).
     '''
+    # TODO: add "raw" output option for all commands
     from feemodel.app.main import main, logfile
     from feemodel.config import __version__, pkgname
     click.echo("{} {}".format(pkgname, __version__))
