@@ -3,6 +3,7 @@ from __future__ import division
 from random import random, expovariate
 from bisect import bisect_left
 from itertools import groupby
+from operator import attrgetter
 
 from feemodel.util import cumsum_gen
 from feemodel.simul.simul import SimBlock
@@ -71,18 +72,16 @@ class SimPools(object):
         self.check_pools()
         totalhashrate = self.calc_totalhashrate()
 
-        def minfeerate_keyfn(pool):
-            return pool.minfeerate
-
         def byterate_groupsum(grouptuple):
             return sum([pool.hashrate*pool.maxblocksize/totalhashrate
                         for pool in grouptuple[1]])*self.blockrate
 
-        pools = filter(lambda pool: pool.minfeerate < float("inf"),
-                       sorted(self.pools.values(), key=minfeerate_keyfn))
-        feerates = sorted(set(map(minfeerate_keyfn, pools)))
+        pools = filter(
+            lambda pool: pool.minfeerate < float("inf"),
+            sorted(self.pools.values(), key=attrgetter("minfeerate")))
+        feerates = sorted(set(map(attrgetter("minfeerate"), pools)))
         caps = list(cumsum_gen(
-            groupby(pools, minfeerate_keyfn), mapfn=byterate_groupsum))
+            groupby(pools, attrgetter("minfeerate")), mapfn=byterate_groupsum))
 
         if not feerates or feerates[0] != 0:
             feerates.insert(0, 0)

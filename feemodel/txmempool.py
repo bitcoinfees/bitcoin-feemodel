@@ -8,6 +8,7 @@ import logging
 from time import time
 from copy import copy
 from itertools import groupby
+from operator import attrgetter
 
 from bitcoin.core import b2lx
 
@@ -193,13 +194,11 @@ class MempoolState(object):
 
     def get_stats(self, max_size_delta=100000, min_num_pts=20):
 
-        def feerate_keyfn(entry):
-            return entry.feerate
-
         entries = sorted(self.entries.values(),
-                         key=feerate_keyfn, reverse=True)
-        sizebyfee = [(feerate, sum([entry.size for entry in feegroup]))
-                     for feerate, feegroup in groupby(entries, feerate_keyfn)]
+                         key=attrgetter("feerate"), reverse=True)
+        sizebyfee = [
+            (feerate, sum([entry.size for entry in feegroup]))
+            for feerate, feegroup in groupby(entries, attrgetter("feerate"))]
         totalsize = sum([size for feerate, size in sizebyfee])
         size_delta = min(max_size_delta, totalsize // min_num_pts)
 

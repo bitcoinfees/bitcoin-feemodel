@@ -12,6 +12,7 @@ from math import exp
 from random import random, normalvariate, getrandbits
 from bisect import bisect_left
 from itertools import groupby
+from operator import attrgetter
 
 from tabulate import tabulate
 
@@ -82,16 +83,13 @@ class SimTxSource(object):
             raise ValueError("Non-zero txrate with empty txsample.")
         n = len(self.txsample)
 
-        def feerate_keyfn(simtx):
-            return simtx.feerate
-
         def byterate_groupsum(grouptuple):
             return sum([tx.size for tx in grouptuple[1]])*self.txrate/n
 
-        txsample = sorted(self.txsample, key=feerate_keyfn, reverse=True)
-        _feerates = sorted(set(map(feerate_keyfn, txsample)))
+        txsample = sorted(self.txsample, key=attrgetter("feerate"), reverse=True)
+        _feerates = sorted(set(map(attrgetter("feerate"), txsample)))
         _byterates = list(cumsum_gen(
-            groupby(txsample, feerate_keyfn), mapfn=byterate_groupsum))
+            groupby(txsample, attrgetter("feerate")), mapfn=byterate_groupsum))
         _byterates.reverse()
 
         if not _feerates:
