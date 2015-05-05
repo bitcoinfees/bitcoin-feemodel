@@ -8,6 +8,8 @@ from feemodel.apiclient import client
 @click.option('--port', type=click.INT, default=None)
 def cli(port):
     if port is not None:
+        from feemodel.config import config
+        config.set("app", "port", value=str(port))
         client.port = port
 
 

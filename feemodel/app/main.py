@@ -24,7 +24,7 @@ def sigterm_handler(_signo, _stack_frame):
     raise SystemExit
 
 
-def main(mempool_only=False, port=config.getint("app", "port")):
+def main(mempool_only=False):
     configure_logger()
     signal.signal(signal.SIGTERM, sigterm_handler)
 
@@ -148,7 +148,9 @@ def main(mempool_only=False, port=config.getint("app", "port")):
         return jsonify(response)
 
     with sim.context_start():
+        port = config.getint("app", "port")
         print("Logging to {}".format(logfile))
+        print("Listening on port {}".format(port))
         # app.run(port=port, debug=True, use_reloader=False)
         logger.info("{} {} APP START".format(pkgname, __version__))
         app.run(port=port)

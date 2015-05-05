@@ -135,14 +135,13 @@ class PoolsEstimator(SimPools):
     def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         logger.info("Beginning pool estimation "
                     "from blockrange({}, {})".format(*blockrangetuple))
-        starttime = time()
+        self.timestamp = time()
         self.get_blocksmetadata(blockrangetuple, stopflag=stopflag)
         self.clusterpools()
         self.estimate_pools(stopflag=stopflag, dbfile=dbfile)
         self.calc_blockrate()
-        self.timestamp = starttime
         logger.info("Finished pool estimation in %.2f seconds." %
-                    (time()-starttime))
+                    (time()-self.timestamp))
 
     def get_blocksmetadata(self, blockrangetuple, stopflag=None):
         for height in range(*blockrangetuple):
@@ -152,7 +151,7 @@ class PoolsEstimator(SimPools):
                 raise StopIteration("Stop flag set.")
             self.blocksmetadata[height] = BlockMetadata(height)
 
-        # Remove irrelevant blocks
+        # Remove blocks outside the specified range
         for height in self.blocksmetadata.keys():
             if not blockrangetuple[0] <= height < blockrangetuple[1]:
                 del self.blocksmetadata[height]
