@@ -124,7 +124,7 @@ class Prediction(object):
 
     def __init__(self, block_halflife, blocks_to_keep=DEFAULT_BLOCKS_TO_KEEP):
         self.block_halflife = block_halflife
-        self.blocks_to_keep = DEFAULT_BLOCKS_TO_KEEP
+        self.blocks_to_keep = blocks_to_keep
         self._alpha = 0.5**(1 / block_halflife)
         self.pvalcounts = [0.]*NUM_PVAL_POINTS
         self.pval_ecdf = None
@@ -142,8 +142,9 @@ class Prediction(object):
                                                            state.time)
             else:
                 newpredicts[txid] = None
-        logger.debug("{} new predicts.".format(len(newpredicts)))
         self.predicts.update(newpredicts)
+        num_new_predicts = len(filter(bool, newpredicts.values()))
+        logger.debug("{} new predicts.".format(num_new_predicts))
 
     def process_blocks(self, blocks, dbfile=PVALS_DBFILE):
         for block in blocks:
