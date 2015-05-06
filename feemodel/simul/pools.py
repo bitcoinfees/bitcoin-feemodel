@@ -5,7 +5,9 @@ from bisect import bisect_left
 from itertools import groupby
 from operator import attrgetter
 
-from feemodel.util import cumsum_gen
+from tabulate import tabulate
+
+from feemodel.util import cumsum_gen, StepFunction
 from feemodel.simul.simul import SimBlock
 
 default_blockrate = 1./600
@@ -44,7 +46,7 @@ class SimPools(object):
         self.pools = pools
         self.blockrate = blockrate
 
-    def check_pools(self):
+    def check(self):
         if not self.pools:
             raise ValueError("No pools.")
         if any([pool.hashrate <= 0 or
@@ -52,9 +54,12 @@ class SimPools(object):
                 pool.minfeerate < 0
                 for pool in self.pools.values()]):
             raise ValueError("Bad pool stats.")
+        if not any([pool.minfeerate < float("inf")
+                    for pool in self.pools.values()]):
+            raise ValueError("Zero pools capacity.")
 
     def blockgen(self):
-        self.check_pools()
+        self.check()
         poolitems = sorted(self.pools.items(),
                            key=lambda item: item[1].hashrate)
         cumhashrates = list(
@@ -68,8 +73,8 @@ class SimPools(object):
             blockinterval = expovariate(self.blockrate)
             yield simblock, blockinterval
 
-    def get_capacity(self):
-        self.check_pools()
+    def get_capacityfn(self):
+        self.check()
         totalhashrate = self.calc_totalhashrate()
 
         def byterate_groupsum(grouptuple):
@@ -87,27 +92,54 @@ class SimPools(object):
             feerates.insert(0, 0)
             caps.insert(0, 0)
 
-        return feerates, caps
+        return StepFunction(feerates, caps)
 
     def calc_totalhashrate(self):
         return sum([pool.hashrate for pool in self.pools.values()])
 
     def __nonzero__(self):
         try:
-            self.check_pools()
+            self.check()
         except ValueError:
             return False
         return True
 
     def __repr__(self):
         try:
-            feerates, caps = self.get_capacity()
+            capfn = self.get_capacityfn()
         except ValueError:
-            totalcap = 0
+            maxcap = 0
         else:
-            totalcap = caps[-1]
-        return "SimPools(Num: {}, TotalCap: {})".format(len(self.pools),
-                                                        totalcap)
+            maxcap = capfn[-1][1]
+        return ("SimPools(Num: {}, MaxCap: {})".
+                format(len(self.pools), maxcap))
+
+    def __str__(self):
+        try:
+            self.check()
+        except ValueError as e:
+            return e.message
+        poolitems = sorted(self.pools.items(),
+                           key=lambda pitem: pitem[1].hashrate, reverse=True)
+        totalhashrate = self.calc_totalhashrate()
+        headers = ["Name", "HR", "Prop", "MBS", "MFR"]
+        table = [(name,
+                  pool.hashrate,
+                  pool.hashrate / totalhashrate,
+                  pool.maxblocksize,
+                  pool.minfeerate)
+                 for name, pool in poolitems]
+        poolstats = tabulate(table, headers=headers)
+        meanblocksize = sum([prop*mbs for _0, _1, prop, mbs, _2 in table])
+        maxcap = meanblocksize*self.blockrate
+
+        table = [
+            ("Block interval (s)", 1 / self.blockrate),
+            ("Total hashrate", totalhashrate),
+            ("Max capacity (bytes/s)", maxcap)
+        ]
+        miscstats = tabulate(table)
+        return poolstats + '\n' + miscstats
 
     def __eq__(self, other):
         return self.pools == other.pools

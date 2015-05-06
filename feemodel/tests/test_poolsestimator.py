@@ -22,11 +22,11 @@ class PoolEstimateTest(unittest.TestCase):
 
     def test_basic(self):
         print("pools is: ")
-        pe.print_pools()
+        print(repr(pe))
         print(pe)
         print("poolsref is: ")
+        print(repr(poolsref))
         print(poolsref)
-        poolsref.print_pools()
         self.assertEqual(poolsref, pe)
 
     def test_saveload(self):

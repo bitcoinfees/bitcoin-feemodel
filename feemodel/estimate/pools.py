@@ -240,16 +240,15 @@ class PoolsEstimator(SimPools):
         curr_hashesperblock = get_hashesperblock(height)
         self.blockrate = totalhashrate / curr_hashesperblock
 
-    def print_pools(self):
-        # TODO: consolidate with CLI's printing
+    def __str__(self):
+        try:
+            self.check()
+        except ValueError as e:
+            return e.message
         poolitems = sorted(self.pools.items(),
-                           key=lambda poolitem: poolitem[1].hashrate,
-                           reverse=True)
+                           key=lambda pitem: pitem[1].hashrate, reverse=True)
         totalhashrate = self.calc_totalhashrate()
-        if not totalhashrate:
-            print("No pools.")
-            return
-        headers = ["Name", "Hashrate (Thps)", "Prop", "MBS", "MFR",
+        headers = ["Name", "HR (Thps)", "Prop", "MBS", "MFR",
                    "AKN", "BKN", "MFR.mean", "MFR.std", "MFR.bias"]
         table = [[
             name,
@@ -263,6 +262,14 @@ class PoolsEstimator(SimPools):
             pool.mfrstats['std'],
             pool.mfrstats['bias']]
             for name, pool in poolitems]
-        print(tabulate(table, headers=headers))
-        print("Avg block interval is %.2f" % (1./self.blockrate,))
-        print("Total hashrate is {} Thps.".format(totalhashrate*1e-12))
+        poolstats = tabulate(table, headers=headers)
+        meanblocksize = sum([row[2]*row[3] for row in table])
+        maxcap = meanblocksize*self.blockrate
+
+        table = [
+            ("Block interval (s)", 1 / self.blockrate),
+            ("Total hashrate (Thps)", totalhashrate*1e-12),
+            ("Max capacity (bytes/s)", maxcap)
+        ]
+        miscstats = tabulate(table)
+        return poolstats + '\n' + miscstats

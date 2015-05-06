@@ -40,7 +40,8 @@ class TransientRefCmp(unittest.TestCase):
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         print("Sim:")
         pprint(zip(feepoints, avgwaittimes))
-        sim.cap.print_cap()
+        print(sim.capratios.capfn.approx())
+        print(sim.capratios.txbyteratefn.approx())
         print("Stablefeerate is {}".format(sim.stablefeerate))
         print("Ref:")
         for feerate, avgwait in zip(*waitsref):
@@ -113,9 +114,7 @@ class TransientOnlineTests(unittest.TestCase):
             print("First stats:")
             print("===========")
             print("Expected wait:")
-            stats.expectedwaits.print_fn()
-            # print("Cap:")
-            # stats.cap.print_cap()
+            print(stats.expectedwaits)
             self.assertEqual(stats.expectedwaits(44640),
                              stats.expectedwaits(44641))
             minwait = stats.expectedwaits.waits[-1]
@@ -146,7 +145,7 @@ class TransientOnlineTests(unittest.TestCase):
                 stats = transientonline.stats
                 print("#{} stats:".format(i+1))
                 print("=============")
-                stats.expectedwaits.print_fn()
+                print(stats.expectedwaits)
 
     def test_B(self):
         # Crazy high tx rate.
@@ -167,7 +166,7 @@ class TransientOnlineTests(unittest.TestCase):
             print("Crazy high txrate:")
             print("===========")
             print("Expected wait:")
-            stats.expectedwaits.print_fn()
+            print(stats.expectedwaits)
 
         # Moderately high tx rate.
         txref_high = deepcopy(txref)
@@ -187,7 +186,7 @@ class TransientOnlineTests(unittest.TestCase):
             print("Moderately high txrate:")
             print("===========")
             print("Expected wait:")
-            stats.expectedwaits.print_fn()
+            print(stats.expectedwaits)
 
     def test_C(self):
         # Test iter limits.

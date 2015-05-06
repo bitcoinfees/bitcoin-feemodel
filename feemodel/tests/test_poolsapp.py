@@ -32,7 +32,7 @@ class PoolsOnlineTests(unittest.TestCase):
         self.assertIsNone(t2)
         t.join()
         pe = poolsonline.get_pools()
-        pe.print_pools()
+        print(pe)
         print(poolsonline.get_stats())
 
         self.assertEqual(

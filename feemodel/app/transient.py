@@ -116,10 +116,11 @@ class TransientOnline(StoppableThread):
         feepoints = [int(round(waitfn.inv(wait))) for wait in wait_pts]
 
         minfeepoint = sim.stablefeerate
-        maxfeepoint = sim.cap.feerates[sim.cap.cap_ratio_index(0.05)]
-        for idx, cap in enumerate(sim.cap.caps):
-            if cap >= 0.95*sim.cap.caps[-1]:
-                alt_maxfeepoint = sim.cap.feerates[idx]
+        maxfeepoint = sim.capratios.inv(0.05)
+        maxcap = sim.capratios.capfn[-1][1]
+        for feerate, cap in sim.capratios.capfn:
+            if cap >= 0.95*maxcap:
+                alt_maxfeepoint = feerate
                 break
         maxfeepoint = max(maxfeepoint, alt_maxfeepoint)
         feepoints.extend([minfeepoint, maxfeepoint])

@@ -3,13 +3,16 @@ from __future__ import division
 import threading
 import Queue
 import logging
+import operator
 import cPickle as pickle
-from bisect import insort, bisect
+from bisect import insort, bisect, bisect_left
 from math import ceil, log
 from contextlib import contextmanager
 from random import random
 from functools import wraps
 from collections import OrderedDict
+from itertools import izip
+from copy import copy
 
 from tabulate import tabulate
 
@@ -366,16 +369,110 @@ class Function(object):
             return x if use_upper or y == _y[-1] else None
         return x
 
-    def print_fn(self):
+    def addpoint(self, xi, yi):
+        if xi in self._x:
+            return
+        self._x, self._y = zip(*sorted(list(self) + [(xi, yi)]))
+
+    def __getitem__(self, idx):
+        return self._x[idx], self._y[idx]
+
+    def __str__(self):
         headers = ['x', 'y']
-        table = zip(self._x, self._y)
-        print(tabulate(table, headers=headers))
+        table = list(self)
+        return tabulate(table, headers=headers)
 
     def __len__(self):
         return len(self._y)
 
     def __iter__(self):
-        return iter(zip(self._x, self._y))
+        return izip(self._x, self._y)
+
+    def __copy__(self):
+        return Function(self._x[:], self._y[:])
+
+
+class StepFunction(Function):
+    """A monotone step function.
+
+    Points always represent the upper part of a discontinuity.
+    """
+
+    def __call__(self, x):
+        if len(self) < 2:
+            raise ValueError("Function must have at least 2 points.")
+        # Check if the function is increasing or decreasing.
+        if self[-1][1] > self[0][1]:
+            idx = bisect(self._x, x) - 1
+            if idx < 0:
+                return 0
+        else:
+            idx = bisect_left(self._x, x)
+            if idx == len(self._x):
+                return 0
+        return self._y[idx]
+
+    def approx(self, percenterror=0.05, percentstep=0.05):
+        """Approximate by a piecewise linear function.
+
+        Use as few segments as possible to stay below a given allowable error.
+        For convenience, errors are only defined on integer values of the
+        domain (also because feerates are integer valued).
+        """
+        if len(self) < 2:
+            raise ValueError("Function must have at least 2 points.")
+        reverse = False
+        if self[-1][1] < self[0][1]:
+            reverse = True
+            # If self is decreasing, normalize it to be increasing
+            self._x = map(operator.neg, reversed(self._x))
+            self._y.reverse()
+
+        selfmax = self._y[-1]
+        error_thresh = percenterror*selfmax
+        step = percentstep*selfmax
+        f = Function([self._x[0]], [self._y[0]])
+        previdx = 0
+        prev_cand_idx = None
+        idx = 0
+        while idx < len(self):
+            cand = self[idx]
+            _f = copy(f)
+            _f.addpoint(*cand)
+            maxerror = self._get_maxerror(previdx, idx, _f)
+            if maxerror > error_thresh:
+                if prev_cand_idx is not None:
+                    f.addpoint(*self[prev_cand_idx])
+                    previdx = prev_cand_idx
+                else:
+                    x, y = self[idx]
+                    f.addpoint(x-1, self(x-1))
+                prev_cand_idx = None
+            elif cand[1] - self[previdx][1] > step:
+                f.addpoint(*cand)
+                previdx = idx
+                prev_cand_idx = None
+                idx += 1
+            else:
+                prev_cand_idx = idx
+                idx += 1
+        if prev_cand_idx:
+            f.addpoint(*self[prev_cand_idx])
+        if reverse:
+            self._x = map(operator.neg, reversed(self._x))
+            self._y.reverse()
+            f._x = map(operator.neg, reversed(f._x))
+            f._y = list(reversed(f._y))
+        return f
+
+    def _get_maxerror(self, previdx, curridx, f):
+        maxerror = 0
+        for idx in range(previdx, curridx+1):
+            x, y = self[idx]
+            curr_error = abs(y - f(x))
+            curr_error_back = abs(self(x-1) - f(x-1, use_lower=True))
+            maxerror = max(curr_error, curr_error_back, maxerror)
+        return maxerror
 
 
 def save_obj(obj, filename, protocol=2):
@@ -540,27 +637,6 @@ def cumsum_gen(seq, base=0, mapfn=None):
     for item in seq:
         cumsum += mapfn(item)
         yield cumsum
-
-
-# =======================
-# TODO: Deprecate these
-def try_wrap(fn):
-    raise NotImplementedError
-
-
-def itertimer(maxiters=None, maxtime=None, stopflag=None):
-    raise NotImplementedError
-
-
-class Table(object):
-
-    def __init__(self, colwidths=None, padding=2):
-        raise NotImplementedError
-
-
-def get_pph(blockheight):
-    raise NotImplementedError
-# =======================
 
 
 proxy = BatchProxy()

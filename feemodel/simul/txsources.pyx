@@ -16,11 +16,9 @@ from operator import attrgetter
 
 from tabulate import tabulate
 
-from feemodel.util import DataSample, cumsum_gen
+from feemodel.util import DataSample, cumsum_gen, StepFunction
 
 DEF OVERALLOCATE = 2  # This better be > 1.
-
-DEFAULT_PRINT_FEERATES = range(0, 55000, 5000)
 
 cdef unsigned long MAX_FEERATE = ULONG_MAX - 1
 
@@ -41,10 +39,13 @@ class SimTxSource(object):
         self.txsample = txsample
         self.txrate = txrate
 
-    def get_emitter(self, SimMempool mempool not None, feeratethresh=0):
-        cdef int i
+    def check(self):
         if self.txrate and not self.txsample:
             raise ValueError("Non-zero txrate with empty txsample.")
+
+    def get_emitter(self, SimMempool mempool not None, feeratethresh=0):
+        cdef int i
+        self.check()
         txsample_filtered = filter(lambda tx: tx.feerate >= feeratethresh,
                                    self.txsample)
         txsample_array = TxSampleArray(txsample_filtered)
@@ -77,39 +78,31 @@ class SimTxSource(object):
 
         return tx_emitter
 
-    def get_byterates(self, feerates=None):
-        '''Get reverse cumulative byterate as a function of feerate.'''
-        if self.txrate and not self.txsample:
-            raise ValueError("Non-zero txrate with empty txsample.")
+    def get_byteratefn(self):
+        self.check()
         n = len(self.txsample)
 
         def byterate_groupsum(grouptuple):
+            """Sum all tx sizes in a feerate group.
+
+            A feerate group is all the txs which have the same feerate.
+            """
             return sum([tx.size for tx in grouptuple[1]])*self.txrate/n
 
         txsample = sorted(self.txsample, key=attrgetter("feerate"), reverse=True)
-        _feerates = sorted(set(map(attrgetter("feerate"), txsample)))
-        _byterates = list(cumsum_gen(
+        feerates = sorted(set(map(attrgetter("feerate"), txsample)))
+        byterates = list(cumsum_gen(
             groupby(txsample, attrgetter("feerate")), mapfn=byterate_groupsum))
-        _byterates.reverse()
+        byterates.reverse()
 
-        if not _feerates:
-            _feerates = [0]
-            _byterates = [0.]
-        elif _feerates[0] != 0:
-            _feerates.insert(0, 0)
-            _byterates.insert(0, _byterates[0])
+        if not feerates:
+            feerates = [0]
+            byterates = [0.]
+        elif feerates[0] != 0:
+            feerates.insert(0, 0)
+            byterates.insert(0, byterates[0])
 
-        if feerates:
-            n = len(_feerates)
-            byterates = []
-            for feerate in feerates:
-                bidx = bisect_left(_feerates, feerate)
-                byterates.append(_byterates[bidx] if bidx < n else 0)
-        else:
-            feerates = _feerates
-            byterates = _byterates
-
-        return feerates, byterates
+        return StepFunction(feerates, byterates)
 
     def calc_mean_byterate(self):
         '''Calculate the mean byterate.
@@ -117,24 +110,24 @@ class SimTxSource(object):
         Returns the mean byterate with its standard error, computed using a
         normal approximation.
         '''
+        self.check()
         if not self.txsample:
-            if self.txrate:
-                raise ValueError("Non-zero txrate with empty txsample.")
             return 0, 0
 
         d = DataSample([tx.size*self.txrate for tx in self.txsample])
         d.calc_stats()
         return d.mean, d.std / len(self.txsample)**0.5
 
-    def print_rates(self, feerates=DEFAULT_PRINT_FEERATES):
+    def __str__(self):
         if not self:
-            print("No txsample.")
-        feerates, byterates = self.get_byterates(feerates=feerates)
-        headers = ['Feerate', 'Cumulative byterate']
-        table = zip(feerates, byterates)
-        print(tabulate(table, headers=headers))
+            return "No txsample."
+        byteratefn = self.get_byteratefn()
+        headers = ['Feerate', 'Cumul. Byterate (bytes/s)']
+        table = list(byteratefn.approx())
         mean_byterate, std = self.calc_mean_byterate()
-        print("Mean byterate (std): {} ({})".format(mean_byterate, std))
+        s1 = tabulate(table, headers=headers)
+        s2 = "\nMean byterate (std): {} ({})".format(mean_byterate, std)
+        return s1 + s2
 
     def __repr__(self):
         return "SimTxSource(samplesize: {}, txrate: {})".format(

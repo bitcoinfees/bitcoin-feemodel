@@ -1,13 +1,20 @@
 from __future__ import division
 
-from bisect import bisect, bisect_left
 from tabulate import tabulate
 
 from feemodel.util import Function
 
 
 class WaitFn(Function):
-    '''Wait times as a function of feerate.'''
+    '''Wait times as a function of feerate.
+
+    The main difference from the superclass is that:
+    for feerate > x[-1], f(feerate) := f(x[-1])
+
+    This is because the wait function has a lower bound (the block interval
+    of ~ 600 seconds) and we always choose x such that f(x[-1]) is close
+    to this bound.
+    '''
 
     def __init__(self, feerates, waits, errors=None):
         super(WaitFn, self).__init__(feerates, waits)
@@ -37,71 +44,69 @@ class WaitFn(Function):
         '''
         return super(WaitFn, self).inv(wait, use_upper=True)
 
-    def print_fn(self):
+    def __str__(self):
         headers = ['Feerate', 'Wait', 'Error']
         errors = map(lambda err: err if err else '-', self.errors)
         table = zip(self.feerates, self.waits, errors)
-        print(tabulate(table, headers=headers))
+        return tabulate(table, headers=headers)
 
 
-class Capacity(object):
+class CapacityRatios(Function):
 
     def __init__(self, pools, txsource):
-        poolfeerates, caps = pools.get_capacity()
-        txfeerates, txbyterates = txsource.get_byterates()
-        self.feerates = sorted(set(poolfeerates + txfeerates))
-        self.caps = []
-        self.txbyterates = []
-        self.cap_ratios = []
-        n = len(txbyterates)
-        for feerate in self.feerates:
-            bidx = bisect_left(txfeerates, feerate)
-            pidx = bisect(poolfeerates, feerate)
-            txbyterate = txbyterates[bidx] if bidx < n else 0
-            # This will not raise IndexError, because:
-            #     1. we ensure that poolfeerates includes 0
-            #     2. tx feerate is assumed to be >= 0
-            cap = caps[pidx-1]
-            cap_ratio = txbyterate / cap if cap else float("inf")
+        super(CapacityRatios, self).__init__([], [])
+        self.capfn = pools.get_capacityfn()
+        self.txbyteratefn = txsource.get_byteratefn()
+        feerates = sorted(set(self.capfn._x + self.txbyteratefn._x))
+        for feerate in feerates:
+            try:
+                cap_ratio = self.txbyteratefn(feerate) / self.capfn(feerate)
+            except ZeroDivisionError:
+                cap_ratio = float("inf")
+            # self.cap_ratios.append(cap_ratio)
+            self.addpoint(feerate, cap_ratio)
 
-            self.txbyterates.append(txbyterate)
-            self.caps.append(cap)
-            self.cap_ratios.append(cap_ratio)
-        if self.cap_ratios[-1]:
+        lastfeerate, lastratio = self[-1]
+        if lastratio:
             # Ensure that the last cap_ratio is always zero.
-            self.feerates.append(self.feerates[-1]+1)
-            self.caps.append(self.caps[-1])
-            self.txbyterates.append(0)
-            self.cap_ratios.append(0)
+            self.addpoint(lastfeerate+1, 0)
 
     def calc_stablefeerate(self, cap_ratio_thresh):
-        idx = self.cap_ratio_index(cap_ratio_thresh)
-        return self.feerates[idx]
+        return self.inv(cap_ratio_thresh)
 
+    def __call__(self, feerate):
+        if feerate not in self._x:
+            raise ValueError("Not defined at this feerate")
+        return super(CapacityRatios, self).__call__(feerate)
+
+    def inv(self, cap_ratio_target):
+        """Get the lowest feerate such that:
+
+        self(feerate) <= cap_ratio_target
+        """
+        for feerate, cap_ratio in iter(self):
+            if cap_ratio <= cap_ratio_target:
+                return feerate
+        # Because we ensure in init that min(self.cap_ratios) = 0
+        raise AssertionError("This is not supposed to happen.")
+
+    # TODO: deprecate
     def cap_ratio_index(self, cap_ratio_target):
         """Cap ratio index.
 
         Get the lowest index such that
         self.cap_ratio[index] <= cap_ratio_target.
         """
+        raise NotImplementedError
         for idx, cap_ratio in enumerate(self.cap_ratios):
             if cap_ratio <= cap_ratio_target:
                 return idx
         # Because we ensure in init that min(self.cap_ratios) = 0
         raise AssertionError("This is not supposed to happen.")
 
-    def get_stats(self, numpoints=20):
-        cap_idxs = [
-            self.cap_ratio_index(i/numpoints) for i in range(1, numpoints+1)]
-        cap_idxs = sorted(set(cap_idxs))
-        stats = {
-            'feerates': [self.feerates[idx] for idx in cap_idxs],
-            'txbyterates': [self.txbyterates[idx] for idx in cap_idxs],
-            'caps': [self.caps[idx] for idx in cap_idxs],
-        }
-        return stats
-
+    # TODO: deprecate
     def print_cap(self, numpoints=20):
+        raise NotImplementedError
         stats = self.get_stats(numpoints)
         headers = ["Feerate", "TxByterate", "Cap"]
         table = zip(

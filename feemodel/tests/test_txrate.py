@@ -12,7 +12,6 @@ from feemodel.tests.config import (test_memblock_dbfile as dbfile, txref,
 from feemodel.txmempool import MemBlock, MemEntry
 from feemodel.estimate import RectEstimator, ExpEstimator
 from feemodel.simul.simul import SimMempool
-from feemodel.simul.txsources import DEFAULT_PRINT_FEERATES as FEERATES
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -26,17 +25,17 @@ class RectEstimatorTest(unittest.TestCase):
         print("Starting RectEstimator test")
         tr = RectEstimator(maxsamplesize=10000)
         tr.start(self.blockrange, dbfile=dbfile)
-        print(tr)
+        print(repr(tr))
         uniquetxs = set([(tx.feerate, tx.size) for tx in tr.txsample])
         print("unique ratio is {}".format(len(uniquetxs) / len(tr.txsample)))
-        tr.print_rates()
+        print(tr)
 
     def test_limit_sample(self):
         maxsamplesize = 1000
         tr = RectEstimator(maxsamplesize=maxsamplesize)
         tr.start(self.blockrange, dbfile=dbfile)
+        print(repr(tr))
         print(tr)
-        tr.print_rates()
 
     def test_stop(self):
         tr = RectEstimator(maxsamplesize=1000)
@@ -55,10 +54,10 @@ class ExpEstimatorTest(unittest.TestCase):
         print("Starting ExpEstimator test")
         tr = ExpEstimator(3600)
         tr.start(self.blockrange[1]-1, dbfile=dbfile)
-        print(tr)
+        print(repr(tr))
         uniquetxs = set([(tx.feerate, tx.size) for tx in tr.txsample])
         print("unique ratio is {}".format(len(uniquetxs) / len(tr.txsample)))
-        tr.print_rates()
+        print(tr)
 
     def test_stop(self):
         tr = ExpEstimator(3600)
@@ -72,7 +71,9 @@ class SamplingTest(unittest.TestCase):
     '''Generate and re-estimate.'''
 
     def test_A(self):
-        _dum, txref_rates = txref.get_byterates(feerates=FEERATES)
+        TESTFEERATES = range(0, 55000, 5000)
+        # _dum, txref_rates = txref.get_byterates(feerates=FEERATES)
+        refbyteratefn = txref.get_byteratefn()
         with tmpdatadir_context() as datadir:
             # RectEstimator
             self.gen_blockrange = (0, 100)
@@ -85,15 +86,19 @@ class SamplingTest(unittest.TestCase):
             print("Rect estimation from generated:")
             print("===============================")
             print("Test:")
+            print(repr(tr))
             print(tr)
-            tr.print_rates()
-            print("Target:")
+            print("Ref:")
+            print(repr(txref))
             print(txref)
-            txref.print_rates()
 
-            _dum, byterates = tr.get_byterates(feerates=FEERATES)
-            for test, target in zip(byterates, txref_rates):
-                diff = abs(log(test) - log(target))
+            # _dum, byterates = tr.get_byterates(feerates=FEERATES)
+            testbyteratefn = tr.get_byteratefn()
+            # for test, target in zip(byterates, txref_rates):
+            for feerate in TESTFEERATES:
+                test = testbyteratefn(feerate)
+                ref = refbyteratefn(feerate)
+                diff = abs(log(test) - log(ref))
                 self.assertLess(diff, 0.2)
                 print("Diff is {}".format(diff))
             diff = abs(log(tr.txrate) - log(txref.txrate))
@@ -107,15 +112,19 @@ class SamplingTest(unittest.TestCase):
             print("Exp estimation from generated:")
             print("===============================")
             print("Test:")
+            print(repr(tr))
             print(tr)
-            tr.print_rates()
-            print("Target:")
+            print("Ref:")
+            print(repr(txref))
             print(txref)
-            txref.print_rates()
 
-            _dum, byterates = tr.get_byterates(feerates=FEERATES)
-            for test, target in zip(byterates, txref_rates):
-                diff = abs(log(test) - log(target))
+            # _dum, byterates = tr.get_byterates(feerates=FEERATES)
+            # for test, target in zip(byterates, txref_rates):
+            testbyteratefn = tr.get_byteratefn()
+            for feerate in TESTFEERATES:
+                test = testbyteratefn(feerate)
+                ref = refbyteratefn(feerate)
+                diff = abs(log(test) - log(ref))
                 self.assertLess(diff, 0.2)
                 print("Diff is {}".format(diff))
             diff = abs(log(tr.txrate) - log(txref.txrate))

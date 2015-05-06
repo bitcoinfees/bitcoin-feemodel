@@ -14,7 +14,7 @@ from bitcoin.core import b2lx
 
 from feemodel.config import config, datadir, MINRELAYTXFEE, PRIORITYTHRESH
 from feemodel.util import (proxy, StoppableThread, get_feerate, WorkerThread,
-                           cumsum_gen, get_block_name)
+                           cumsum_gen, get_block_name, StepFunction)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
@@ -192,36 +192,33 @@ class MempoolState(object):
                         for txid, rawentry in rawmempool.iteritems()}
         self.time = int(time())
 
-    def get_stats(self, max_size_delta=100000, min_num_pts=20):
+    def get_stats(self):
 
-        entries = sorted(self.entries.values(),
-                         key=attrgetter("feerate"), reverse=True)
+        entries = sorted(self.entries.values(), key=attrgetter("feerate"),
+                         reverse=True)
         sizebyfee = [
             (feerate, sum([entry.size for entry in feegroup]))
             for feerate, feegroup in groupby(entries, attrgetter("feerate"))]
-        totalsize = sum([size for feerate, size in sizebyfee])
-        size_delta = min(max_size_delta, totalsize // min_num_pts)
+        size_with_fee = sum([size for feerate, size in sizebyfee
+                             if feerate >= MINRELAYTXFEE])
 
-        nextsize = size_delta
-        cumsize = []
-        feerates = []
-        size_with_fee = 0
-        for idx, size in enumerate(
-                cumsum_gen(sizebyfee, mapfn=lambda tup: tup[1])):
-            if sizebyfee[idx][0] >= MINRELAYTXFEE:
-                size_with_fee = size
-            if size < nextsize:
-                continue
-            cumsize.append(size)
-            feerates.append(sizebyfee[idx][0])
-            nextsize = min(size_delta + size, totalsize)
-
-        feerates.reverse()
-        cumsize.reverse()
+        if sizebyfee:
+            feerates, sizes = zip(*sizebyfee)
+            cumsize = list(cumsum_gen(sizes))
+            feerates = list(reversed(feerates))
+            cumsize.reverse()
+            feerates.append(feerates[-1]+1)
+            cumsize.append(0)
+            sizefn = StepFunction(feerates, cumsize)
+            approxfn = sizefn.approx()
+            feerates_approx, cumsize_approx = zip(*approxfn)
+        else:
+            feerates_approx = []
+            cumsize_approx = []
 
         stats = {
-            "feerates": feerates,
-            "cumsize": cumsize,
+            "feerates": feerates_approx,
+            "cumsize": cumsize_approx,
             "currheight": self.height,
             "numtxs": len(self.entries),
             "sizewithfee": size_with_fee

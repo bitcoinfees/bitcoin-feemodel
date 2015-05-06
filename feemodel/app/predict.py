@@ -113,6 +113,12 @@ class PValECDF(Function):
         self.pdistance = max(d)
         super(PValECDF, self).__init__(x, y)
 
+    def __str__(self):
+        table = [("p-distance", self.pdistance),
+                 ("totalcount", self.totalcount)]
+        tablestr = tabulate(table)
+        return super(PValECDF, self).__str__() + '\n' + tablestr
+
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
 
@@ -273,8 +279,10 @@ class Prediction(object):
             if db is not None:
                 db.close()
 
+    # TODO: Deprecate this.
     def print_predicts(self):
         '''Print the pval ECDF and predict-distance.'''
+        raise NotImplementedError
         if not self.pval_ecdf:
             raise ValueError("No valid ECDF.")
         headers = ['x', 'F(x)']
@@ -297,11 +305,18 @@ class Prediction(object):
         pval_ecdf = self.pval_ecdf
         if pval_ecdf:
             stats.update({
-                "pval_ecdf": [pval_ecdf._x, pval_ecdf._y],
+                "pval_ecdf": zip(*pval_ecdf),
                 "pdistance": pval_ecdf.pdistance,
                 "numtxs": pval_ecdf.totalcount
             })
         return stats
+
+    def __str__(self):
+        pval_ecdf = self.pval_ecdf
+        if not pval_ecdf:
+            return "No valid ECDF."
+        table = [("Halflife", self.block_halflife)]
+        return str(pval_ecdf) + '\n' + tabulate(table)
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__

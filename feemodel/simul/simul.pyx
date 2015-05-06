@@ -6,7 +6,7 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Free as free)
 from feemodel.simul.txsources cimport *
 
-from feemodel.simul.stats import Capacity
+from feemodel.simul.stats import CapacityRatios
 from feemodel.simul.txsources import SimTx
 
 cap_ratio_thresh = 0.9
@@ -31,14 +31,17 @@ cdef class Simul:
     def __init__(self, pools, txsource):
         self.pools = pools
         self.txsource = txsource
-        self.cap = Capacity(pools, txsource)
-        self.stablefeerate = self.cap.calc_stablefeerate(cap_ratio_thresh)
+        self.capratios = CapacityRatios(pools, txsource)
+        self.stablefeerate = (
+            self.capratios.calc_stablefeerate(cap_ratio_thresh))
         self.mempool = None
         self.tx_emitter = None
         self.simtime = 0.
 
-        if self.cap.caps[-1] == 0:
-            raise ValueError("Zero pools capacity.")
+        # TODO: See if this check is still needed. ValueError should be
+        #       raised in CapacityRatios.__init__, so it's redundant.
+        # if self.capratios.capfn[-1][1] == 0:
+        #     raise ValueError("Zero pools capacity.")
 
     def run(self, init_entries=None):
         if init_entries is None:

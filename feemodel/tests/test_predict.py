@@ -116,7 +116,7 @@ class PredictTests(unittest.TestCase):
             pred.process_blocks([b])
             pred_db = Prediction.from_db(HALFLIFE, conditions="waittime>600")
             # No pvals
-            self.assertRaises(ValueError, pred_db.print_predicts)
+            self.assertEqual(str(pred_db), "No valid ECDF.")
 
             b.blockheight += DEFAULT_BLOCKS_TO_KEEP - 1
             pred.update_predictions(b, transientstats)
@@ -166,8 +166,8 @@ class GeneralTests(unittest.TestCase):
             p = [expovariate_pval(expovariate(1)) for i in xrange(300)]
             pred._add_block_pvals(p)
         pred._calc_pval_ecdf()
-        print("pdistance is {}.".format(pred.pval_ecdf.pdistance))
         self.assertLess(pred.pval_ecdf.pdistance, 0.01)
+        print(pred)
 
 
 def expovariate_pval(r):

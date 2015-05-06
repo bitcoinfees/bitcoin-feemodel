@@ -116,8 +116,7 @@ def _get_default_feepoints(sim, numpoints=20):
     cap_ratio_targets = [i/numpoints*cap_ratio_thresh
                          for i in range(1, numpoints+1)]
     feepoints = [
-        sim.cap.feerates[sim.cap.cap_ratio_index(cap_ratio)]
-        for cap_ratio in reversed(cap_ratio_targets)]
+        sim.capratios.inv(cap_ratio) for cap_ratio in cap_ratio_targets]
     feepoints = sorted(set(feepoints))
     assert feepoints[0] >= sim.stablefeerate
     return feepoints

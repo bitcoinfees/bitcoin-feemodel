@@ -80,7 +80,7 @@ def pools():
     import time
     from tabulate import tabulate
     from itertools import groupby
-    from feemodel.util import cumsum_gen
+    from feemodel.util import cumsum_gen, StepFunction
     try:
         stats = client.get_pools()
     except Exception as e:
@@ -98,35 +98,22 @@ def pools():
         return
 
     pools = stats['pools']
-    headers = [
-        'Name',
-        'HR (Thps)',
-        'Prop',
-        'MBS',
-        'MFR',
-        'AKN',
-        'BKN',
-        'MFR.mean',
-        'MFR.std',
-        'MFR.bias'
-    ]
-    table = []
+    headers = ['Name', 'HR (Thps)', 'Prop', 'MBS', 'MFR', 'AKN', 'BKN',
+               'MFR.mean', 'MFR.std', 'MFR.bias']
     pitems = sorted(pools.items(),
                     key=lambda p: p[1]['proportion'], reverse=True)
-    for name, pool in pitems:
-        row = [
-            name,
-            pool['hashrate']*1e-12,
-            pool['proportion'],
-            pool['maxblocksize'],
-            pool['minfeerate'],
-            pool['abovekn'],
-            pool['belowkn'],
-            pool['mfrmean'],
-            pool['mfrstd'],
-            pool['mfrbias'],
-        ]
-        table.append(row)
+    table = [[
+        name,
+        pool['hashrate']*1e-12,
+        pool['proportion'],
+        pool['maxblocksize'],
+        pool['minfeerate'],
+        pool['abovekn'],
+        pool['belowkn'],
+        pool['mfrmean'],
+        pool['mfrstd'],
+        pool['mfrbias']]
+        for name, pool in pitems]
     click.echo('')
     click.echo(tabulate(table, headers=headers))
     click.echo('')
@@ -147,15 +134,8 @@ def pools():
                     sorted(pitems, key=mfr_keyfn))
     byterate_by_fee = map(sumgroupbyterates, groupby(pitems, mfr_keyfn))
     feerates, byterates = zip(*byterate_by_fee)
-    maxbyterate = sum(byterates)
-    rate_delta = maxbyterate / 50
-    table = []
-    next_rate = rate_delta
-    for feerate, cumbyterate in zip(feerates, cumsum_gen(byterates)):
-        if cumbyterate < next_rate:
-            continue
-        table.append((feerate, cumbyterate))
-        next_rate = min(cumbyterate + rate_delta, maxbyterate)
+    capacity = list(cumsum_gen(byterates))
+    table = list(StepFunction(feerates, capacity).approx())
 
     headers = ['Feerate', 'Capacity (bytes/s)']
     click.echo("Cumul. Capacity")
@@ -165,7 +145,7 @@ def pools():
 
     table = [
         ("Total hashrate (Thps)", stats['totalhashrate']*1e-12),
-        ("Block interval", stats['blockinterval']),
+        ("Block interval (s)", stats['blockinterval']),
         ("Timestamp", time.ctime(stats['timestamp'])),
         ("Next update", time.ctime(stats['next_update']))
     ]
@@ -266,7 +246,7 @@ def txrate():
         click.echo("No stats at this time.")
         return
 
-    headers = ['Feerate', 'bytes/s']
+    headers = ['Feerate', 'Bytes/s']
     table = zip(stats['cumbyterate']['feerates'],
                 stats['cumbyterate']['byterates'])
     click.echo('')
