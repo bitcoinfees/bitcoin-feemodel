@@ -217,8 +217,10 @@ class MempoolState(object):
             cumsize_approx = []
 
         stats = {
-            "feerates": feerates_approx,
-            "cumsize": cumsize_approx,
+            "cumsize": {
+                "feerates": feerates_approx,
+                "size": cumsize_approx,
+            },
             "currheight": self.height,
             "numtxs": len(self.entries),
             "sizewithfee": size_with_fee

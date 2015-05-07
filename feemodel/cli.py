@@ -322,11 +322,11 @@ def mempool():
     click.echo("Params:")
     click.echo(tabulate(table))
 
-    if 'feerates' not in stats:
+    if 'cumsize' not in stats:
         return
 
     headers = ['Feerate', 'Size (bytes)']
-    table = zip(stats['feerates'], stats['cumsize'])
+    table = zip(stats['cumsize']['feerates'], stats['cumsize']['size'])
     click.echo("")
     click.echo('Cumul. Mempool Size')
     click.echo("=========================")

@@ -60,12 +60,12 @@ class BasicTests(unittest.TestCase):
         state = get_mempool_state()
         stats = state.get_stats()
         totalsize = sum([entry.size for entry in state.entries.values()])
-        self.assertEqual(stats['cumsize'][0], totalsize)
-        for idx, feerate in enumerate(stats['feerates']):
+        self.assertEqual(stats['cumsize']['size'][0], totalsize)
+        for idx, feerate in enumerate(stats['cumsize']['feerates']):
             refsize = sum([entry.size for entry in state.entries.values()
                            if entry.feerate >= feerate])
-            self.assertEqual(refsize, stats['cumsize'][idx])
-        pprint(zip(stats['feerates'], stats['cumsize']))
+            self.assertEqual(refsize, stats['cumsize']['size'][idx])
+        pprint(zip(stats['cumsize']['feerates'], stats['cumsize']['size']))
         ref_size_with_fee = sum([entry.size for entry in state.entries.values()
                                  if entry.feerate >= MINRELAYTXFEE])
         self.assertEqual(ref_size_with_fee, stats['sizewithfee'])
@@ -74,18 +74,18 @@ class BasicTests(unittest.TestCase):
             entry.feerate = MINRELAYTXFEE
         stats = state.get_stats()
         totalsize = sum([entry.size for entry in state.entries.values()])
-        for idx, feerate in enumerate(stats['feerates']):
+        for idx, feerate in enumerate(stats['cumsize']['feerates']):
             refsize = sum([entry.size for entry in state.entries.values()
                            if entry.feerate >= feerate])
-            self.assertEqual(refsize, stats['cumsize'][idx])
-        pprint(zip(stats['feerates'], stats['cumsize']))
+            self.assertEqual(refsize, stats['cumsize']['size'][idx])
+        pprint(zip(stats['cumsize']['feerates'], stats['cumsize']['size']))
         self.assertEqual(totalsize, stats['sizewithfee'])
 
         state.entries = {}
         stats = state.get_stats()
-        self.assertFalse(stats['feerates'])
-        self.assertFalse(stats['cumsize'])
-        pprint(zip(stats['feerates'], stats['cumsize']))
+        self.assertFalse(stats['cumsize']['feerates'])
+        self.assertFalse(stats['cumsize']['size'])
+        pprint(zip(stats['cumsize']['feerates'], stats['cumsize']['size']))
         self.assertEqual(0, stats['sizewithfee'])
 
 
