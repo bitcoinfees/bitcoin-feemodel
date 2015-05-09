@@ -133,7 +133,7 @@ class PredictTests(unittest.TestCase):
                              pred.pval_ecdf.pdistance)
 
             # Check the circular db deletes
-            heights = pred._get_heights()
+            heights = pred.get_heights()
             self.assertEqual(
                 heights, [333931, 333931+DEFAULT_BLOCKS_TO_KEEP-1])
 
@@ -144,7 +144,7 @@ class PredictTests(unittest.TestCase):
                     txpredict.entrytime = blocktime - 100
             pred.process_blocks([b])
 
-            heights = pred._get_heights()
+            heights = pred.get_heights()
             self.assertEqual(
                 heights,
                 [333931+DEFAULT_BLOCKS_TO_KEEP-1,

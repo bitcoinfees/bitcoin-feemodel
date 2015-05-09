@@ -203,7 +203,7 @@ class Prediction(object):
         Only uses the txs for which condition_fn(txpredict) is True.
         '''
         pred = cls(block_halflife)
-        heights = pred._get_heights(dbfile=dbfile)
+        heights = pred.get_heights(dbfile=dbfile)
         if not heights:
             return pred
         for height in heights:
@@ -263,7 +263,7 @@ class Prediction(object):
                 db.close()
 
     @staticmethod
-    def _get_heights(dbfile=PVALS_DBFILE):
+    def get_heights(dbfile=PVALS_DBFILE):
         '''Get the block heights in the db.
 
         Returns the list of heights for which tx p-value records exist.
