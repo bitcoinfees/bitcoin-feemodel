@@ -1,5 +1,6 @@
 from __future__ import division
 
+import threading
 import multiprocessing
 import logging
 from time import time
@@ -45,7 +46,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
     if init_entries is None:
         init_entries = {}
     if not feepoints:
-        feepoints = _get_default_feepoints(sim)
+        feepoints = get_default_feepoints(sim)
     else:
         feepoints = filter(lambda feerate: feerate >= sim.stablefeerate,
                            sorted(set(feepoints)))
@@ -53,15 +54,17 @@ def transientsim(sim, feepoints=None, init_entries=None,
             raise ValueError("No feepoints >= stablefeerate.")
     if not numprocesses:
         numprocesses = multiprocessing.cpu_count()
+
     resultqueue = multiprocessing.Queue()
     process_stopflag = multiprocessing.Event()
-    processes = [
-        multiprocessing.Process(
-            target=transientsim_process,
-            args=(sim, init_entries, feepoints, resultqueue, process_stopflag)
-        )
-        for i in range(numprocesses)
-    ]
+    target = transientsim_process
+    args = (sim, init_entries, feepoints, resultqueue, process_stopflag)
+    if numprocesses > 1:
+        processes = [multiprocessing.Process(target=target, args=args)
+                     for i in range(numprocesses)]
+    else:
+        # Use a thread instead
+        processes = [threading.Thread(target=target, args=args)]
     for process in processes:
         process.start()
     logger.debug("Subprocesses started.")
@@ -111,7 +114,7 @@ def transientsim_process(sim, init_entries, feepoints, resultqueue,
             waitvectors = []
 
 
-def _get_default_feepoints(sim, numpoints=20):
+def get_default_feepoints(sim, numpoints=20):
     numpoints = 20
     cap_ratio_targets = [i/numpoints*cap_ratio_thresh
                          for i in range(1, numpoints+1)]

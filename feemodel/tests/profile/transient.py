@@ -7,7 +7,7 @@ from feemodel.tests.config import test_memblock_dbfile as dbfile, poolsref, txre
 
 # flake8: noqa
 
-poolsref.print_pools()
+print(poolsref)
 init_entries = MemBlock.read(333931, dbfile=dbfile).entries
 sim = Simul(poolsref, txref)
 
