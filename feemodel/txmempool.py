@@ -192,29 +192,27 @@ class MempoolState(object):
                         for txid, rawentry in rawmempool.iteritems()}
         self.time = int(time())
 
-    def get_stats(self):
-
+    def get_sizefn(self):
         entries = sorted(self.entries.values(), key=attrgetter("feerate"),
                          reverse=True)
         sizebyfee = [
             (feerate, sum([entry.size for entry in feegroup]))
             for feerate, feegroup in groupby(entries, attrgetter("feerate"))]
-        size_with_fee = sum([size for feerate, size in sizebyfee
-                             if feerate >= MINRELAYTXFEE])
+        if not sizebyfee:
+            return StepFunction([0, 1], [0, 0])
+        feerates_rev, sizes = zip(*sizebyfee)
+        cumsize_rev = list(cumsum_gen(sizes))
+        feerates = list(reversed(feerates_rev))
+        cumsize = list(reversed(cumsize_rev))
+        sizefn = StepFunction(feerates, cumsize)
+        sizefn.addpoint(feerates[-1]+1, 0)
+        return sizefn
 
-        if sizebyfee:
-            feerates, sizes = zip(*sizebyfee)
-            cumsize = list(cumsum_gen(sizes))
-            feerates = list(reversed(feerates))
-            cumsize.reverse()
-            feerates.append(feerates[-1]+1)
-            cumsize.append(0)
-            sizefn = StepFunction(feerates, cumsize)
-            approxfn = sizefn.approx()
-            feerates_approx, cumsize_approx = zip(*approxfn)
-        else:
-            feerates_approx = []
-            cumsize_approx = []
+    def get_stats(self):
+        sizefn = self.get_sizefn()
+        approxfn = sizefn.approx()
+        feerates_approx, cumsize_approx = zip(*approxfn)
+        size_with_fee = sizefn(MINRELAYTXFEE)
 
         stats = {
             "cumsize": {

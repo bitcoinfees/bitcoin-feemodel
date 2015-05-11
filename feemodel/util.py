@@ -389,11 +389,11 @@ class Function(object):
         return izip(self._x, self._y)
 
     def __copy__(self):
-        return Function(self._x[:], self._y[:])
+        return Function(list(self._x), list(self._y))
 
 
 class StepFunction(Function):
-    """A monotone step function.
+    """A non-negative, monotone step function.
 
     Points always represent the upper part of a discontinuity.
     """
@@ -421,34 +421,36 @@ class StepFunction(Function):
         """
         if len(self) < 2:
             raise ValueError("Function must have at least 2 points.")
+        # Make a copy to mutate
+        selfcopy = copy(self)
         reverse = False
-        if self[-1][1] < self[0][1]:
+        if selfcopy[-1][1] < selfcopy[0][1]:
             reverse = True
             # If self is decreasing, normalize it to be increasing
-            self._x = map(operator.neg, reversed(self._x))
-            self._y.reverse()
+            selfcopy._x = map(operator.neg, reversed(selfcopy._x))
+            selfcopy._y.reverse()
 
-        selfmax = self._y[-1]
+        selfmax = selfcopy._y[-1]
         error_thresh = percenterror*selfmax
         step = percentstep*selfmax
-        f = Function([self._x[0]], [self._y[0]])
+        f = Function([selfcopy._x[0]], [selfcopy._y[0]])
         previdx = 0
         prev_cand_idx = None
         idx = 0
-        while idx < len(self):
-            cand = self[idx]
+        while idx < len(selfcopy):
+            cand = selfcopy[idx]
             _f = copy(f)
             _f.addpoint(*cand)
-            maxerror = self._get_maxerror(previdx, idx, _f)
+            maxerror = selfcopy._get_maxerror(previdx, idx, _f)
             if maxerror > error_thresh:
                 if prev_cand_idx is not None:
-                    f.addpoint(*self[prev_cand_idx])
+                    f.addpoint(*selfcopy[prev_cand_idx])
                     previdx = prev_cand_idx
                 else:
-                    x, y = self[idx]
-                    f.addpoint(x-1, self(x-1))
+                    x, y = selfcopy[idx]
+                    f.addpoint(x-1, selfcopy(x-1))
                 prev_cand_idx = None
-            elif cand[1] - self[previdx][1] > step:
+            elif cand[1] - selfcopy[previdx][1] > step:
                 f.addpoint(*cand)
                 previdx = idx
                 prev_cand_idx = None
@@ -457,10 +459,8 @@ class StepFunction(Function):
                 prev_cand_idx = idx
                 idx += 1
         if prev_cand_idx:
-            f.addpoint(*self[prev_cand_idx])
+            f.addpoint(*selfcopy[prev_cand_idx])
         if reverse:
-            self._x = map(operator.neg, reversed(self._x))
-            self._y.reverse()
             f._x = map(operator.neg, reversed(f._x))
             f._y = list(reversed(f._y))
         return f
@@ -473,6 +473,9 @@ class StepFunction(Function):
             curr_error_back = abs(self(x-1) - f(x-1, use_lower=True))
             maxerror = max(curr_error, curr_error_back, maxerror)
         return maxerror
+
+    def __copy__(self):
+        return StepFunction(list(self._x), list(self._y))
 
 
 def save_obj(obj, filename, protocol=2):

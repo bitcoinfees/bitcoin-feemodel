@@ -83,8 +83,9 @@ class BasicTests(unittest.TestCase):
 
         state.entries = {}
         stats = state.get_stats()
-        self.assertFalse(stats['cumsize']['feerates'])
-        self.assertFalse(stats['cumsize']['size'])
+        self.assertTrue(all([size == 0 for size in stats['cumsize']['size']]))
+        # self.assertFalse(stats['cumsize']['feerates'])
+        # self.assertFalse(stats['cumsize']['size'])
         pprint(zip(stats['cumsize']['feerates'], stats['cumsize']['size']))
         self.assertEqual(0, stats['sizewithfee'])
 
