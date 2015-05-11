@@ -56,14 +56,15 @@ class TransientOnline(StoppableThread):
             self.sleep(time_till_next)
 
     def update(self):
-        sim, init_entries = self._get_resources()
+        pools, tx_source, mempoolstate = self._get_resources()
+        sim = Simul(pools, tx_source)
         feepoints = self.calc_feepoints(sim)
 
         stats = TransientStats()
         feepoints, waittimes = transientsim(
             sim,
             feepoints=feepoints,
-            init_entries=init_entries,
+            init_entries=mempoolstate.entries,
             miniters=self.miniters,
             maxiters=self.maxiters,
             maxtime=self.update_period,
@@ -81,15 +82,15 @@ class TransientOnline(StoppableThread):
     def _get_resources(self):
         """Get transient sim resources.
 
-        Get the Simul instance (which requires SimPools and SimTxSource)
-        and mempool entries. If any are not ready, retry every 5 seconds.
+        Get the SimPools, SimTxSource, and MempoolState objects.  If any are
+        not ready, retry every 5 seconds.
         """
         while not self.is_stopped():
             pools = self.poolsonline.get_pools()
             tx_source = self.txonline.get_txsource()
-            state = self.mempool.state
-            if state and pools and tx_source:
-                return Simul(pools, tx_source), state.entries
+            mempoolstate = self.mempool.state
+            if mempoolstate and pools and tx_source:
+                return pools, tx_source, mempoolstate
             self.sleep(5)
         raise StopIteration
 
