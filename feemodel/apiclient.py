@@ -13,12 +13,6 @@ class APIClient(object):
     def get_pools(self):
         return self._get_resource("pools")
 
-    def get_poolsobj(self):
-        from base64 import b64decode
-        from feemodel.util import pickle
-        poolspickle_b64 = self._get_resource("poolsobj")["poolspickle_b64"]
-        return pickle.loads(b64decode(poolspickle_b64))
-
     def get_transient(self):
         return self._get_resource("transient")
 
@@ -41,6 +35,19 @@ class APIClient(object):
             "waitcostfn": waitcostfn
         }
         return self._get_resource("decidefee", data=data)
+
+    def get_poolsobj(self):
+        from base64 import b64decode
+        from feemodel.util import pickle
+        poolspickle_b64 = self._get_resource("poolsobj")["poolspickle_b64"]
+        return pickle.loads(b64decode(poolspickle_b64))
+
+    def get_txsource_obj(self):
+        from base64 import b64decode
+        from feemodel.util import pickle
+        tx_estimator_b64 = (
+            self._get_resource("txsourceobj")["tx_estimator_b64"])
+        return pickle.loads(b64decode(tx_estimator_b64))
 
     def get_loglevel(self):
         return self._get_resource("loglevel")["level"]

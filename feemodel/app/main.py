@@ -59,7 +59,7 @@ def main(mempool_only=False):
 
     @app.route('/feemodel/poolsobj', methods=['GET'])
     def poolsobj():
-        """Get the pickled representation of PoolsEstimator"""
+        """Get the pickled representation of current SimPools obj."""
         try:
             poolsestimate = sim.poolsonline.get_pools()
         except AttributeError:
@@ -83,6 +83,17 @@ def main(mempool_only=False):
         except AttributeError:
             abort(501)
         return jsonify(stats)
+
+    @app.route('/feemodel/txsourceobj', methods=['GET'])
+    def txsourceobj():
+        """Get the pickled representation of the current SimTxSource obj."""
+        try:
+            tx_estimator = sim.txonline.get_txsource()
+        except AttributeError:
+            abort(501)
+        tx_estimator_b64 = b64encode(pickle.dumps(tx_estimator, protocol=2))
+        obj = {"tx_estimator_b64": tx_estimator_b64}
+        return jsonify(obj)
 
     @app.route('/feemodel/estimatefee/<int:waitminutes>', methods=['GET'])
     def estimatefee(waitminutes):
