@@ -82,6 +82,7 @@ def calc_stranding_feerate(txs, bootstrap=True, numprocesses=None):
             bias = std = mean = float("inf")
     else:
         bias = std = mean = float("inf")
+    # TODO: change default to -1 or None, instead of inf
 
     return {"sfr": sfr, "bias": bias, "mean": mean, "std": std,
             "abovekn": (abovek, aboven), "belowkn": (belowk, belown)}

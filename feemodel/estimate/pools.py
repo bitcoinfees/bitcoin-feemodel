@@ -3,6 +3,7 @@ from __future__ import division
 import logging
 from time import time
 from collections import defaultdict
+from operator import attrgetter
 
 from tabulate import tabulate
 
@@ -47,28 +48,26 @@ class PoolEstimate(SimPool):
     def estimate(self, windowlen, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         totalhashes = sum([block.hashes for block in self.blocks])
         self.hashrate = totalhashes / windowlen
-        self.maxblocksize = max([block.size for block in self.blocks])
+        self.maxblocksize = max(map(attrgetter("size"), self.blocks))
 
         txs = []
         self.feelimitedblocks = []
         self.sizelimitedblocks = []
 
         nummissingblocks = 0
-        # for height in sorted(self.blockheights, reverse=True):
-        for blockmeta in sorted(self.blocks,
-                                key=lambda b: b.height, reverse=True):
+        for blockmeta in sorted(self.blocks, key=attrgetter("height"),
+                                reverse=True):
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
-            height = blockmeta.height
-            memblock = MemBlock.read(height, dbfile=dbfile)
+            memblock = MemBlock.read(blockmeta.height, dbfile=dbfile)
             if memblock is None:
                 nummissingblocks += 1
                 continue
-            _inblocktxs = filter(lambda tx: tx.inblock,
-                                 memblock.entries.values())
-            if _inblocktxs:
-                avgtxsize = (
-                    sum([tx.size for tx in _inblocktxs]) / len(_inblocktxs))
+            inblocktxs = filter(attrgetter("inblock"),
+                                memblock.entries.values())
+            if inblocktxs:
+                totaltxsize = sum(map(attrgetter("size"), inblocktxs))
+                avgtxsize = totaltxsize / len(inblocktxs)
             else:
                 avgtxsize = 0.
             # We assume a block is fee-limited if its size is smaller than
@@ -92,9 +91,8 @@ class PoolEstimate(SimPool):
         if not txs and self.sizelimitedblocks:
             # All the blocks are close to the max block size.
             # This should happen rarely, so we just choose the smallest block.
-            smallestheight = min(
-                self.sizelimitedblocks, key=lambda b: b.size).height
-            memblock = MemBlock.read(smallestheight, dbfile=dbfile)
+            smallestblock = min(self.sizelimitedblocks, key=attrgetter("size"))
+            memblock = MemBlock.read(smallestblock.height, dbfile=dbfile)
             if memblock:
                 txs.extend(tx_preprocess(memblock))
 
