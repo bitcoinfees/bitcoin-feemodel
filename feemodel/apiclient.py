@@ -1,12 +1,14 @@
 import json
 import requests
+from urlparse import urljoin
 from feemodel.config import config
 
 
 class APIClient(object):
     '''Client for accessing model stats through the API.'''
 
-    def __init__(self, host='localhost', port=config.getint("app", "port")):
+    def __init__(self, host=config.get("client", "host"),
+                 port=config.getint("client", "port")):
         self.host = host
         self.port = port
 
@@ -57,20 +59,20 @@ class APIClient(object):
         return self._put_resource('loglevel', data)["level"]
 
     @property
-    def url(self):
-        return 'http://{}:{}/feemodel/'.format(self.host, str(self.port))
+    def baseurl(self):
+        return 'http://{}:{}/feemodel/'.format(self.host, self.port)
 
     def _put_resource(self, path, data):
         headers = {"Content-type:": "application/json"}
-        res = requests.put(
-            self.url + path, data=json.dumps(data), headers=headers)
+        res = requests.put(urljoin(self.baseurl, path), data=json.dumps(data),
+                           headers=headers)
         res.raise_for_status()
         return res.json()
 
     def _get_resource(self, path, data=None):
         if data is not None:
             data = json.dumps(data)
-        res = requests.get(self.url + path, data=data)
+        res = requests.get(urljoin(self.baseurl, path), data=data)
         res.raise_for_status()
         return res.json()
 
