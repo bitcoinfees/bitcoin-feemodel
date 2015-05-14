@@ -305,7 +305,7 @@ class MemBlock(MempoolState):
             incl_ratio = len(entries_inblock) / (len(blocktxids)-1)
             if incl_ratio < 0.9:
                 logger.warning("Only {}/{} in block {}.".format(
-                               len(entries_inblock), len(blocktxids),
+                               len(entries_inblock), len(blocktxids)-1,
                                self.blockheight))
 
         state.height += 1

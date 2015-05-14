@@ -91,6 +91,9 @@ class TransientOnline(StoppableThread):
             mempoolstate = self.mempool.state
             if mempoolstate and pools and tx_source:
                 return pools, tx_source, mempoolstate
+            # Resources aren't available due to some error elsewhere,
+            # so get rid of stats to avoid giving stale stats to others.
+            self.stats = None
             self.sleep(5)
         raise StopIteration
 
