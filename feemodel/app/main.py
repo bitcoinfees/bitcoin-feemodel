@@ -159,12 +159,16 @@ def main(mempool_only=False):
         return jsonify(response)
 
     with sim.context_start():
+        if config.getboolean("app", "external"):
+            host = "0.0.0.0"
+        else:
+            host = "127.0.0.1"
         port = config.getint("app", "port")
         print("Logging to {}".format(logfile))
-        print("Listening on port {}".format(port))
+        logger.info("Listening on http://{}:{}".format(host, port))
         # app.run(port=port, debug=True, use_reloader=False)
-        logger.info("{} {} APP START".format(pkgname, __version__))
-        app.run(port=port)
+        logger.info("{} v{}".format(pkgname, __version__))
+        app.run(host=host, port=port)
 
 
 def configure_logger():
