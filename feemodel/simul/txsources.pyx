@@ -79,6 +79,7 @@ class SimTxSource(object):
         return tx_emitter
 
     def get_byteratefn(self):
+        # FIXME: doesn't work with samplesize = 1
         self.check()
         n = len(self.txsample)
 

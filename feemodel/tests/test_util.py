@@ -42,7 +42,7 @@ class RoundRandomTest(unittest.TestCase):
 
 
 class DataSampleTest(unittest.TestCase):
-    def test_dataSample(self):
+    def test_datasample(self):
         sample = [random() for i in xrange(100000)]
         d = DataSample()
         d.add_datapoints(sample)

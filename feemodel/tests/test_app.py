@@ -146,6 +146,7 @@ class AppAPITests(unittest.TestCase):
         process.start()
         while True:
             try:
+                # FIXME: endless loop upon exception
                 apiclient.set_loglevel("debug")
                 apiclient.get_txrate()
             except Exception:

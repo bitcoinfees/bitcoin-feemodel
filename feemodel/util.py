@@ -258,19 +258,24 @@ class DataSample(object):
         '''Specify the initial datapoints with an iterable.'''
         if datapoints:
             self.datapoints = sorted(datapoints)
-            self.n = len(self.datapoints)
         else:
             self.datapoints = []
-            self.n = None
         self.mean = None
         self.std = None
-        self.mean_interval = None
+        self.mean_95ci = None
 
     def add_datapoints(self, datapoints):
-        '''Add additional datapoints with an iterable.'''
-        for d in datapoints:
-            insort(self.datapoints, d)
-        self.n = len(self.datapoints)
+        '''Add additional datapoints with an iterable.
+
+        datapoints can also be a single point.
+        '''
+        try:
+            dataiter = iter(datapoints)
+        except TypeError:
+            insort(self.datapoints, datapoints)
+        else:
+            self.datapoints.extend(dataiter)
+            self.datapoints.sort()
 
     def calc_stats(self):
         '''Compute various statistics of the data.
@@ -280,15 +285,15 @@ class DataSample(object):
         mean_interval - 95% confidence interval for the sample mean, using a
                         normal approximation.
         '''
-        if self.n < 2:
+        n = len(self.datapoints)
+        if n < 2:
             raise ValueError("Need at least 2 datapoints.")
-        self.mean = float(sum(self.datapoints)) / self.n
+        self.mean = float(sum(self.datapoints)) / n
         variance = (sum([(d - self.mean)**2 for d in self.datapoints]) /
-                    (self.n - 1))
+                    (n - 1))
         self.std = variance**0.5
-        half_interval = 1.96*(variance/self.n)**0.5
-        self.mean_interval = (self.mean - half_interval,
-                              self.mean + half_interval)
+        half_95ci = 1.96*(variance/n)**0.5
+        self.mean_95ci = (self.mean - half_95ci, self.mean + half_95ci)
 
     def get_percentile(self, p, weights=None):
         '''Returns the (p*100)th percentile of the data.
@@ -298,9 +303,10 @@ class DataSample(object):
         '''
         if p > 1 or p < 0:
             raise ValueError("p must be in [0, 1].")
+        n = len(self.datapoints)
         if not weights:
-            return self.datapoints[max(int(ceil(p*self.n)) - 1, 0)]
-        elif len(weights) == self.n:
+            return self.datapoints[max(int(ceil(p*n)) - 1, 0)]
+        elif len(weights) == n:
             total = sum(weights)
             target = total*p
             curr_total = 0.
@@ -315,9 +321,8 @@ class DataSample(object):
         return len(self.datapoints)
 
     def __repr__(self):
-        # FIXME: repr breaks before self.calc_stats is run
-        return "n: %d, mean: %.2f, std: %.2f, interval: %s" % (
-            self.n, self.mean, self.std, self.mean_interval)
+        return "DataSample(n: {}, mean: {}, std: {}, mean_95ci: {})".format(
+            len(self), self.mean, self.std, self.mean_95ci)
 
 
 class Function(object):

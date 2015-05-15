@@ -15,6 +15,7 @@ EXPECTED_BLOCK_INTERVAL = 600
 MINRELAYTXFEE = 1000
 
 # Create the default data directory.
+# TODO: don't create it here, but in app.main.
 datadir = user_data_dir(pkgname)
 if not os.path.exists(datadir):
     try:
