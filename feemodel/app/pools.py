@@ -29,24 +29,7 @@ class PoolsOnlineEstimator(object):
         self.best_diff_interval = None
         self.block_shortfall = 0
         self.lock = threading.Lock()
-        try:
-            self.load_estimates()
-            assert self.poolsestimate
-            bestheight = max(self.poolsestimate.blocksmetadata)
-        except Exception:
-            logger.info("Unable to load saved pools; "
-                        "starting from scratch.")
-            self.poolsestimate = PoolsEstimator()
-        else:
-            if time() - self.poolsestimate.timestamp > self.update_period:
-                logger.info("Loaded pool estimates are outdated; "
-                            "starting from scratch.")
-                self.poolsestimate.pools = {}
-            else:
-                logger.info("Pools Estimator loaded with best height %d." %
-                            bestheight)
-                self.best_diff_interval = bestheight // DIFF_RETARGET_INTERVAL
-        self.next_update = self.poolsestimate.timestamp + update_period
+        self.load_estimates()
 
     def update_async(self, currheight, stopflag=None):
         '''Update pool estimates in a new thread.
@@ -158,10 +141,30 @@ class PoolsOnlineEstimator(object):
                         format(poolsestimate.blockrate))
 
     def load_estimates(self):
-        self.poolsestimate = load_obj(SAVEFILE)
+        try:
+            self.poolsestimate = load_obj(SAVEFILE)
+            assert self.poolsestimate
+            bestheight = max(self.poolsestimate.blocksmetadata)
+        except Exception:
+            logger.info("Unable to load saved pools; "
+                        "starting from scratch.")
+            self.poolsestimate = PoolsEstimator()
+        else:
+            if time() - self.poolsestimate.timestamp > self.update_period:
+                logger.info("Loaded pool estimates are outdated; "
+                            "starting from scratch.")
+                self.poolsestimate.pools = {}
+            else:
+                logger.info("Pools Estimator loaded with best height %d." %
+                            bestheight)
+                self.best_diff_interval = bestheight // DIFF_RETARGET_INTERVAL
+        self.next_update = self.poolsestimate.timestamp + self.update_period
 
     def save_estimates(self):
-        save_obj(self.poolsestimate, SAVEFILE)
+        try:
+            save_obj(self.poolsestimate, SAVEFILE)
+        except Exception:
+            logger.warning("Unable to save pools.")
 
     def __nonzero__(self):
         return bool(self.poolsestimate)

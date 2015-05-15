@@ -12,6 +12,8 @@ from feemodel.util import DataSample
 __all__ = ['tx_preprocess', 'calc_stranding_feerate']
 
 
+# TODO: put back remove_depped, for proper definition of SFR in size-limited
+#       blocks.
 def tx_preprocess(memblock):
     '''Preprocess MemBlock transactions for calculating stranding fee rate.
 

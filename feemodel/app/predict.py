@@ -280,22 +280,6 @@ class Prediction(object):
             if db is not None:
                 db.close()
 
-    # TODO: Deprecate this.
-    def print_predicts(self):
-        '''Print the pval ECDF and predict-distance.'''
-        raise NotImplementedError
-        if not self.pval_ecdf:
-            raise ValueError("No valid ECDF.")
-        headers = ['x', 'F(x)']
-        table = zip(
-            [i / NUM_PVAL_POINTS for i in range(1, NUM_PVAL_POINTS+1)],
-            self.pval_ecdf)
-        print("ECDF of p-values")
-        print("================")
-        print(tabulate(table, headers=headers))
-        print("Halflife: {} blocks.".format(self.block_halflife))
-        print("Predict-distance: {}".format(self.pdistance))
-
     def get_stats(self):
         stats = {
             "params": {
