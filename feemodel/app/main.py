@@ -57,6 +57,7 @@ def main(mempool_only=False):
             abort(501)
         return jsonify(stats)
 
+    # TODO: refuse to send if request is external
     @app.route('/feemodel/poolsobj', methods=['GET'])
     def poolsobj():
         """Get the pickled representation of current SimPools obj."""

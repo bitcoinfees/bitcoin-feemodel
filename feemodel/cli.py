@@ -16,20 +16,24 @@ def cli(port):
 @cli.command()
 @click.option('--mempool', is_flag=True,
               help='Collect memblock data only (no simulation)')
-def start(mempool):
+@click.option('--external', is_flag=True,
+              help='Make the (Flask) server externally visible.')
+def start(mempool, external):
     '''Start the simulation app.
 
     Use --mempool for memblock data collection only (no simulation).
     '''
     # TODO: add "raw" output option for all commands
     from feemodel.app.main import main, logfile
-    from feemodel.config import __version__, pkgname
+    from feemodel.config import __version__, pkgname, config
     click.echo("{} {}".format(pkgname, __version__))
     if mempool:
         click.echo("Starting mempool data collection; logging to %s"
                    % logfile)
     else:
         click.echo("Starting simulation app; logging to %s" % logfile)
+    if external:
+        config.set("app", "external", "true")
     main(mempool_only=mempool)
 
 

@@ -36,7 +36,8 @@ def tx_preprocess(memblock):
     return txs
 
 
-def calc_stranding_feerate(txs, bootstrap=True, numprocesses=None):
+def calc_stranding_feerate(txs, bootstrap=True,
+                           numprocesses=multiprocessing.cpu_count()):
     '''Compute stranding feerate from preprocessed txs.
 
     txs is [(feerate, inblock) for some list of txs].
@@ -67,8 +68,6 @@ def calc_stranding_feerate(txs, bootstrap=True, numprocesses=None):
 
     if bootstrap and sfr != float("inf"):
         N = 1000  # Number of bootstrap estimates
-        if not numprocesses:
-            numprocesses = multiprocessing.cpu_count()
         bs_estimates = _get_bs_estimates(txs, N, numprocesses)
 
         if not any([b == float("inf") for b in bs_estimates]):
