@@ -6,8 +6,6 @@ _*
 *-info
 *.swp
 archive
-tests/data/archive
-tests/archive
 dist
 venv
 build

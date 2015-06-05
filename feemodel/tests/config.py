@@ -42,6 +42,7 @@ def rm_tmpdatadir():
 
 tmpdatadir = os.path.join(feemodel.config.datadir, '_tmp_datadir')
 feemodel.config.datadir = tmpdatadir
+feemodel.config.read_default_config()
 feemodel.config.config.set("app", "port", "8351")
 feemodel.config.config.set("client", "port", "8351")
 

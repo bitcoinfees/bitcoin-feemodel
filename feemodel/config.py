@@ -24,8 +24,14 @@ if not os.path.exists(datadir):
         print("Error: unable to create data directory %s." % datadir)
         raise e
 
+
+def read_default_config():
+    defaultconfigfile = resource_stream(__name__, 'default.cfg')
+    config.readfp(defaultconfigfile)
+    defaultconfigfile.close()
+
+
 config = ConfigParser.ConfigParser()
-defaultconfigfile = resource_stream(__name__, 'default.cfg')
+read_default_config()
 configfilename = os.path.join(datadir, 'feemodel.cfg')
-config.readfp(defaultconfigfile)
 config.read(configfilename)
