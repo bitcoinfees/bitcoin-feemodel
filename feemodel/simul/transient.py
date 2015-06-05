@@ -7,7 +7,6 @@ from time import time
 from bisect import bisect_left
 
 from feemodel.util import logexceptions
-from feemodel.simul.simul import cap_ratio_thresh
 
 ITERSCHUNK = 100
 PROCESS_COMPLETE = 'process_complete'
@@ -42,6 +41,7 @@ def transientsim_core(sim, init_entries, feepoints):
 def transientsim(sim, feepoints=None, init_entries=None,
                  miniters=1000, maxiters=10000, maxtime=60,
                  numprocesses=multiprocessing.cpu_count(), stopflag=None):
+    """A multiprocessing wrapper for transientsim_core."""
     starttime = time()
     if init_entries is None:
         init_entries = {}
@@ -113,11 +113,15 @@ def transientsim_process(sim, init_entries, feepoints, resultqueue,
 
 
 def get_default_feepoints(sim, numpoints=20):
-    numpoints = 20
-    cap_ratio_targets = [i/numpoints*cap_ratio_thresh
-                         for i in range(1, numpoints+1)]
-    feepoints = [
-        sim.capratios.inv(cap_ratio) for cap_ratio in cap_ratio_targets]
-    feepoints = sorted(set(feepoints))
-    assert feepoints[0] >= sim.stablefeerate
-    return feepoints
+    """Returns a list of sensible default feepoints.
+
+    This is basically equispaced feerates from stablefeerate to 0.05
+    utilization.
+    """
+    minfeepoint = sim.stablefeerate
+    maxfeepoint = sim.cap.inv_util(0.05)
+    assert maxfeepoint >= minfeepoint
+    spacing = int((maxfeepoint - minfeepoint) / numpoints)
+    if spacing == 0:
+        return [maxfeepoint]
+    return range(minfeepoint, maxfeepoint+spacing, spacing)

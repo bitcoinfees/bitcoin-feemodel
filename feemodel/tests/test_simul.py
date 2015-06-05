@@ -43,9 +43,11 @@ print("Mempool size is %d" %
 
 class PoolSimTests(unittest.TestCase):
 
-    def test_printing(self):
-        # Judge visually.
-        print(SimPools(ref_pools))
+    def test_basic(self):
+        simpools = SimPools(ref_pools)
+        print(simpools)
+        print(simpools.get_capacityfn())
+        print(simpools.get_hashratefn())
 
     def test_blockgen(self):
         """Test the convergence of the random gen."""
@@ -78,12 +80,16 @@ class PoolSimTests(unittest.TestCase):
 
     def test_caps(self):
         simpools = SimPools(ref_pools)
-        feerates, caps = zip(*simpools.get_capacityfn())
-        ref_feerates = (0, 1000, 10000, 20000)
+        ref_feerates = (999, 1000, 10000, 20000)
         ref_caps = tuple(cumsum_gen(
             [0, 0.5*1000000/600, 0.3*750000/600, 0.2*500000/600]))
+        feerates, caps = zip(*simpools.get_capacityfn())
         self.assertEqual(feerates, ref_feerates)
         self.assertEqual(caps, ref_caps)
+        ref_hashrates = (0, 0.5, 0.8, 1)
+        feerates, hashrates = zip(*simpools.get_hashratefn())
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(hashrates, ref_hashrates)
 
         # Duplicate minfeerate
         newref_pools = deepcopy(ref_pools)
@@ -91,23 +97,31 @@ class PoolSimTests(unittest.TestCase):
         newref_pools['pool1'].hashrate = 0.2
         simpools = SimPools(newref_pools)
         feerates, caps = zip(*simpools.get_capacityfn())
-        ref_feerates = (0, 1000, 10000, 20000)
+        ref_feerates = (999, 1000, 10000, 20000)
         ref_caps = tuple(cumsum_gen(
             [0, 0.5*1000000/600 + 0.1*600000/600,
              0.2*750000/600, 0.2*500000/600]))
         self.assertEqual(feerates, ref_feerates)
         self.assertEqual(caps, ref_caps)
+        ref_hashrates = (0, 0.6, 0.8, 1)
+        feerates, hashrates = zip(*simpools.get_hashratefn())
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(hashrates, ref_hashrates)
 
         # Inf minfeerate
         newref_pools = deepcopy(ref_pools)
         newref_pools['pool0'].minfeerate = float("inf")
         simpools = SimPools(newref_pools)
         feerates, caps = zip(*simpools.get_capacityfn())
-        ref_feerates = (0, 1000, 10000)
+        ref_feerates = (999, 1000, 10000)
         ref_caps = tuple(cumsum_gen(
             [0, 0.5*1000000/600, 0.3*750000/600]))
         self.assertEqual(feerates, ref_feerates)
         self.assertEqual(caps, ref_caps)
+        ref_hashrates = (0, 0.5, 0.8)
+        feerates, hashrates = zip(*simpools.get_hashratefn())
+        self.assertEqual(feerates, ref_feerates)
+        self.assertEqual(hashrates, ref_hashrates)
 
         # Only inf minfeerate
         newref_pools = deepcopy(ref_pools)
@@ -116,11 +130,15 @@ class PoolSimTests(unittest.TestCase):
         simpools = SimPools(newref_pools)
         with self.assertRaises(ValueError):
             feerates, caps = zip(*simpools.get_capacityfn())
+        with self.assertRaises(ValueError):
+            feerates, caps = zip(*simpools.get_hashratefn())
 
         # Empty pools
         simpools = SimPools({})
         with self.assertRaises(ValueError):
             simpools.get_capacityfn()
+        with self.assertRaises(ValueError):
+            simpools.get_hashratefn()
 
 
 class TxSourceTests(unittest.TestCase):
@@ -163,15 +181,15 @@ class TxSourceTests(unittest.TestCase):
 
         # Compare the tx rate.
         txrate = len(simtxs) / t
-        diff = abs(txrate - ref_txrate)
+        diff = abs(log(txrate) - log(ref_txrate))
         self.assertLess(diff, 0.02)
 
         # Check that byterates match.
         derivedsource = SimTxSource(simtxs, txrate)
         byteratefn = derivedsource.get_byteratefn()
         for feerate, refrate in zip(self.feerates, self.ref_byterates):
-            diff = abs(byteratefn(feerate) - refrate)
-            self.assertLess(diff, 10)
+            diff = abs(log(byteratefn(feerate)) - log(refrate))
+            self.assertLess(diff, 0.02)
 
     def test_feerate_threshold(self):
         t = 10000.
@@ -186,7 +204,7 @@ class TxSourceTests(unittest.TestCase):
         txrate = len(simtxs) / t
         # We filtered out 1 out of 3 SimTxs by using feeratethresh = 2001
         ref_txrate_mod = ref_txrate * 2 / 3
-        diff = abs(txrate - ref_txrate_mod)
+        diff = abs(log(txrate) - log(ref_txrate_mod))
         self.assertLess(diff, 0.01)
 
         # Check that byterates match.
@@ -196,8 +214,8 @@ class TxSourceTests(unittest.TestCase):
             if idx > 1:
                 refrate = self.ref_byterates[idx]
                 testrate = byteratefn(feerate)
-                diff = abs(testrate - refrate)
-                self.assertLess(diff, 10)
+                diff = abs(log(testrate) - log(refrate))
+                self.assertLess(diff, 0.01)
 
         # Test thresh equality
         mempool.reset()
@@ -208,7 +226,7 @@ class TxSourceTests(unittest.TestCase):
 
         # Compare the tx rate.
         txrate = len(simtxs) / t
-        diff = abs(txrate - ref_txrate)
+        diff = abs(log(txrate) - log(ref_txrate))
         self.assertLess(diff, 0.01)
 
         # Test inf thresh
@@ -224,28 +242,15 @@ class TxSourceTests(unittest.TestCase):
         tx_emitter(0)
         self.assertEqual(len(mempool.get_entries()), 0)
 
-    def test_zero_txrate(self):
-        self.tx_source = SimTxSource(ref_txsample, 0)
+    def test_null_source(self):
         mempool = SimMempool({})
-        tx_emitter = self.tx_source.get_emitter(mempool)
-        tx_emitter(600)
-        self.assertEqual(len(mempool.get_entries()), 0)
-        # TODO: fix the display when printing with zero txrate
-        print(self.tx_source)
-
-    def test_empty_txsample(self):
-        mempool = SimMempool({})
-        self.tx_source = SimTxSource([], ref_txrate)
+        self.tx_source.txrate = 0
         with self.assertRaises(ValueError):
             self.tx_source.get_emitter(mempool)
+        self.tx_source.txrate = 1
+        self.tx_source.txsample = []
         with self.assertRaises(ValueError):
-            self.tx_source.get_byteratefn()
-        with self.assertRaises(ValueError):
-            self.tx_source.calc_mean_byterate()
-        self.tx_source = SimTxSource([], 0)
-        tx_emitter = self.tx_source.get_emitter(mempool)
-        tx_emitter(600)
-        self.assertEqual(len(mempool.get_entries()), 0)
+            self.tx_source.get_emitter(mempool)
 
     def test_randomness(self):
         # Test that txsource does not generate identical txs when doing
@@ -302,8 +307,6 @@ class BasicSimTests(unittest.TestCase):
                                             simblock.size, simblock.sfr,
                                             mempoolsize))
 
-        print(self.sim.capratios)
-
     def test_mempool(self):
         for entry in self.init_entries.values():
             entry.feerate = 100000
@@ -321,7 +324,6 @@ class BasicSimTests(unittest.TestCase):
             print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
                                             simblock.size, simblock.sfr,
                                             mempoolsize))
-        print(self.sim.capratios)
 
     def test_degenerate_pools(self):
         degen_pools = {'pool0': SimPool(1, 0, float("inf")),
@@ -331,6 +333,8 @@ class BasicSimTests(unittest.TestCase):
             Simul(SimPools(degen_pools), self.tx_source)
 
         degen_pools.update({'pool2': SimPool(3, 1000000, 1000)})
+        degen_pools['pool0'].maxblocksize = 1
+        degen_pools['pool1'].maxblocksize = 1
         self.sim = Simul(SimPools(degen_pools), self.tx_source)
 
         print("Degenerate pools:")
@@ -343,7 +347,6 @@ class BasicSimTests(unittest.TestCase):
             print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
                                             simblock.size, simblock.sfr,
                                             mempoolsize))
-        print(self.sim.capratios)
 
     def test_insane_feerates(self):
         # Test the restriction of feerates to unsigned int.
@@ -363,7 +366,6 @@ class BasicSimTests(unittest.TestCase):
             print("%d\t%d\t%d\t%.0f\t%d" % (idx, len(simblock.txs),
                                             simblock.size, simblock.sfr,
                                             mempoolsize))
-        print(self.sim.capratios)
 
 
 class CustomMempoolTests(unittest.TestCase):
@@ -371,7 +373,7 @@ class CustomMempoolTests(unittest.TestCase):
 
     def setUp(self):
         pools = PseudoPools()
-        tx_source = SimTxSource(ref_txsample, 0)
+        tx_source = SimTxSource([SimTx(0, 250)], 1)
         self.sim = Simul(pools, tx_source)
 
     def test_A(self):
@@ -384,8 +386,6 @@ class CustomMempoolTests(unittest.TestCase):
         init_entries['0'] = SimEntry(100000, 1000000)
         for simblock in self.sim.run(init_entries=init_entries):
             print(simblock)
-            print('MBS: %d, MFR: %d' % (simblock.pool.maxblocksize,
-                                        simblock.pool.minfeerate))
             self.assertEqual(len(simblock.txs), 1)
             self.assertEqual(simblock.sfr, 100001)
             self.assertEqual(len(self.sim.mempool.get_entries()), 999)
@@ -400,8 +400,7 @@ class CustomMempoolTests(unittest.TestCase):
         }
         init_entries['0'] = SimEntry(999, 250)
         for simblock in self.sim.run(init_entries=init_entries):
-            print('MBS: %d, MFR: %d' % (simblock.pool.maxblocksize,
-                                        simblock.pool.minfeerate))
+            print(simblock)
             self.assertEqual(len(simblock.txs), 0)
             self.assertEqual(simblock.sfr, 1000)
             self.assertEqual(len(self.sim.mempool.get_entries()), 1000)
@@ -416,8 +415,7 @@ class CustomMempoolTests(unittest.TestCase):
         }
         init_entries['0'] = SimEntry(1000, 900000)
         for simblock in self.sim.run(init_entries=init_entries):
-            print('MBS: %d, MFR: %d' % (simblock.pool.maxblocksize,
-                                        simblock.pool.minfeerate))
+            print(simblock)
             self.assertEqual(len(simblock.txs), 401)
             self.assertEqual(simblock.sfr, 1001)
             self.assertEqual(len(self.sim.mempool.get_entries()), 599)
@@ -440,6 +438,7 @@ class CustomMempoolTests(unittest.TestCase):
         # init_mempool.append(SimEntry('1000', SimTx(1001, 2000)))
         for idx, simblock in enumerate(
                 self.sim.run(init_entries=init_entries)):
+            print(simblock)
             if idx == 0:
                 self.assertEqual(simblock.sfr, 1002)
                 self.assertEqual(max([tx.feerate for tx in simblock.txs]),
@@ -478,7 +477,6 @@ class TransientSimTests(unittest.TestCase):
 
     def test_basic(self):
         # Just check that core can run.
-        print(self.sim.capratios)
         print("Stable feerate is: {}".format(self.sim.stablefeerate))
         print(self.feepoints)
         for idx, waitvector in enumerate(transientsim_core(self.sim,

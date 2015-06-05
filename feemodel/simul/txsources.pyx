@@ -16,10 +16,12 @@ from operator import attrgetter
 
 from tabulate import tabulate
 
-from feemodel.util import DataSample, cumsum_gen, StepFunction
+from feemodel.util import DataSample, cumsum_gen, StepFunction, round_random
 
 DEF OVERALLOCATE = 2  # This better be > 1.
 
+# ULONG_MAX - 1 because in SimMempool._process_block, the sfr can be
+# pool.minfeerate + 1 (if block is size limited)
 cdef unsigned long MAX_FEERATE = ULONG_MAX - 1
 
 
@@ -40,8 +42,8 @@ class SimTxSource(object):
         self.txrate = txrate
 
     def check(self):
-        if self.txrate and not self.txsample:
-            raise ValueError("Non-zero txrate with empty txsample.")
+        if not self.txrate or not self.txsample:
+            raise ValueError("Null source.")
 
     def get_emitter(self, SimMempool mempool not None, feeratethresh=0):
         cdef int i
@@ -79,7 +81,7 @@ class SimTxSource(object):
         return tx_emitter
 
     def get_byteratefn(self):
-        # FIXME: doesn't work with samplesize = 1
+        # FIXME: doesn't work with samplesize = 1 (DataSample requirement).
         self.check()
         n = len(self.txsample)
 
@@ -96,12 +98,8 @@ class SimTxSource(object):
             groupby(txsample, attrgetter("feerate")), mapfn=byterate_groupsum))
         byterates.reverse()
 
-        if not feerates:
-            feerates = [0]
-            byterates = [0.]
-        elif feerates[0] != 0:
-            feerates.insert(0, 0)
-            byterates.insert(0, byterates[0])
+        feerates.append(feerates[-1] + 1)
+        byterates.append(0.)
 
         return StepFunction(feerates, byterates)
 
@@ -112,8 +110,6 @@ class SimTxSource(object):
         normal approximation.
         '''
         self.check()
-        if not self.txsample:
-            return 0, 0
 
         d = DataSample([tx.size*self.txrate for tx in self.txsample])
         d.calc_stats()
@@ -283,4 +279,4 @@ cdef poissonvariate(l):
 
 cdef _normal_approx(l):
     '''Normal approximation of the Poisson distribution.'''
-    return int(normalvariate(l, l**0.5))
+    return round_random(normalvariate(l, l**0.5))

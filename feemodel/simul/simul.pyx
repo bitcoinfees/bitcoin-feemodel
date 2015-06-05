@@ -6,11 +6,12 @@ from cpython.mem cimport (PyMem_Malloc as malloc,
                           PyMem_Free as free)
 from feemodel.simul.txsources cimport *
 
-from feemodel.simul.stats import CapacityRatios
+from feemodel.simul.stats import Capacity
 from feemodel.simul.txsources import SimTx
 
-cap_ratio_thresh = 0.9
+UTILIZATION_THRESH = 0.9
 cdef unsigned long MAX_FEERATE = ULONG_MAX - 1
+cdef int MAX_QUEUESIZE = 1000000  # Max num of txs in mempool heap
 
 
 class SimEntry(SimTx):
@@ -31,17 +32,12 @@ cdef class Simul:
     def __init__(self, pools, txsource):
         self.pools = pools
         self.txsource = txsource
-        self.capratios = CapacityRatios(pools, txsource)
-        self.stablefeerate = (
-            self.capratios.calc_stablefeerate(cap_ratio_thresh))
+        self.cap = Capacity(pools, txsource)
+        self.stablefeerate = self.cap.calc_stablefeerate(UTILIZATION_THRESH)
         self.mempool = None
         self.tx_emitter = None
         self.simtime = 0.
-
-        # TODO: See if this check is still needed. ValueError should be
-        #       raised in CapacityRatios.__init__, so it's redundant.
-        # if self.capratios.capfn[-1][1] == 0:
-        #     raise ValueError("Zero pools capacity.")
+        # Non-zero capacity is guaranteed by SimPools.check
 
     def run(self, init_entries=None):
         if init_entries is None:
@@ -53,6 +49,10 @@ cdef class Simul:
             self.simtime += blockinterval
             # Add new txs from the tx source to the queue
             self.tx_emitter(blockinterval)
+            # This is a fail-safe in the event of instability.
+            # This should not normally happen, because of stablefeerate calcs.
+            if self.mempool.txqueue.size > MAX_QUEUESIZE:
+                raise ValueError("Max queuesize reached.")
             self.mempool._process_block(simblock)
             simblock.sfr = max(simblock.sfr, self.stablefeerate)
             yield simblock

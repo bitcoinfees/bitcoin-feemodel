@@ -252,7 +252,10 @@ class BatchProxy(CacheProxy):
 
 
 class DataSample(object):
-    '''Container for 1-D numerical data with methods to compute statistics.'''
+    '''
+    Container for i.i.d. random variates with
+    methods to compute statistics.
+    '''
 
     def __init__(self, datapoints=None):
         '''Specify the initial datapoints with an iterable.'''
@@ -333,8 +336,8 @@ class Function(object):
         self._x = x
         self._y = y
 
-    def __call__(self, x, use_upper=False, use_lower=False):
-        '''Evaluate the function at x, by linear interpolation.
+    def __call__(self, x0, use_upper=False, use_lower=False):
+        '''Evaluate the function at x0, by linear interpolation.
 
         use_upper and use_lower specifies what to do if x is outside
         the domain of the function [min(self._x), max(self._x)).
@@ -347,15 +350,15 @@ class Function(object):
 
         Otherwise return None, if x is outside the domain.
         '''
-        y, xidx = interpolate(x, self._x, self._y)
+        y0, xidx = interpolate(x0, self._x, self._y)
         if xidx == 0:
-            return y if use_lower else None
+            return y0 if use_lower else None
         if xidx == len(self._x):
-            return y if use_upper or x == self._x[-1] else None
-        return y
+            return y0 if use_upper or x0 == self._x[-1] else None
+        return y0
 
-    def inv(self, y, use_upper=False, use_lower=False):
-        '''Evaluate the inverse function at y by linear interpolation.
+    def inv(self, y0, use_upper=False, use_lower=False):
+        '''Evaluate the inverse function at y0 by linear interpolation.
 
         use_upper and use_lower have the same meaning as in self.__call__.
 
@@ -367,12 +370,12 @@ class Function(object):
         if _y[-1] < _y[0]:
             _y.reverse()
             _x.reverse()
-        x, yidx = interpolate(y, _y, _x)
+        x0, yidx = interpolate(y0, _y, _x)
         if yidx == 0:
-            return x if use_lower else None
+            return x0 if use_lower else None
         if yidx == len(_y):
-            return x if use_upper or y == _y[-1] else None
-        return x
+            return x0 if use_upper or y0 == _y[-1] else None
+        return x0
 
     def addpoint(self, xi, yi):
         if xi in self._x:
@@ -397,22 +400,48 @@ class Function(object):
         return Function(list(self._x), list(self._y))
 
 
+class DiscreteFunction(Function):
+    """Like Function but without the interpolation.
+
+    Only defined on the specified x points.
+    """
+
+    def __call__(self, x0):
+        try:
+            idx = self._x.index(x0)
+        except ValueError:
+            raise ValueError("Not defined at this point")
+        return self._y[idx]
+
+    def inv(self, y0):
+        try:
+            idx = self._y.index(y0)
+        except ValueError:
+            raise ValueError("Not defined at this point")
+        return self._x[idx]
+
+
 class StepFunction(Function):
     """A non-negative, monotone step function.
 
     Points always represent the upper part of a discontinuity.
+    As of now it works for the intended purpose, but it's a bit of a mess,
+    sorry.
     """
 
-    def __call__(self, x):
+    def __call__(self, x0):
+        # TODO: need better specifications about the function.
+        #       e.g. values outside of the defined domain, inc / dec etc.
         if len(self) < 2:
             raise ValueError("Function must have at least 2 points.")
-        # Check if the function is increasing or decreasing.
         if self[-1][1] > self[0][1]:
-            idx = bisect(self._x, x) - 1
+            # Function is strictly increasing
+            idx = bisect(self._x, x0) - 1
             if idx < 0:
                 return 0
         else:
-            idx = bisect_left(self._x, x)
+            # Function is weakly decreasing
+            idx = bisect_left(self._x, x0)
             if idx == len(self._x):
                 return 0
         return self._y[idx]
@@ -666,24 +695,18 @@ def interpolate(x0, x, y):
         return y0, idx
 
 
-def cumsum_gen(seq, base=0, mapfn=None):
+def cumsum_gen(iterable, base=0, mapfn=lambda x: x):
     """Cumulative sum generator.
 
-    Returns a generator that yields the cumulative sum of a given sequence.
+    Returns a generator that yields the cumulative sum of a given iterable.
 
     base is the object that you begin summing from.
 
-    mapfn is a function that is applied to each element of the sequeunce prior
+    mapfn is a function that is applied to each element of the iterable prior
     to the summation.
     """
-    def identity(x):
-        return x
-
-    if mapfn is None:
-        mapfn = identity
-
     cumsum = base
-    for item in seq:
+    for item in iterable:
         cumsum += mapfn(item)
         yield cumsum
 

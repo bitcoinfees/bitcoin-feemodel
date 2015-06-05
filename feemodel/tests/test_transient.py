@@ -29,6 +29,7 @@ class TransientRefCmp(unittest.TestCase):
         starttime = time()
         feepoints, waittimes = transientsim(
             sim,
+            feepoints=waitsref[0],
             init_entries=init_entries,
             maxtime=600,
             maxiters=10000,
@@ -40,8 +41,8 @@ class TransientRefCmp(unittest.TestCase):
         avgwaittimes = map(lambda waits: sum(waits)/len(waits), waittimes)
         print("Sim:")
         pprint(zip(feepoints, avgwaittimes))
-        print(sim.capratios.capfn.approx())
-        print(sim.capratios.txbyteratefn.approx())
+        print(sim.cap.capfn.approx())
+        print(sim.cap.txbyteratefn.approx())
         print("Stablefeerate is {}".format(sim.stablefeerate))
         print("Ref:")
         for feerate, avgwait in zip(*waitsref):
@@ -49,7 +50,7 @@ class TransientRefCmp(unittest.TestCase):
 
         for avgwait, avgwaitref in zip(avgwaittimes, waitsref[1]):
             logdiff = abs(log(avgwait) - log(avgwaitref))
-            print("avgwait/avgwaitref is {}.".format(avgwait/avgwaitref))
+            print("logdiff is {}.".format(logdiff))
             # Probabilistic test
             self.assertLess(logdiff, 0.1)
 
@@ -115,14 +116,14 @@ class TransientOnlineTests(unittest.TestCase):
             print("===========")
             print("Expected wait:")
             print(stats.expectedwaits)
-            self.assertEqual(stats.expectedwaits(44640),
-                             stats.expectedwaits(44641))
+            self.assertEqual(stats.expectedwaits(46599),
+                             stats.expectedwaits(46600))
             minwait = stats.expectedwaits.waits[-1]
             self.assertIsNotNone(stats.expectedwaits.inv(minwait))
             self.assertIsNone(stats.expectedwaits.inv(minwait-1))
 
             currtime = 0
-            for feerate in [2680, 10000, 44640, 44641]:
+            for feerate in [1029, 10000, 46599, 46600]:
                 txpredict = stats.predict(feerate, currtime)
                 self.assertEqual(txpredict.calc_pval(currtime+0), 1)
                 self.assertEqual(
@@ -136,7 +137,7 @@ class TransientOnlineTests(unittest.TestCase):
                     pval = txpredict.calc_pval(blocktime)
                     self.assertAlmostEqual(pval, 1-pctl)
 
-            txpredict = stats.predict(2679, currtime)
+            txpredict = stats.predict(1028, currtime)
             self.assertIsNone(txpredict)
 
             for i in range(2):

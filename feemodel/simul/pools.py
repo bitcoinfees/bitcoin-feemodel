@@ -50,7 +50,7 @@ class SimPools(object):
         if not self.pools:
             raise ValueError("No pools.")
         if any([pool.hashrate <= 0 or
-                pool.maxblocksize < 0 or
+                pool.maxblocksize <= 0 or
                 pool.minfeerate < 0
                 for pool in self.pools.values()]):
             raise ValueError("Bad pool stats.")
@@ -74,12 +74,14 @@ class SimPools(object):
             yield simblock, blockinterval
 
     def get_capacityfn(self):
+        """Get cumulative capacity as function of minfeerate."""
         self.check()
         totalhashrate = self.calc_totalhashrate()
 
         def byterate_groupsum(grouptuple):
-            return sum([pool.hashrate*pool.maxblocksize/totalhashrate
-                        for pool in grouptuple[1]])*self.blockrate
+            return sum(
+                [pool.hashrate*pool.maxblocksize
+                 for pool in grouptuple[1]])*self.blockrate/totalhashrate
 
         pools = filter(
             lambda pool: pool.minfeerate < float("inf"),
@@ -88,11 +90,29 @@ class SimPools(object):
         caps = list(cumsum_gen(
             groupby(pools, attrgetter("minfeerate")), mapfn=byterate_groupsum))
 
-        if not feerates or feerates[0] != 0:
-            feerates.insert(0, 0)
-            caps.insert(0, 0)
+        feerates.insert(0, feerates[0]-1)
+        caps.insert(0, 0)
 
         return StepFunction(feerates, caps)
+
+    def get_hashratefn(self):
+        """Get cumulative hashrate as function of minfeerate."""
+        self.check()
+
+        def hashrate_groupsum(grouptuple):
+            return sum(map(attrgetter("hashrate"), grouptuple[1]))
+
+        pools = filter(
+            lambda pool: pool.minfeerate < float("inf"),
+            sorted(self.pools.values(), key=attrgetter("minfeerate")))
+        feerates = sorted(set(map(attrgetter("minfeerate"), pools)))
+        hashrates = list(cumsum_gen(
+            groupby(pools, attrgetter("minfeerate")), mapfn=hashrate_groupsum))
+
+        feerates.insert(0, feerates[0]-1)
+        hashrates.insert(0, 0)
+
+        return StepFunction(feerates, hashrates)
 
     def calc_totalhashrate(self):
         return sum([pool.hashrate for pool in self.pools.values()])

@@ -13,6 +13,7 @@ seed(0)
 
 
 class GetCoinbaseInfoTest(unittest.TestCase):
+
     def test_get_coinbase_info(self):
         for height in range(339000, 334000):
             addresses, tag = get_coinbase_info(blockheight=height)
@@ -23,6 +24,7 @@ class GetCoinbaseInfoTest(unittest.TestCase):
 
 
 class RoundRandomTest(unittest.TestCase):
+
     def test_round_random(self):
         target_std = 0.01
         f = 97.833  # Just a random float
@@ -42,6 +44,7 @@ class RoundRandomTest(unittest.TestCase):
 
 
 class DataSampleTest(unittest.TestCase):
+
     def test_datasample(self):
         sample = [random() for i in xrange(100000)]
         d = DataSample()
@@ -57,6 +60,7 @@ class DataSampleTest(unittest.TestCase):
 
 
 class InterpolateTest(unittest.TestCase):
+
     def test_interpolate(self):
         x = [1.5, 3.5]
         y = [10.0, 5.0]
@@ -69,6 +73,7 @@ class InterpolateTest(unittest.TestCase):
 
 
 class FunctionTest(unittest.TestCase):
+
     def test_A(self):
         def fn(x):
             return -2*x
