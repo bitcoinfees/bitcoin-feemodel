@@ -14,7 +14,7 @@ from bitcoin.core import b2lx
 
 from feemodel.config import config, datadir, MINRELAYTXFEE, PRIORITYTHRESH
 from feemodel.util import (proxy, StoppableThread, get_feerate, WorkerThread,
-                           cumsum_gen, get_block_name, StepFunction)
+                           cumsum_gen, BlockMetadata, StepFunction)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul.simul import SimEntry
 
@@ -279,7 +279,7 @@ class MemBlock(MempoolState):
         self.blockheight = state.height + 1
         block = proxy.getblock(proxy.getblockhash(self.blockheight))
         self.blocksize = len(block.serialize())
-        blockname = get_block_name(self.blockheight)
+        blockname = BlockMetadata(self.blockheight).get_poolname()
 
         blocktxids = [b2lx(tx.GetHash()) for tx in block.vtx]
         entries_inblock = set(self.entries) & set(blocktxids)

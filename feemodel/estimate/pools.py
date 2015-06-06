@@ -8,8 +8,8 @@ from operator import attrgetter
 from tabulate import tabulate
 
 import feemodel.config
-from feemodel.util import (get_block_timestamp, get_block_size,
-                           get_coinbase_info, get_hashesperblock)
+from feemodel.util import (get_block_timestamp, get_hashesperblock,
+                           BlockMetadata)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
 from feemodel.simul import SimPool, SimPools
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
@@ -17,23 +17,6 @@ from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 logger = logging.getLogger(__name__)
 
 MAX_TXS = 20000
-
-
-class BlockMetadata(object):
-    """Contains info relevant to pool clustering."""
-
-    def __init__(self, height):
-        self.height = height
-        self.addrs, self.tag = get_coinbase_info(height)
-        self.size = get_block_size(height)
-        self.hashes = get_hashesperblock(height)
-
-    def __and__(self, other):
-        return set(self.addrs) & set(other.addrs)
-
-    def __repr__(self):
-        return ("BlockMetaData(height: {}, size: {})".
-                format(self.height, self.size))
 
 
 class PoolEstimate(SimPool):
@@ -63,16 +46,10 @@ class PoolEstimate(SimPool):
             if memblock is None:
                 nummissingblocks += 1
                 continue
-            inblocktxs = filter(attrgetter("inblock"),
-                                memblock.entries.values())
-            if inblocktxs:
-                totaltxsize = sum(map(attrgetter("size"), inblocktxs))
-                avgtxsize = totaltxsize / len(inblocktxs)
-            else:
-                avgtxsize = 0.
-            # We assume a block is fee-limited if its size is smaller than
-            # the maxblocksize, minus a margin of 3 times the blk avg tx size.
-            if self.maxblocksize - memblock.blocksize > 3*avgtxsize:
+            # We assume a block is fee-limited if its size is more than 10 kB
+            # smaller than the max block size.
+            # TODO: find a better way of choosing the margin size.
+            if self.maxblocksize - memblock.blocksize > 10000:
                 self.feelimitedblocks.append(blockmeta)
                 txs.extend(tx_preprocess(memblock))
                 # Only take up to MAX_TXS of the most recent transactions.
@@ -114,6 +91,20 @@ class PoolEstimate(SimPool):
             logger.warning("MFR estimation: {} missing blocks.".
                            format(nummissingblocks))
 
+    def __and__(self, other):
+        """Check if there is output address overlap."""
+        # Only use addrs that are not None.  Recall that None addr means that
+        # there was an error raised by CBitcoinAddress.from_scriptPubKey.
+        selfaddrs = sum(map(attrgetter("addrs"), self.blocks), [])
+        otheraddrs = sum(map(attrgetter("addrs"), other.blocks), [])
+        selfaddrs_notnone = filter(bool, selfaddrs)
+        otheraddrs_notnone = filter(bool, otheraddrs)
+        return bool(set(selfaddrs_notnone) & set(otheraddrs_notnone))
+
+    def __add__(self, other):
+        """Add the blocks of other to the blocks of self."""
+        self.blocks.extend(other.blocks)
+
     def get_addresses(self):
         "Get the coinbase output addresses of blocks by this pool."
         return set(sum([b.addrs for b in self.blocks], []))
@@ -126,9 +117,6 @@ class PoolsEstimator(SimPools):
         self.blockrate = None
         self.blocksmetadata = {}
         self.timestamp = 0.
-
-    def update(self):
-        super(PoolsEstimator, self).update(self.pools)
 
     def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         logger.info("Beginning pool estimation "
@@ -160,57 +148,23 @@ class PoolsEstimator(SimPools):
         if not self.blocksmetadata:
             raise ValueError("Empty block range.")
 
-        clusters = []
-        # Cluster by address
-        for block in self.blocksmetadata.values():
-            matched_existing = False
-            for cluster in clusters:
-                if any([self.blocksmetadata[height] & block
-                        for height in cluster]):
-                    cluster.add(block.height)
-                    matched_existing = True
-                    break
-            if not matched_existing:
-                clusters.append(set((block.height,)))
-
-        # Group clusters by tags
         pooltags = feemodel.config.pooltags
         pools = defaultdict(PoolEstimate)
-        for idx, cluster in enumerate(clusters):
-            assigned_name = None
-            for name, taglist in pooltags.items():
-                num_tag_match = sum([
-                    any([tag in self.blocksmetadata[height].tag
-                         for tag in taglist])
-                    for height in cluster])
-                match_proportion = num_tag_match / len(cluster)
-                if match_proportion > 0.5:
-                    # More than half the blocks in the cluster have at least
-                    # one of the tags in taglist as a substring
-                    if not assigned_name:
-                        assigned_name = name
-                    else:
-                        # A cluster is assigned to two separate names.
-                        # This means something weird is happening, so don't
-                        # assign it to any known name at all.
-                        logger.error(
-                            "Cluster {} assigned to names {} and {}.".
-                            format(idx, name, assigned_name))
-                        assigned_name = None
+        for block in self.blocksmetadata.values():
+            pools[block.get_poolname()].blocks.append(block)
+
+        still_clustering = True
+        while still_clustering:
+            still_clustering = False
+            for poolname, pool in pools.items():
+                if poolname in pooltags:
+                    continue
+                for hostpool in pools.values():
+                    if hostpool is not pool and hostpool & pool:
+                        hostpool + pool
+                        del pools[poolname]
+                        still_clustering = True
                         break
-            if assigned_name is None:
-                clusterblocks = [self.blocksmetadata[height]
-                                 for height in cluster]
-                addrs = sorted(sum([b.addrs for b in clusterblocks], []))
-                for addr in addrs:
-                    if addr is not None:
-                        assigned_name = addr[:12] + "_"
-                        break
-            if assigned_name is None:
-                logger.warning("No name for cluster {}.".format(idx))
-                assigned_name = "Cluster" + str(idx)
-            clusterblocks = [self.blocksmetadata[height] for height in cluster]
-            pools[assigned_name].blocks.extend(clusterblocks)
 
         newnames = set(pools) - set(self.pools)
         for name in newnames:

@@ -478,6 +478,44 @@ class StepFunction(Function):
         return StepFunction(list(self._x), list(self._y))
 
 
+class BlockMetadata(object):
+    """Block metadata.
+
+    Coinbase addresses / tag, block size, mean hashes per block
+    (function of nBits).
+    """
+
+    def __init__(self, height):
+        self.height = height
+        self.addrs, self.tag = get_coinbase_info(height)
+        self.size = get_block_size(height)
+        self.hashes = get_hashesperblock(height)
+
+    def get_poolname(self):
+        pooltags = feemodel.config.pooltags
+        assigned_name = None
+        for name, taglist in pooltags.items():
+            if any([tag in self.tag for tag in taglist]):
+                if assigned_name is not None:
+                    logger.warning("Multiple name assignment in block {}.".
+                                   format(self.height))
+                else:
+                    assigned_name = name
+        if assigned_name is None:
+            for addr in self.addrs:
+                if addr is not None:
+                    assigned_name = addr[:12] + "_"
+                    break
+        if assigned_name is None:
+            assigned_name = "UNKNOWN_" + str(self.height)
+
+        return assigned_name
+
+    def __repr__(self):
+        return ("BlockMetaData(height: {}, size: {})".
+                format(self.height, self.size))
+
+
 def save_obj(obj, filename, protocol=2):
     '''Convenience function to pickle an object to disk.'''
     with open(filename, 'wb') as f:
@@ -549,20 +587,23 @@ def get_block_size(blockheight):
     return len(block.serialize())
 
 
+# TODO: Deprecate in favour of BlockMetadata.get_poolname
 def get_block_name(blockheight):
     """Get name of the pool which produced the block.
 
     Matches the block coinbase tag with pool tags in pooltags.json.
-    This is for info purposes only and not for pool clustering / pool
-    parameter estimation.
     """
+    raise NotImplementedError
     pooltags = feemodel.config.pooltags
     cb_addrs, cb_tag = get_coinbase_info(blockheight)
     assigned_name = None
     for name, taglist in pooltags.items():
         if any([tag in cb_tag for tag in taglist]):
-            assigned_name = name
-            break
+            if assigned_name is not None:
+                logger.warning("Multiple name assignment in block {}.".
+                               format(blockheight))
+            else:
+                assigned_name = name
     if assigned_name is None:
         cb_addrs.sort()
         for addr in cb_addrs:
@@ -570,7 +611,7 @@ def get_block_name(blockheight):
                 assigned_name = addr[:12] + "_"
                 break
     if assigned_name is None:
-        assigned_name = "UNKNOWN"
+        assigned_name = "UNKNOWN_" + str(blockheight)
 
     return assigned_name
 
