@@ -74,21 +74,26 @@ class Capacity(object):
         for feerate, cap in reversed(list(self.capfn)):
             capthresh = cap*utilization_thresh
             txbyterate = self.txbyteratefn(feerate)
-            residual_byterate = txbyterate - allocatedbyterate
+            # TODO: remove after debug
+            assert round(txbyterate) >= round(allocatedbyterate)
+            # Ensure that it doesn't go below 0 due to rounding errors.
+            residual_byterate = max(txbyterate - allocatedbyterate, 0)
+            if capthresh <= residual_byterate:
+                break
+            laststablefeerate = feerate
+            procbyterate = self._allocate_byterate(feerate,
+                                                   residual_byterate)
+            feerates.append(feerate)
+            procbyterates.append(procbyterate)
+            allocatedbyterate += procbyterate
+
+        for txfeerate, txbyterate in self.txbyteratefn:
+            if txfeerate >= laststablefeerate:
+                break
+            residual_byterate = max(txbyterate - allocatedbyterate, 0)
             if capthresh > residual_byterate:
-                laststablefeerate = feerate
-                procbyterate = self._allocate_byterate(feerate,
-                                                       residual_byterate)
-                feerates.append(feerate)
-                procbyterates.append(procbyterate)
-                allocatedbyterate += procbyterate
-                continue
-            # Queue is no longer stable.
-            for txfeerate, txbyterate in self.txbyteratefn:
-                residual_byterate = txbyterate - allocatedbyterate
-                if residual_byterate < capthresh:
-                    laststablefeerate = min(laststablefeerate, txfeerate)
-                    break
+                laststablefeerate = min(laststablefeerate, txfeerate)
+                break
 
         feerates.reverse()
         procbyterates.reverse()
