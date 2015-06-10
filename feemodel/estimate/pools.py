@@ -3,7 +3,7 @@ from __future__ import division
 import logging
 from time import time
 from collections import defaultdict
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 
 from tabulate import tabulate
 
@@ -23,8 +23,6 @@ class PoolEstimate(SimPool):
 
     def __init__(self):
         self.blocks = []
-        self.feelimitedblocks = None
-        self.sizelimitedblocks = None
         self.mfrstats = None
         super(PoolEstimate, self).__init__(None, None, float("inf"))
 
@@ -34,41 +32,62 @@ class PoolEstimate(SimPool):
         self.maxblocksize = max(map(attrgetter("size"), self.blocks))
 
         txs = []
-        self.feelimitedblocks = []
-        self.sizelimitedblocks = []
+        feelimitedblocks = []
+        sizelimitedblocks = []
+        for blockmeta in self.blocks:
+            # We assume a block is fee-limited if its size is more than 10 kB
+            # smaller than the max block size.
+            # TODO: find a better way of choosing the margin size.
+            if self.maxblocksize - blockmeta.size > 10000:
+                feelimitedblocks.append(blockmeta)
+            else:
+                sizelimitedblocks.append(blockmeta)
+
+        if feelimitedblocks:
+            # For minfeerate estimation, prioritize medium-sized
+            # and recent blocks.
+            # We should avoid both small blocks (where minblocksize
+            # and blockprioritysize effects may be in play) and large blocks
+            # (max block size may have been reached). Separating
+            # feelimitedblocks and sizelimitedblocks works most of the time,
+            # however when pools are changing their max block size policy,
+            # it would lead to inaccurate results.
+            # Prioritizing recent blocks helps in the case where pools are
+            # changing their minfeerate policy.
+            meanblocksize = (
+                sum(map(attrgetter("size"), feelimitedblocks)) /
+                len(feelimitedblocks))
+            blockscores = [[block, 0] for block in feelimitedblocks]
+            blockscores.sort(key=lambda b: abs(b[0].size-meanblocksize))
+            for idx, blockscore in enumerate(blockscores):
+                blockscore[1] = max(idx, blockscore[1])
+            blockscores.sort(key=lambda b: b[0].height, reverse=True)
+            for idx, blockscore in enumerate(blockscores):
+                blockscore[1] = max(idx, blockscore[1])
+            blockscores.sort(key=itemgetter(1))
+            feelimitedblocks, dummy = zip(*blockscores)
 
         nummissingblocks = 0
-        for blockmeta in sorted(self.blocks, key=attrgetter("height"),
-                                reverse=True):
+        for blockmeta in feelimitedblocks:
             if stopflag and stopflag.is_set():
                 raise StopIteration("Stop flag set.")
             memblock = MemBlock.read(blockmeta.height, dbfile=dbfile)
             if memblock is None:
                 nummissingblocks += 1
                 continue
-            # We assume a block is fee-limited if its size is more than 10 kB
-            # smaller than the max block size.
-            # TODO: find a better way of choosing the margin size.
-            if self.maxblocksize - memblock.blocksize > 10000:
-                self.feelimitedblocks.append(blockmeta)
-                txs.extend(tx_preprocess(memblock))
-                # Only take up to MAX_TXS of the most recent transactions.
-                # If MAX_TXS is sufficiently high, this helps the adaptivity
-                # of the estimation (i.e. react more quickly to changes in
-                # the pool's minfeerate, at a small cost to the estimate
-                # precision). The optimal figure will depend on the tx byte
-                # rate profile: are there sufficient transactions with a
-                # feerate close to the pool's minfeerate? In the future
-                # MAX_TXS could be selected automatically.
-                if len(txs) >= MAX_TXS:
-                    break
-            else:
-                self.sizelimitedblocks.append(blockmeta)
+            txs.extend(tx_preprocess(memblock))
+            # Only take up to MAX_TXS txs.
+            # The optimal figure will depend on the tx byte rate profile:
+            # are there sufficient transactions with a feerate close to
+            # the pool's minfeerate? In the future MAX_TXS could be selected
+            # automatically.
+            if len(txs) >= MAX_TXS:
+                break
 
-        if not txs and self.sizelimitedblocks:
+        if not txs and sizelimitedblocks:
             # All the blocks are close to the max block size.
             # This should happen rarely, so we just choose the smallest block.
-            smallestblock = min(self.sizelimitedblocks, key=attrgetter("size"))
+            smallestblock = min(sizelimitedblocks, key=attrgetter("size"))
             memblock = MemBlock.read(smallestblock.height, dbfile=dbfile)
             if memblock:
                 txs.extend(tx_preprocess(memblock))
