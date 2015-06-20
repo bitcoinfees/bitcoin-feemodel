@@ -624,7 +624,7 @@ class PseudoPools(SimPools):
     """SimPools with deterministic blockgen."""
 
     def __init__(self):
-        super(PseudoPools, self).__init__(pools=ref_pools)
+        super(PseudoPools, self).__init__(ref_pools)
 
     def blockgen(self):
         poolitems = sorted(self.pools.items(),
