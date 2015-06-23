@@ -16,7 +16,7 @@ from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 
 logger = logging.getLogger(__name__)
 
-MAX_TXS = 20000
+MAX_TXS = 50000
 
 
 class PoolEstimate(SimPool):
