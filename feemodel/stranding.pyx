@@ -86,7 +86,8 @@ def calc_stranding_feerate(txs, bootstrap=True,
     # TODO: change default to -1 or None, instead of inf
 
     return {"sfr": sfr, "bias": bias, "mean": mean, "std": std,
-            "abovekn": (abovek, aboven), "belowkn": (belowk, belown)}
+            "abovekn": (abovek, aboven), "belowkn": (belowk, belown),
+            "altbiasref": alt_bias_ref}
 
 
 def _get_bs_estimates(txs, N, numprocesses):

@@ -8,15 +8,95 @@ from operator import attrgetter, itemgetter
 from tabulate import tabulate
 
 import feemodel.config
+from feemodel.config import MINRELAYTXFEE, DIFF_RETARGET_INTERVAL
 from feemodel.util import (get_block_timestamp, get_hashesperblock,
                            BlockMetadata)
 from feemodel.stranding import tx_preprocess, calc_stranding_feerate
-from feemodel.simul import SimPool, SimPools
+from feemodel.simul.pools import SimPool, SimPools, SimPoolsNP
 from feemodel.txmempool import MemBlock, MEMBLOCK_DBFILE
 
 logger = logging.getLogger(__name__)
 
 MAX_TXS = 50000
+
+
+class PoolsEstimatorNP(SimPoolsNP):
+
+    def __init__(self):
+        super(PoolsEstimatorNP, self).__init__(None, None, blockrate=None)
+        self.blockstats = {}
+
+    def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
+        logger.info("Beginning NP pool estimation "
+                    "from blockrange({}, {})".format(*blockrangetuple))
+        for height in range(*blockrangetuple):
+            if height in self.blockstats:
+                continue
+            if stopflag and stopflag.is_set():
+                raise StopIteration("Stop flag set.")
+            memblock = MemBlock.read(height, dbfile=dbfile)
+            if memblock is None:
+                continue
+            self.update(memblock, is_init=True)
+        self._calc_estimates()
+
+    def update(self, memblock, is_init=False, windowsize=None):
+        sfr_stats = memblock.calc_stranding_feerate()
+        if sfr_stats['altbiasref'] == MINRELAYTXFEE:
+            sfr = MINRELAYTXFEE
+        else:
+            sfr = sfr_stats['sfr']
+        mempoolsize = sum(
+            map(attrgetter("size"), memblock.entries.values()))
+        self.blockstats[memblock.height] = (
+            mempoolsize, memblock.time, memblock.blocksize, sfr)
+        if windowsize:
+            height_thresh = memblock.height - windowsize + 1
+            for height in self.blockstats.keys():
+                if height < height_thresh:
+                    del self.blockstats[height]
+        if not is_init:
+            self._calc_estimates()
+
+    def _calc_estimates(self, blockmingap=300, tailpct=0.05):
+        if len(self.blockstats) < 2:
+            raise ValueError("Not enough blocks.")
+        startheight = min(self.blockstats)
+        endheight = max(self.blockstats)
+
+        # Calculate blockrate
+        numhashes = None
+        totalhashes = 0
+        for height in range(startheight, endheight+1):
+            if numhashes is None or not height % DIFF_RETARGET_INTERVAL:
+                numhashes = get_hashesperblock(height)
+            totalhashes += numhashes
+        starttime = self.blockstats[startheight][1]
+        endtime = self.blockstats[endheight][1]
+        hashrate = totalhashes / (endtime - starttime)
+        self.blockrate = hashrate / numhashes
+
+        prevtime = None
+        prevheight = None
+        blockstats = []
+        for height, blockstat in sorted(self.blockstats.items()):
+            if prevheight is not None and (
+                    height == prevheight + 1 and
+                    blockstat[1] > prevtime + blockmingap):
+                blockstats.append(blockstat)
+            prevtime = blockstat[1]
+            prevheight = height
+
+        if not blockstats:
+            # This really shouldn't happen at all.
+            raise ValueError("Not enough blocks.")
+
+        # Calculate minfeerates and maxblocksizes
+        blockstats.sort()
+        # minfeerates are from the lower t percent of the blocks
+        tailidx = int(tailpct*len(blockstats))
+        self.minfeerates = map(itemgetter(3), blockstats[:tailidx])
+        self.maxblocksizes = map(itemgetter(2), blockstats[-tailidx:])
 
 
 class PoolEstimate(SimPool):

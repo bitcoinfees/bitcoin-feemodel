@@ -1,19 +1,21 @@
 from __future__ import division
 
-from random import random, expovariate
+from random import random, expovariate, choice
 from bisect import bisect_left
 from itertools import groupby
 from operator import attrgetter
+from collections import Counter
 
 from tabulate import tabulate
 
 from feemodel.util import cumsum_gen, StepFunction
 from feemodel.simul.simul import SimBlock
 
-default_blockrate = 1./600
+DEFAULT_BLOCKRATE = 1./600
 
 
 class SimPool(object):
+
     def __init__(self, hashrate, maxblocksize, minfeerate):
         self.hashrate = hashrate
         self.maxblocksize = maxblocksize
@@ -40,9 +42,67 @@ class SimPool(object):
             for attr in relevant_attrs])
 
 
+class SimPoolsNP(object):
+
+    def __init__(self, maxblocksizes, minfeerates,
+                 blockrate=DEFAULT_BLOCKRATE):
+        self.maxblocksizes = maxblocksizes
+        self.minfeerates = minfeerates
+        self.blockrate = blockrate
+
+    def check(self):
+        for attr in ['maxblocksizes', 'minfeerates', 'blockrate']:
+            if not getattr(self, attr):
+                raise ValueError("{} must be nonzero.".format(attr))
+
+    def blockgen(self):
+        self.check()
+        while True:
+            blockinterval = expovariate(self.blockrate)
+            maxblocksize = choice(self.maxblocksizes)
+            minfeerate = choice(self.minfeerates)
+            pool = SimPool(1, maxblocksize, minfeerate)
+            simblock = SimBlock('', pool)
+            yield simblock, blockinterval
+
+    def get_capacityfn(self):
+        def cap_mapfn(y):
+            return (y*expected_maxblocksize*self.blockrate /
+                    len(self.minfeerates))
+
+        expected_maxblocksize = (
+            sum(self.maxblocksizes) / len(self.maxblocksizes))
+        cap_fn = self.get_hashratefn()
+        cap_fn._y = map(cap_mapfn, cap_fn._y)
+
+        return cap_fn
+
+    def get_hashratefn(self):
+        self.check()
+        feerates_all = filter(lambda f: f < float("inf"), self.minfeerates)
+        feerates_count = Counter(feerates_all)
+        feerates, counts = map(list, zip(*sorted(feerates_count.items())))
+
+        caps = list(cumsum_gen(counts))
+        feerates.insert(0, feerates[0]-1)
+        caps.insert(0, 0)
+
+        return StepFunction(feerates, caps)
+
+    def calc_totalhashrate(self):
+        return len(self.minfeerates)
+
+    def __nonzero__(self):
+        try:
+            self.check()
+        except ValueError:
+            return False
+        return True
+
+
 class SimPools(object):
 
-    def __init__(self, pools, blockrate=default_blockrate):
+    def __init__(self, pools, blockrate=DEFAULT_BLOCKRATE):
         self.pools = pools
         self.blockrate = blockrate
 
