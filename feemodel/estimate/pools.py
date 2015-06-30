@@ -105,6 +105,7 @@ class PoolsEstimatorNP(SimPoolsNP):
         tailidx = int(ceil(tailpct*len(blockstats)))
         self.minfeerates = map(itemgetter(3), blockstats[:tailidx])
         self.maxblocksizes = map(itemgetter(2), blockstats[-tailidx:])
+        return blockstats
 
     def __str__(self):
         try:
