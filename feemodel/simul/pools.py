@@ -99,6 +99,11 @@ class SimPoolsNP(object):
             return False
         return True
 
+    def __eq__(self, other):
+        return all([
+            getattr(self, attr) == getattr(other, attr)
+            for attr in ['maxblocksizes', 'minfeerates', 'blockrate']])
+
 
 class SimPools(object):
 

@@ -6,6 +6,7 @@ import logging
 from feemodel.txmempool import TxMempool
 from feemodel.config import datadir, config
 from feemodel.util import load_obj, save_obj, logexceptions, WorkerThread
+import feemodel.util
 from feemodel.app.pools import PoolsOnlineEstimator
 from feemodel.app.txrate import TxRateOnlineEstimator
 from feemodel.app.transient import TransientOnline
@@ -22,9 +23,11 @@ class SimOnline(TxMempool):
         self.predictworker = WorkerThread(self.update_predicts)
         self.load_predicts()
 
+        currheight = feemodel.util.proxy.getblockcount()
         self.poolsonline = PoolsOnlineEstimator(
+            currheight,
+            self.get_stop_object(),
             config.getint("app", "pools_window"),
-            update_period=config.getint("app", "pools_update_period"),
             minblocks=config.getint("app", "pools_minblocks"))
         self.txonline = TxRateOnlineEstimator(
             halflife=config.getint("app", "txrate_halflife"))
@@ -47,14 +50,13 @@ class SimOnline(TxMempool):
 
     def update(self):
         state = super(SimOnline, self).update()
-        self.poolsonline.update_async(
-            state.height, stopflag=self.get_stop_object())
         self.predictworker.put(state, self.transient.stats)
         self.txonline.update(state)
 
     def process_blocks(self, *args):
         memblocks = super(SimOnline, self).process_blocks(*args)
         self.predictworker.put(memblocks)
+        self.poolsonline.update(memblocks)
 
     def update_predicts(self, *args):
         if len(args) == 2:

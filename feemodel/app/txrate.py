@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 class TxRateOnlineEstimator(object):
 
     def __init__(self, halflife=DEFAULT_HALFLIFE):
-        self.tx_estimator = ExpEstimator(halflife)
+        self.halflife = halflife
+        self.tx_estimator = None
 
     def update(self, state):
         tx_estimator = copy(self.tx_estimator)
-        if not tx_estimator:
+        if tx_estimator is None:
+            tx_estimator = ExpEstimator(self.halflife)
             tx_estimator.start(state.height)
         tx_estimator.update(state)
         logger.debug(repr(tx_estimator))
@@ -30,10 +32,10 @@ class TxRateOnlineEstimator(object):
         return self.tx_estimator
 
     def get_stats(self):
-        est = self.tx_estimator
         stats = {
-            "params": {"halflife": est.halflife},
+            "params": {"halflife": self.halflife},
         }
+        est = self.tx_estimator
         if not est:
             return stats
         byteratefn = est.get_byteratefn()
@@ -56,4 +58,6 @@ class TxRateOnlineEstimator(object):
         return stats
 
     def __nonzero__(self):
+        # TODO: Deprecate this
+        raise NotImplementedError
         return bool(self.tx_estimator)

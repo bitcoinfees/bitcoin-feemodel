@@ -2,6 +2,7 @@ from __future__ import division
 
 import logging
 from time import time
+from math import ceil
 from collections import defaultdict
 from operator import attrgetter, itemgetter
 
@@ -29,6 +30,7 @@ class PoolsEstimatorNP(SimPoolsNP):
     def start(self, blockrangetuple, stopflag=None, dbfile=MEMBLOCK_DBFILE):
         logger.info("Beginning NP pool estimation "
                     "from blockrange({}, {})".format(*blockrangetuple))
+        self._clear_window(blockrangetuple[0])
         for height in range(*blockrangetuple):
             if height in self.blockstats:
                 continue
@@ -39,6 +41,7 @@ class PoolsEstimatorNP(SimPoolsNP):
                 continue
             self.update(memblock, is_init=True)
         self._calc_estimates()
+        logger.info("Finished NP pool estimation.")
 
     def update(self, memblock, is_init=False, windowsize=None):
         sfr_stats = memblock.calc_stranding_feerate()
@@ -48,19 +51,24 @@ class PoolsEstimatorNP(SimPoolsNP):
             sfr = sfr_stats['sfr']
         mempoolsize = sum(
             map(attrgetter("size"), memblock.entries.values()))
-        self.blockstats[memblock.height] = (
+        self.blockstats[memblock.blockheight] = (
             mempoolsize, memblock.time, memblock.blocksize, sfr)
         if windowsize:
-            height_thresh = memblock.height - windowsize + 1
-            for height in self.blockstats.keys():
-                if height < height_thresh:
-                    del self.blockstats[height]
+            height_thresh = memblock.blockheight - windowsize + 1
+            self._clear_window(height_thresh)
         if not is_init:
             self._calc_estimates()
 
-    def _calc_estimates(self, blockmingap=300, tailpct=0.05):
+    def _clear_window(self, height_thresh):
+        for height in self.blockstats.keys():
+            if height < height_thresh:
+                del self.blockstats[height]
+
+    def _calc_estimates(self, blockmingap=300, tailpct=0.1):
         if len(self.blockstats) < 2:
-            raise ValueError("Not enough blocks.")
+            # TODO: better checks, taking into consideration tailpct
+            # raise ValueError("Not enough blocks.")
+            return
         startheight = min(self.blockstats)
         endheight = max(self.blockstats)
 
@@ -94,9 +102,20 @@ class PoolsEstimatorNP(SimPoolsNP):
         # Calculate minfeerates and maxblocksizes
         blockstats.sort()
         # minfeerates are from the lower t percent of the blocks
-        tailidx = int(tailpct*len(blockstats))
+        tailidx = int(ceil(tailpct*len(blockstats)))
         self.minfeerates = map(itemgetter(3), blockstats[:tailidx])
         self.maxblocksizes = map(itemgetter(2), blockstats[-tailidx:])
+
+    def __str__(self):
+        try:
+            self.check()
+        except ValueError as e:
+            return e.message
+        minfeerates = sorted(self.minfeerates)
+        maxblocksizes = sorted(self.maxblocksizes)
+        s = ("minfeerates: {}\nmaxblocksizes: {}\nblockinterval: {}".
+             format(minfeerates, maxblocksizes, 1 / self.blockrate))
+        return s
 
 
 class PoolEstimate(SimPool):

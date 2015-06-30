@@ -39,52 +39,8 @@ def start(mempool, external):
 
 @cli.command()
 def pools():
-    '''Get mining pool statistics.
-
-    *** COLUMNS ***
-
-    \b
-    [Name]  Name of the pool, as specified by blockchain.info's pools.json.
-            If pool is unidentified, the name is the first valid coinbase
-            payout address.
-
-    [HR]    Hashrate in Terahashes per second.
-
-    [Prop]  Proportion of the total hashrate.
-
-    [MBS]   Max block size of the pool.
-
-    [MFR]   Min fee rate of the pool.
-
-    \b
-    [AKN]   "Above k and n" values. The number of transactions (k) that were
-            above the min fee rate and were included in their respective block,
-            compared to the total number of transactions (n).
-
-    \b
-    [BKN]   "Below k and n" values. Identical to AKN but for transactions below
-            the min fee rate.
-
-    ***
-    The following cols relate to the sampling distribution of the MFR
-    estimator, obtained using bootstrap resampling.
-
-    [MFR.mean]  Expected value of the MFR estimator.
-
-    [MFR.std]   Standard deviation of the MFR estimator.
-
-    [MFR.bias]  Bias of the MFR estimator.
-
-    *** MISC STATS ***
-
-    Timestamp: Date/time at which the estimates were computed, in local time.
-
-    Block interval: The estimated mean time between blocks.
-    '''
-    import time
+    '''Get mining pool statistics.'''
     from tabulate import tabulate
-    from itertools import groupby
-    from feemodel.util import cumsum_gen, StepFunction
     try:
         stats = client.get_pools()
     except Exception as e:
@@ -94,66 +50,19 @@ def pools():
     table = [(paramname, param) for paramname, param in params.items()]
     click.echo("Params:")
     click.echo(tabulate(table))
-    if 'pools' not in stats:
+    if 'blockinterval' not in stats:
         # No valid estimates ready.
-        click.echo(
-            "Block shortfall of {}; trying next update at {}".
-            format(stats['block_shortfall'], time.ctime(stats['next_update'])))
+        click.echo("Insufficient number of blocks.")
         return
 
-    pools = stats['pools']
-    headers = ['Name', 'HR (Thps)', 'Prop', 'MBS', 'MFR', 'AKN', 'BKN',
-               'MFR.mean', 'MFR.std', 'MFR.bias']
-    pitems = sorted(pools.items(),
-                    key=lambda p: p[1]['proportion'], reverse=True)
-    table = [[
-        name,
-        pool['hashrate']*1e-12,
-        pool['proportion'],
-        pool['maxblocksize'],
-        pool['minfeerate'],
-        pool['abovekn'],
-        pool['belowkn'],
-        pool['mfrmean'],
-        pool['mfrstd'],
-        pool['mfrbias']]
-        for name, pool in pitems]
-    click.echo('')
-    click.echo(tabulate(table, headers=headers))
-    click.echo('')
-
-    def mfr_keyfn(poolitem):
-        return poolitem[1]['minfeerate']
-
-    def sumgroupbyterates(grouptuple):
-        feerate, feegroup = grouptuple
-        blockrate = 1 / stats['blockinterval']
-        totalhashrate = stats['totalhashrate']
-        groupbyterate = sum([
-            pool['hashrate']*pool['maxblocksize']
-            for name, pool in feegroup]) * blockrate / totalhashrate
-        return (feerate, groupbyterate)
-
-    pitems = filter(lambda pitem: pitem[1]['minfeerate'] < float("inf"),
-                    sorted(pitems, key=mfr_keyfn))
-    byterate_by_fee = map(sumgroupbyterates, groupby(pitems, mfr_keyfn))
-    feerates, byterates = zip(*byterate_by_fee)
-    capacity = list(cumsum_gen(byterates))
-    table = list(StepFunction(feerates, capacity).approx())
+    table = zip(stats['feerates'], stats['caps'])
 
     headers = ['Feerate', 'Capacity (bytes/s)']
     click.echo("Cumul. Capacity")
     click.echo("===============================")
     click.echo(tabulate(table, headers=headers))
     click.echo("")
-
-    table = [
-        ("Total hashrate (Thps)", stats['totalhashrate']*1e-12),
-        ("Block interval (s)", stats['blockinterval']),
-        ("Timestamp", time.ctime(stats['timestamp'])),
-        ("Next update", time.ctime(stats['next_update']))
-    ]
-    click.echo(tabulate(table))
+    click.echo("Block interval: {}s".format(stats['blockinterval']))
 
 
 @cli.command()

@@ -67,7 +67,7 @@ class BasicAppTests(unittest.TestCase):
         sim = SimOnline()
         print("Starting test A thread.")
         with sim.context_start():
-            while not sim.txonline:
+            while not sim.txonline.tx_estimator:
                 sleep(0.1)
             while not sim.transient.stats:
                 sleep(0.1)
@@ -102,11 +102,11 @@ class BasicAppTests(unittest.TestCase):
             predictionref = sim.prediction
 
         # Test loading of predicts and pools
-        config.set("app", "pools_minblocks", "432")
+        # config.set("app", "pools_minblocks", "432")
         sim = SimOnline()
         with sim.context_start():
             sleep(1)
-            self.assertTrue(sim.poolsonline)
+            self.assertTrue(sim.poolsonline.poolsestimate)
             self.assertEqual(poolsref, sim.poolsonline.get_pools())
             self.assertEqual(predictionref, sim.prediction)
 
@@ -134,6 +134,7 @@ class AppAPITests(unittest.TestCase):
         self.time = get_mytime()
         txmempool.time = self.time
         config.set("app", "pools_minblocks", "1")
+        config.set("app", "pools_window", "22")
 
         db = sqlite3.connect(MEMBLOCK_DBFILE)
         with db:
@@ -153,9 +154,17 @@ class AppAPITests(unittest.TestCase):
                 sleep(1)
             else:
                 break
+        print("Pools:")
+        print("======")
         pprint(apiclient.get_pools())
+        print("Mempool:")
+        print("========")
         pprint(apiclient.get_mempool())
+        print("Transient:")
+        print("==========")
         pprint(apiclient.get_transient())
+        print("Prediction:")
+        print("===========")
         pprint(apiclient.get_prediction())
         sleep(30)
         pprint(apiclient.get_pools())
@@ -168,6 +177,9 @@ class AppAPITests(unittest.TestCase):
         tr = apiclient.get_txsource_obj()
         print(pe)
         print(tr)
+        self.assertIn(333953, pe.blockstats)
+        self.assertNotIn(333931, pe.blockstats)
+        print(pe.blockstats[333953])
         print("Terminating main process.")
         process.terminate()
         process.join()
