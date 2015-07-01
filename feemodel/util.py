@@ -220,19 +220,19 @@ class BatchProxy(CacheProxy):
         '''
         with self.rlock:
             try:
-                self._RawProxy__id_count += 1
+                self._RawProxy__id_count += 2
                 rpc_call_list = [
                     {
                         'version': '1.1',
                         'method': 'getrawmempool',
                         'params': [True],
-                        'id': self._RawProxy__id_count
+                        'id': self._RawProxy__id_count-2
                     },
                     {
                         'version': '1.1',
                         'method': 'getblockcount',
                         'params': [],
-                        'id': self._RawProxy__id_count
+                        'id': self._RawProxy__id_count-1
                     }
                 ]
 
@@ -245,7 +245,8 @@ class BatchProxy(CacheProxy):
                             'code': -343, 'message': 'missing JSON-RPC result'
                         })
 
-                return responses[1]['result'], responses[0]['result']
+                responses.sort(key=operator.itemgetter('id'), reverse=True)
+                return map(operator.itemgetter('result'), responses)
             except Exception as e:
                 self.close()
                 raise e
