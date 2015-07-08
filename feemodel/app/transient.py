@@ -58,7 +58,8 @@ class TransientOnline(StoppableThread):
     def update(self):
         pools, tx_source, mempoolstate = self._get_resources()
         sim = Simul(pools, tx_source)
-        feepoints = self.calc_feepoints(sim)
+        mempool_sizefn = mempoolstate.get_sizefn()
+        feepoints = self.calc_feepoints(sim, mempool_sizefn)
 
         stats = TransientStats()
         feepoints, waittimes = transientsim(
@@ -97,7 +98,8 @@ class TransientOnline(StoppableThread):
             self.sleep(5)
         raise StopIteration
 
-    def calc_feepoints(self, sim, max_wait_delta=60, min_num_pts=20):
+    def calc_feepoints(self, sim, mempool_sizefn,
+                       max_wait_delta=60, min_num_pts=20):
         """Get feepoints at which to evaluate wait times.
 
         The feepoints are chosen so that the wait times are approximately
@@ -119,7 +121,6 @@ class TransientOnline(StoppableThread):
         wait_pts = [minwait + wait_delta*i for i in range(num_pts)]
         feepoints = [int(round(waitfn.inv(wait))) for wait in wait_pts]
 
-        minfeepoint = sim.stablefeerate
         maxfeepoint = sim.cap.inv_util(0.05)
         maxcap = sim.cap.capfn[-1][1]
         for feerate, cap in sim.cap.capfn:
@@ -127,6 +128,23 @@ class TransientOnline(StoppableThread):
                 alt_maxfeepoint = feerate
                 break
         maxfeepoint = max(maxfeepoint, alt_maxfeepoint)
+
+        minfeepoint = sim.stablefeerate
+        alt_minfeepoint = None
+        for feerate, txbyterate in sim.cap.txbyteratefn:
+            if feerate < sim.stablefeerate:
+                continue
+            capdelta = maxcap - txbyterate
+            assert capdelta > 0
+            mempoolsize = mempool_sizefn(feerate)
+            if mempoolsize / capdelta < 10800:
+                # Roughly 3 hours to clear
+                alt_minfeepoint = feerate
+                break
+        if alt_minfeepoint is None:
+            alt_minfeepoint = feerate
+        minfeepoint = max(minfeepoint, alt_minfeepoint)
+
         feepoints.extend([minfeepoint, maxfeepoint])
         feepoints = filter(
             lambda feerate: minfeepoint <= feerate <= maxfeepoint,
