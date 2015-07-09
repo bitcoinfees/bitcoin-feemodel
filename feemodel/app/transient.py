@@ -272,9 +272,7 @@ class TransientStats(object):
 
 
 def remove_lowfee(entries, feethresh):
-    """
-    Recursively remove all low fee (< feethresh) transactions
-    and their dependants.
+    """Remove all low fee (< feethresh) transactions and their dependants.
     """
     # Build a dependency map
     depmap = defaultdict(list)
@@ -284,15 +282,12 @@ def remove_lowfee(entries, feethresh):
     removed = set()
     for txid, entry in entries.items():
         if entry.feerate < feethresh:
-            _remove_recursive(txid, depmap, removed)
+            removelist = [txid]
+            while removelist:
+                txid_remove = removelist.pop()
+                if txid_remove in removed:
+                    continue
+                removed.add(txid_remove)
+                removelist.extend(depmap[txid_remove])
     return {txid: entry for txid, entry in entries.items()
             if txid not in removed}
-
-
-def _remove_recursive(txid, depmap, removed):
-    """Helper function for remove_lowfee."""
-    if txid in removed:
-        return
-    removed.add(txid)
-    for dep_txid in depmap[txid]:
-        _remove_recursive(dep_txid, depmap, removed)
