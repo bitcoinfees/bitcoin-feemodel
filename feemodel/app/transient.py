@@ -3,6 +3,7 @@ from __future__ import division
 import logging
 from time import time
 from math import ceil, sqrt
+from collections import defaultdict
 
 from feemodel.util import StoppableThread, DataSample
 from feemodel.simul import Simul
@@ -58,14 +59,14 @@ class TransientOnline(StoppableThread):
     def update(self):
         pools, tx_source, mempoolstate = self._get_resources()
         sim = Simul(pools, tx_source)
-        mempool_sizefn = mempoolstate.get_sizefn()
-        feepoints = self.calc_feepoints(sim, mempool_sizefn)
+        feepoints = self.calc_feepoints(sim, mempoolstate)
+        init_entries = remove_lowfee(mempoolstate.entries, sim.stablefeerate)
 
         stats = TransientStats()
         feepoints, waittimes = transientsim(
             sim,
             feepoints=feepoints,
-            init_entries=mempoolstate.entries,
+            init_entries=init_entries,
             miniters=self.miniters,
             maxiters=self.maxiters,
             maxtime=self.update_period,
@@ -98,7 +99,7 @@ class TransientOnline(StoppableThread):
             self.sleep(5)
         raise StopIteration
 
-    def calc_feepoints(self, sim, mempool_sizefn,
+    def calc_feepoints(self, sim, mempoolstate,
                        max_wait_delta=60, min_num_pts=20):
         """Get feepoints at which to evaluate wait times.
 
@@ -109,6 +110,7 @@ class TransientOnline(StoppableThread):
         If not stats have been computed yet, return None (i.e. use the
         default feepoints computed by transientsim)
         """
+        mempool_sizefn = mempoolstate.get_sizefn()
         maxcap = sim.cap.capfn[-1][1]
         minfeepoint = None
         for feerate, txbyterate in sim.cap.txbyteratefn:
@@ -267,3 +269,30 @@ class TransientStats(object):
             'waitmatrix': [w.waits for w in self.waitmatrix],
         }
         return stats
+
+
+def remove_lowfee(entries, feethresh):
+    """
+    Recursively remove all low fee (< feethresh) transactions
+    and their dependants.
+    """
+    # Build a dependency map
+    depmap = defaultdict(list)
+    for txid, entry in entries.items():
+        for dep in entry.depends:
+            depmap[dep].append(txid)
+    removed = set()
+    for txid, entry in entries.items():
+        if entry.feerate < feethresh:
+            _remove_recursive(txid, depmap, removed)
+    return {txid: entry for txid, entry in entries.items()
+            if txid not in removed}
+
+
+def _remove_recursive(txid, depmap, removed):
+    """Helper function for remove_lowfee."""
+    if txid in removed:
+        return
+    removed.add(txid)
+    for dep_txid in depmap[txid]:
+        _remove_recursive(dep_txid, depmap, removed)
