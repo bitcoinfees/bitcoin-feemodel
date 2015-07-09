@@ -116,14 +116,16 @@ class TransientOnlineTests(unittest.TestCase):
             print("===========")
             print("Expected wait:")
             print(stats.expectedwaits)
-            self.assertEqual(stats.expectedwaits(46599),
-                             stats.expectedwaits(46600))
+            # self.assertEqual(stats.expectedwaits(46599),
+            #                  stats.expectedwaits(46600))
+            self.assertEqual(stats.expectedwaits(46609),
+                             stats.expectedwaits(46610))
             minwait = stats.expectedwaits.waits[-1]
             self.assertIsNotNone(stats.expectedwaits.inv(minwait))
             self.assertIsNone(stats.expectedwaits.inv(minwait-1))
 
             currtime = 0
-            for feerate in [1029, 10000, 46599, 46600]:
+            for feerate in [1039, 10000, 46609, 46610]:
                 txpredict = stats.predict(feerate, currtime)
                 self.assertEqual(txpredict.calc_pval(currtime+0), 1)
                 self.assertEqual(
@@ -137,7 +139,7 @@ class TransientOnlineTests(unittest.TestCase):
                     pval = txpredict.calc_pval(blocktime)
                     self.assertAlmostEqual(pval, 1-pctl)
 
-            txpredict = stats.predict(1028, currtime)
+            txpredict = stats.predict(1038, currtime)
             self.assertIsNone(txpredict)
 
             for i in range(2):

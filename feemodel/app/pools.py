@@ -37,6 +37,7 @@ class PoolsOnlineEstimator(object):
                 poolsestimate.update(memblock, windowsize=self.window)
         self.check_minblocks(poolsestimate)
         self.poolsestimate = poolsestimate
+        self.save_estimates()
 
     def get_pools(self):
         # We use a getter for the pool estimate as a reminder that the

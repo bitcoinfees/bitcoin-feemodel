@@ -24,8 +24,8 @@ cdef struct OrphanTxArray:
 cdef class Simul:
 
     cdef:
-        readonly object cap, pools, txsource, stablefeerate
-        public object simtime
+        readonly object cap, pools, txsource
+        public object simtime, stablefeerate
         public SimMempool mempool
         object tx_emitter
 

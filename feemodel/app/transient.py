@@ -109,8 +109,27 @@ class TransientOnline(StoppableThread):
         If not stats have been computed yet, return None (i.e. use the
         default feepoints computed by transientsim)
         """
+        maxcap = sim.cap.capfn[-1][1]
+        minfeepoint = None
+        for feerate, txbyterate in sim.cap.txbyteratefn:
+            if feerate < sim.stablefeerate:
+                continue
+            capdelta = maxcap - txbyterate
+            assert capdelta > 0
+            mempoolsize = mempool_sizefn(feerate)
+            if mempoolsize / capdelta < 10800:
+                # Roughly 3 hours to clear
+                minfeepoint = feerate
+                break
+        if minfeepoint is None:
+            minfeepoint = feerate
+        # No need to process transactions with fee rate lower than minfeepoint
+        sim.stablefeerate = max(sim.stablefeerate, minfeepoint)
+
         if not self.stats:
+            # Use default feepoints - even spacing
             return None
+
         waitfn = self.stats.expectedwaits
         minwait = waitfn._y[-1]
         maxwait = waitfn._y[0]
@@ -122,7 +141,6 @@ class TransientOnline(StoppableThread):
         feepoints = [int(round(waitfn.inv(wait))) for wait in wait_pts]
 
         maxfeepoint = sim.cap.inv_util(0.05)
-        maxcap = sim.cap.capfn[-1][1]
         for feerate, cap in sim.cap.capfn:
             if cap >= 0.95*maxcap:
                 alt_maxfeepoint = feerate
@@ -130,20 +148,6 @@ class TransientOnline(StoppableThread):
         maxfeepoint = max(maxfeepoint, alt_maxfeepoint)
 
         minfeepoint = sim.stablefeerate
-        alt_minfeepoint = None
-        for feerate, txbyterate in sim.cap.txbyteratefn:
-            if feerate < sim.stablefeerate:
-                continue
-            capdelta = maxcap - txbyterate
-            assert capdelta > 0
-            mempoolsize = mempool_sizefn(feerate)
-            if mempoolsize / capdelta < 10800:
-                # Roughly 3 hours to clear
-                alt_minfeepoint = feerate
-                break
-        if alt_minfeepoint is None:
-            alt_minfeepoint = feerate
-        minfeepoint = max(minfeepoint, alt_minfeepoint)
 
         feepoints.extend([minfeepoint, maxfeepoint])
         feepoints = filter(
