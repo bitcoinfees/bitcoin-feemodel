@@ -46,6 +46,7 @@ class SimOnline(TxMempool):
             super(SimOnline, self).run()
             self.predictworker.stop()
             self.save_predicts()
+            self.poolsonline.save_estimates()
 
     def update(self):
         state = super(SimOnline, self).update()

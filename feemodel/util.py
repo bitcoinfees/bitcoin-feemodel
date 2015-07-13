@@ -333,7 +333,7 @@ class Function(object):
     '''A (math) function object with interpolation methods.'''
 
     def __init__(self, x, y):
-        '''y and x are lists s.t. y = f(x) and x is sorted.'''
+        '''y and x are lists s.t. y_i = f(x_i) and x is sorted.'''
         self._x = x
         self._y = y
 
@@ -381,7 +381,7 @@ class Function(object):
     def addpoint(self, xi, yi):
         if xi in self._x:
             return
-        self._x, self._y = zip(*sorted(list(self) + [(xi, yi)]))
+        self._x, self._y = map(list, zip(*sorted(list(self) + [(xi, yi)])))
 
     def __getitem__(self, idx):
         return self._x[idx], self._y[idx]

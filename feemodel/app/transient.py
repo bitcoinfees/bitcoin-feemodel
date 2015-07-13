@@ -10,6 +10,7 @@ from feemodel.simul import Simul
 from feemodel.simul.stats import WaitFn
 from feemodel.simul.transient import transientsim
 from feemodel.app.predict import WAIT_PERCENTILE_PTS, TxPrediction
+from feemodel.config import EXPECTED_BLOCK_INTERVAL
 
 default_update_period = 60.
 default_miniters = 2000
@@ -143,11 +144,15 @@ class TransientOnline(StoppableThread):
         feepoints = [int(round(waitfn.inv(wait))) for wait in wait_pts]
 
         maxfeepoint = sim.cap.inv_util(0.05)
+        # maxfeepoint must also be at least the 0.95 cap feerate
         for feerate, cap in sim.cap.capfn:
             if cap >= 0.95*maxcap:
                 alt_maxfeepoint = feerate
                 break
-        maxfeepoint = max(maxfeepoint, alt_maxfeepoint)
+        # maxfeepoint must also be at least so that mempoolsize is "small"
+        alt_maxfeepoint2 = int(
+            mempool_sizefn.inv(0.1*maxcap*EXPECTED_BLOCK_INTERVAL))
+        maxfeepoint = max(maxfeepoint, alt_maxfeepoint, alt_maxfeepoint2)
 
         minfeepoint = sim.stablefeerate
 
