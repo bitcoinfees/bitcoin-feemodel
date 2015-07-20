@@ -150,11 +150,9 @@ class TransientOnline(StoppableThread):
                 alt_maxfeepoint = feerate
                 break
         # maxfeepoint must also be at least so that mempoolsize is "small"
-        alt_maxfeepoint2 = mempool_sizefn.inv(
-            0.1*maxcap*EXPECTED_BLOCK_INTERVAL)
-        if alt_maxfeepoint2 is None:
-            alt_maxfeepoint2 = 0
-        maxfeepoint = max(maxfeepoint, alt_maxfeepoint, int(alt_maxfeepoint2))
+        alt_maxfeepoint2 = int(mempool_sizefn.inv(
+            0.1*maxcap*EXPECTED_BLOCK_INTERVAL, use_upper=True))
+        maxfeepoint = max(maxfeepoint, alt_maxfeepoint, alt_maxfeepoint2)
 
         minfeepoint = sim.stablefeerate
 
