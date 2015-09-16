@@ -31,13 +31,18 @@ class SimOnline(TxMempool):
             minblocks=config.getint("app", "pools_minblocks"))
         self.txonline = TxRateOnlineEstimator(
             halflife=config.getint("app", "txrate_halflife"))
+
+        trans_numprocesses = config.getint("app", "trans_numprocesses")
+        if trans_numprocesses == -1:
+            trans_numprocesses = None
         self.transient = TransientOnline(
             self,
             self.poolsonline,
             self.txonline,
             update_period=config.getint("app", "trans_update_period"),
             miniters=config.getint("app", "trans_miniters"),
-            maxiters=config.getint("app", "trans_maxiters"))
+            maxiters=config.getint("app", "trans_maxiters"),
+            numprocesses=trans_numprocesses)
 
     @logexceptions
     def run(self):

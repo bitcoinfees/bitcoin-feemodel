@@ -24,13 +24,15 @@ class TransientOnline(StoppableThread):
     def __init__(self, mempool, poolsonline, txonline,
                  update_period=default_update_period,
                  miniters=default_miniters,
-                 maxiters=default_maxiters):
+                 maxiters=default_maxiters,
+                 numprocesses=None):
         self.mempool = mempool
         self.txonline = txonline
         self.poolsonline = poolsonline
         self.update_period = update_period
         self.miniters = miniters
         self.maxiters = maxiters
+        self.numprocesses = numprocesses
 
         self.stats = None
         super(TransientOnline, self).__init__()
@@ -71,6 +73,7 @@ class TransientOnline(StoppableThread):
             miniters=self.miniters,
             maxiters=self.maxiters,
             maxtime=self.update_period,
+            numprocesses=self.numprocesses,
             stopflag=self.get_stop_object())
         stats.record_waittimes(feepoints, waittimes)
 
