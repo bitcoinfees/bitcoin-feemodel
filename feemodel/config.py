@@ -12,7 +12,7 @@ pooltags = json.load(resource_stream(__name__, 'pooltags.json'))
 DIFF_RETARGET_INTERVAL = 2016
 PRIORITYTHRESH = 57600000
 EXPECTED_BLOCK_INTERVAL = 600
-MINRELAYTXFEE = 1000
+MINRELAYTXFEE = 5000
 
 # Create the default data directory.
 # TODO: don't create it here, but in app.main.
