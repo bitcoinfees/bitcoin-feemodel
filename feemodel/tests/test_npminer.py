@@ -6,12 +6,14 @@ from math import log
 from time import sleep
 
 from feemodel.tests.config import tmpdatadir_context
+from feemodel.tests.pseudoproxy import install
 from feemodel.util import cumsum_gen
 from feemodel.simul.pools import SimPoolsNP
 
 from feemodel.estimate.pools import PoolsEstimatorNP
 from feemodel.app.pools import PoolsOnlineEstimator
 
+install()
 
 BLOCKRATE = 1 / 600
 MAXBLOCKSIZES = [1000000, 750000, 750000, 950000]

@@ -96,7 +96,7 @@ class BasicAppTests(unittest.TestCase):
             pred_db = Prediction.from_db(
                 config.getint("app", "predict_block_halflife"))
             self.assertEqual(pred_db.pval_ecdf, sim.prediction.pval_ecdf)
-            self.assertEqual(sum(sim.prediction.pvalcounts), 79)
+            self.assertEqual(sum(sim.prediction.pvalcounts), 76)
 
             poolsref = sim.poolsonline.get_pools()
             predictionref = sim.prediction
