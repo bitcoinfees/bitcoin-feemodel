@@ -13,6 +13,9 @@ from feemodel.app.pools import PoolsOnlineEstimator, SAVEFILE as pools_savefile
 
 install()
 
+# This is an old version of pool tests and should be able to safely removed.
+raise NotImplementedError
+
 
 class PoolsOnlineTests(unittest.TestCase):
 

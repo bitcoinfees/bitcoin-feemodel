@@ -50,7 +50,8 @@ class PoolsEstimatorNP(SimPoolsNP):
         else:
             sfr = sfr_stats['sfr']
         mempoolsize = sum(
-            map(attrgetter("size"), memblock.entries.values()))
+            [entry.size for entry in memblock.entries.values()
+             if entry.feerate >= MINRELAYTXFEE])
         self.blockstats[memblock.blockheight] = (
             mempoolsize, memblock.time, memblock.blocksize, sfr)
         if windowsize:

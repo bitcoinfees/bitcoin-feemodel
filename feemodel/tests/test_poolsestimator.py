@@ -10,6 +10,8 @@ from feemodel.tests.pseudoproxy import install
 from feemodel.util import save_obj, load_obj
 from feemodel.estimate import PoolsEstimator
 
+# This is an old version of pool tests and should be able to safely removed.
+raise NotImplementedError
 
 install()
 blockrange = (333931, 333954)
