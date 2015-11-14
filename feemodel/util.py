@@ -169,7 +169,7 @@ class BlockingProxy(Proxy):
 
     def close(self):
         with self.rlock:
-            self._RawProxy__conn.close()
+            self._BaseProxy__conn.close()
 
 
 class CacheProxy(BlockingProxy):
@@ -220,19 +220,19 @@ class BatchProxy(CacheProxy):
         '''
         with self.rlock:
             try:
-                self._RawProxy__id_count += 2
+                self._BaseProxy__id_count += 2
                 rpc_call_list = [
                     {
                         'version': '1.1',
                         'method': 'getrawmempool',
                         'params': [True],
-                        'id': self._RawProxy__id_count-2
+                        'id': self._BaseProxy__id_count-2
                     },
                     {
                         'version': '1.1',
                         'method': 'getblockcount',
                         'params': [],
-                        'id': self._RawProxy__id_count-1
+                        'id': self._BaseProxy__id_count-1
                     }
                 ]
 
