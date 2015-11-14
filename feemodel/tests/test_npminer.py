@@ -9,6 +9,7 @@ from feemodel.tests.config import tmpdatadir_context
 from feemodel.tests.pseudoproxy import install
 from feemodel.util import cumsum_gen
 from feemodel.simul.pools import SimPoolsNP
+from feemodel.txmempool import MemBlock
 
 from feemodel.estimate.pools import PoolsEstimatorNP
 from feemodel.app.pools import PoolsOnlineEstimator
@@ -59,6 +60,15 @@ class NPMinerTests(unittest.TestCase):
         with tmpdatadir_context():
             pe = PoolsEstimatorNP()
             pe.start((333931, 333954))
+
+            # A fake memblock with zero entries.
+            empty_memblock = MemBlock()
+            empty_memblock.blockheight = 333954
+            empty_memblock.height = 333953
+            empty_memblock.blocksize = 0
+            empty_memblock.time = pe.blockstats[333953][1] + 20
+            empty_memblock.entries = {}
+            pe.update(empty_memblock)
         print(pe)
 
     def test_C(self):

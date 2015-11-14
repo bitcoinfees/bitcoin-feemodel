@@ -45,7 +45,7 @@ class PoolsEstimatorNP(SimPoolsNP):
 
     def update(self, memblock, is_init=False, windowsize=None):
         sfr_stats = memblock.calc_stranding_feerate()
-        if sfr_stats['altbiasref'] == MINRELAYTXFEE:
+        if sfr_stats is None or sfr_stats['altbiasref'] == MINRELAYTXFEE:
             sfr = MINRELAYTXFEE
         else:
             sfr = sfr_stats['sfr']
