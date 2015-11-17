@@ -156,7 +156,8 @@ class BlockingProxy(Proxy):
     '''
 
     def __init__(self):
-        super(BlockingProxy, self).__init__()
+        super(BlockingProxy, self).__init__(
+            timeout=feemodel.config.config.getint("txmempool", "poll_timeout"))
         self.rlock = threading.RLock()
 
     def _call(self, *args):

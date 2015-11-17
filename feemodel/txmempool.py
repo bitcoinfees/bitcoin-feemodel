@@ -581,4 +581,11 @@ class MemEntry(SimEntry):
 
 
 def get_mempool_state():
-    return MempoolState(*proxy.poll_mempool())
+    starttime = time()
+    state = MempoolState(*proxy.poll_mempool())
+    elapsedtime = time() - starttime
+    time_msg = "get_mempool_state took {}s.".format(elapsedtime)
+    logger.debug(time_msg)
+    if elapsedtime > 15:
+        logger.warning(time_msg)
+    return state
