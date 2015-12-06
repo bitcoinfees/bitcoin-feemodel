@@ -52,8 +52,13 @@ class PoolsEstimatorNP(SimPoolsNP):
         mempoolsize = sum(
             [entry.size for entry in memblock.entries.values()
              if entry.feerate >= MINRELAYTXFEE])
+        mempoolsize_remain = sum(
+            [entry.size for entry in memblock.entries.values()
+             if entry.feerate >= MINRELAYTXFEE and
+             not entry.inblock])
         self.blockstats[memblock.blockheight] = (
-            mempoolsize, memblock.time, memblock.blocksize, sfr)
+            mempoolsize, mempoolsize_remain, memblock.time,
+            memblock.blocksize, sfr)
         if windowsize:
             height_thresh = memblock.blockheight - windowsize + 1
             self._clear_window(height_thresh)
@@ -80,31 +85,36 @@ class PoolsEstimatorNP(SimPoolsNP):
             if numhashes is None or not height % DIFF_RETARGET_INTERVAL:
                 numhashes = get_hashesperblock(height)
             totalhashes += numhashes
-        starttime = self.blockstats[startheight][1]
-        endtime = self.blockstats[endheight][1]
+        starttime = self.blockstats[startheight][2]
+        endtime = self.blockstats[endheight][2]
         hashrate = totalhashes / (endtime - starttime)
         self.blockrate = hashrate / numhashes
 
         prevtime = None
         prevheight = None
+        prevmempoolremain = None
         blockstats = []
         for height, blockstat in sorted(self.blockstats.items()):
             if prevheight is not None and (
                     height == prevheight + 1 and
-                    blockstat[1] > prevtime + blockmingap):
-                blockstats.append(blockstat)
-            prevtime = blockstat[1]
+                    blockstat[2] > prevtime + blockmingap):
+                mempooldiff = blockstat[0] - prevmempoolremain
+                blockstats.append((blockstat[0], mempooldiff,
+                                   blockstat[3], blockstat[4]))
+            prevtime = blockstat[2]
             prevheight = height
+            prevmempoolremain = blockstat[1]
 
         if not blockstats:
             # This really shouldn't happen at all.
             raise ValueError("Not enough blocks.")
 
         # Calculate minfeerates and maxblocksizes
-        blockstats.sort()
         # minfeerates are from the lower t percent of the blocks
         tailidx = int(ceil(tailpct*len(blockstats)))
+        blockstats.sort()
         self.minfeerates = map(itemgetter(3), blockstats[:tailidx])
+        blockstats.sort(key=itemgetter(1))
         self.maxblocksizes = map(itemgetter(2), blockstats[-tailidx:])
         return blockstats
 
