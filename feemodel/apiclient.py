@@ -63,7 +63,7 @@ class APIClient(object):
         return 'http://{}:{}/feemodel/'.format(self.host, self.port)
 
     def _put_resource(self, path, data):
-        headers = {"Content-type:": "application/json"}
+        headers = {"Content-Type": "application/json"}
         res = requests.put(urljoin(self.baseurl, path), data=json.dumps(data),
                            headers=headers)
         res.raise_for_status()

@@ -18,7 +18,7 @@ PREDICT_SAVEFILE = os.path.join(datadir, 'savepredict.pickle')
 
 class SimOnline(TxMempool):
 
-    def __init__(self):
+    def __init__(self, txsource_init=None):
         super(SimOnline, self).__init__()
         self.predictworker = WorkerThread(self.update_predicts)
         self.load_predicts()
@@ -30,6 +30,7 @@ class SimOnline(TxMempool):
             config.getint("app", "pools_window"),
             minblocks=config.getint("app", "pools_minblocks"))
         self.txonline = TxRateOnlineEstimator(
+            txsource_init=txsource_init,
             halflife=config.getint("app", "txrate_halflife"))
 
         trans_numprocesses = config.getint("app", "trans_numprocesses")

@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 
 class TxRateOnlineEstimator(object):
 
-    def __init__(self, halflife=DEFAULT_HALFLIFE):
+    def __init__(self, txsource_init=None, halflife=DEFAULT_HALFLIFE):
+        if txsource_init is not None and txsource_init.halflife != halflife:
+            raise ValueError("Specified halflife does not"
+                             "match with init txsource.")
         self.halflife = halflife
-        self.tx_estimator = None
+        self.tx_estimator = txsource_init
 
     def update(self, state):
         tx_estimator = copy(self.tx_estimator)

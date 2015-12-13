@@ -5,7 +5,8 @@ from feemodel.apiclient import client
 
 
 @click.group()
-@click.option('--port', type=click.INT, default=None)
+@click.option('--port', type=click.INT, default=None,
+              help="Port to use, either for client or server.")
 def cli(port):
     if port is not None:
         from feemodel.config import config
@@ -17,8 +18,10 @@ def cli(port):
 @click.option('--mempool', is_flag=True,
               help='Collect memblock data only (no simulation)')
 @click.option('--external', is_flag=True,
-              help='Make the (Flask) server externally visible.')
-def start(mempool, external):
+              help='Listen on all addresses, instead of only on localhost.')
+@click.option('--txsource', type=click.STRING, default=None,
+              help="Filename of a pickled txsource to use initially.")
+def start(mempool, external, txsource):
     '''Start the simulation app.
 
     Use --mempool for memblock data collection only (no simulation).
@@ -34,7 +37,7 @@ def start(mempool, external):
         click.echo("Starting simulation app; logging to %s" % logfile)
     if external:
         config.set("app", "external", "true")
-    main(mempool_only=mempool)
+    main(mempool_only=mempool, txsourcefile=txsource)
 
 
 @cli.command()

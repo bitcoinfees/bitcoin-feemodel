@@ -8,7 +8,7 @@ from flask import Flask, jsonify, make_response, request, abort
 from werkzeug.exceptions import default_exceptions, HTTPException
 
 from feemodel.config import config, pkgname, __version__, datadir
-from feemodel.util import pickle
+from feemodel.util import pickle, load_obj
 from feemodel.app import SimOnline
 from feemodel.txmempool import TxMempool
 
@@ -24,7 +24,7 @@ def sigterm_handler(_signo, _stack_frame):
     raise SystemExit
 
 
-def main(mempool_only=False):
+def main(mempool_only=False, txsourcefile=None):
     configure_logger()
     signal.signal(signal.SIGTERM, sigterm_handler)
 
@@ -32,7 +32,12 @@ def main(mempool_only=False):
     if mempool_only:
         sim = TxMempool()
     else:
-        sim = SimOnline()
+        if txsourcefile is not None:
+            txsource_init = load_obj(txsourcefile)
+            txsource_init.prevstate = None
+        else:
+            txsource_init = None
+        sim = SimOnline(txsource_init=txsource_init)
 
     @app.route('/feemodel/mempool', methods=['GET'])
     def mempool():
