@@ -8,7 +8,7 @@ import logging
 from time import time
 from copy import copy
 from itertools import groupby
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 
 from bitcoin.core import b2lx
 
@@ -21,7 +21,35 @@ from feemodel.simul.simul import SimEntry
 logger = logging.getLogger(__name__)
 db_lock = threading.Lock()
 
-MEMBLOCK_TABLE_SCHEMA = {
+MEMBLOCK_SCHEMA = {
+    "blocks": [
+        'height INTEGER PRIMARY KEY',
+        'size INTEGER',
+        'time INTEGER'
+    ],
+    "txs": [
+        "id INTEGER PRIMARY KEY",
+        "txid TEXT",
+        "size INTEGER",
+        "fee TEXT",
+        "startingpriority TEXT",
+        "time INTEGER",
+        "height INTEGER",
+        "depends TEXT",
+        "feerate INTEGER",
+        "heightremoved INTEGER"
+    ],
+    "blocktxs": [
+        "blockheight INTEGER",
+        "txrowid INTEGER",
+        "currentpriority TEXT",
+        "isconflict INTEGER",
+        "inblock INTEGER"
+    ]
+}
+
+# TODO: remove this when transition to new DB is complete
+OLD_MEMBLOCK_TABLE_SCHEMA = {
     'blocks': [
         'height INTEGER UNIQUE',
         'size INTEGER',
@@ -253,8 +281,8 @@ class MempoolState(object):
         return self.__dict__ != other.__dict__
 
 
-class MemBlock(MempoolState):
-    '''The mempool state at the time a block was discovered.'''
+class BaseMemBlock(MempoolState):
+    """Independent of DB format."""
 
     def __init__(self):
         # The attributes inherited from MempoolState
@@ -332,6 +360,251 @@ class MemBlock(MempoolState):
             return calc_stranding_feerate(txs, bootstrap=bootstrap)
         return None
 
+    def __nonzero__(self):
+        return self.entries is not None
+
+    def __repr__(self):
+        return "MemBlock(blockheight: %d, blocksize: %d, len(entries): %d)" % (
+            self.blockheight, self.blocksize, len(self.entries))
+
+    def __copy__(self):
+        raise NotImplementedError
+
+
+class MemBlock(BaseMemBlock):
+    '''The mempool state at the time a block was discovered.'''
+
+    def write(self, dbfile, blocks_to_keep):
+        '''Write MemBlock to disk.
+
+        blocks_to_keep specifies how many blocks of information should be
+        retained. All MemBlocks older (with respect to this block) than
+        blocks_to_keep will be deleted.
+        '''
+        if not self:
+            raise ValueError("Failed write: empty memblock.")
+
+        # Temp tables
+        NONREMOVED = "nonremoved"
+        MEMBLOCKTXS = "memblocktxs"
+
+        db = None
+        memblocktxids = self.entries.keys()
+
+        try:
+            with db_lock:
+                db = sqlite3.connect(dbfile)
+                for key, val in MEMBLOCK_SCHEMA.items():
+                    db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
+                               (key, ','.join(val)))
+                db.execute('CREATE INDEX IF NOT EXISTS heightidx '
+                           'ON txs (heightremoved)')
+                db.execute('CREATE INDEX IF NOT EXISTS block_heightidx '
+                           'ON blocktxs (blockheight)')
+
+                # Enter into blocks
+                db.execute(
+                    'INSERT INTO blocks VALUES (?,?,?)',
+                    (self.blockheight, self.blocksize, self.time))
+
+                # Temporary tables for data manipulation
+                db.execute(
+                    "CREATE TEMP TABLE {} (id INTEGER, txid TEXT)".
+                    format(NONREMOVED))
+                db.execute(
+                    "CREATE TEMP TABLE {} "
+                    "(txid TEXT, isconflict INTEGER, inblock INTEGER)".
+                    format(MEMBLOCKTXS))
+                # Fetch the nonremoved txs
+                db.execute(
+                    "INSERT INTO {} "
+                    "SELECT id, txid FROM txs "
+                    "WHERE heightremoved IS NULL".format(NONREMOVED)
+                )
+                # Table the memblocktxs
+                db.executemany(
+                    "INSERT INTO {} VALUES (?,?,?)".format(MEMBLOCKTXS),
+                    [(txid,
+                      self.entries[txid].isconflict,
+                      self.entries[txid].inblock)
+                     for txid in memblocktxids])
+                # Update the heightremoved
+                db.execute(
+                    "UPDATE txs SET heightremoved=? "
+                    "WHERE id IN "
+                    "(SELECT id FROM {0} LEFT JOIN {1} "
+                    " ON {0}.txid={1}.txid WHERE "
+                    " {1}.isconflict=1 OR "
+                    " {1}.inblock=1 OR "
+                    " {1}.inblock is NULL)".
+                    format(NONREMOVED, MEMBLOCKTXS),
+                    (self.blockheight,)
+                )
+                # Get the new txs to table
+                txidstoenter = db.execute(
+                    "SELECT txid FROM {} EXCEPT SELECT txid FROM {}".
+                    format(MEMBLOCKTXS, NONREMOVED)
+                )
+                txstoenter = [
+                    (
+                        txid,
+                        self.entries[txid].size,
+                        str(self.entries[txid].fee),
+                        str(self.entries[txid].startingpriority),
+                        self.entries[txid].time,
+                        self.entries[txid].height,
+                        ','.join(self.entries[txid].depends),
+                        self.entries[txid].feerate,
+                        self.blockheight if (
+                            self.entries[txid].isconflict or
+                            self.entries[txid].inblock)
+                        else None
+                    )
+                    for txid in map(itemgetter(0), txidstoenter)
+                ]
+                # Enter new txs. There might be duplicate txid,
+                # but that's OK!
+                db.executemany(
+                    "INSERT INTO txs(txid, size, fee, startingpriority, "
+                    "time, height, depends, feerate, heightremoved) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", txstoenter)
+
+                # Get the rowids, to enter into blocktxs
+                finaltxs = db.execute(
+                    "SELECT id, txid FROM txs WHERE "
+                    "heightremoved IS NULL OR "
+                    "heightremoved=?",
+                    (self.blockheight,)
+                ).fetchall()
+                rowidmap = {txid: rowid for rowid, txid in finaltxs}
+                # Assert that there are no duplicate txids
+                assert len(finaltxs) == len(set(map(itemgetter(1), finaltxs)))
+                # Enter into blocktxs
+                blocktxstoenter = [(
+                    self.blockheight,
+                    rowidmap[txid],
+                    str(self.entries[txid].currentpriority),
+                    self.entries[txid].isconflict,
+                    self.entries[txid].inblock)
+                    for txid in memblocktxids
+                ]
+                db.executemany("INSERT INTO blocktxs VALUES (?,?,?,?,?)",
+                               blocktxstoenter)
+
+                # Remove old blocks
+                if blocks_to_keep > 0:
+                    height_thresh = self.blockheight - blocks_to_keep
+                    db.execute("DELETE FROM txs WHERE heightremoved<=?",
+                               (height_thresh,))
+                    db.execute("DELETE FROM blocks WHERE height<=?",
+                               (height_thresh,))
+                    db.execute("DELETE FROM blocktxs WHERE blockheight<=?",
+                               (height_thresh,))
+                db.commit()
+        finally:
+            if db is not None:
+                db.close()
+
+    @classmethod
+    def read(cls, blockheight, dbfile=MEMBLOCK_DBFILE):
+        '''Read MemBlock from disk.
+
+        Returns the memblock with specified blockheight.
+        Returns None if no record exists for that block.
+        Raises one of the sqlite3 errors if there are other problems.
+        '''
+        if not os.path.exists(dbfile):
+            return None
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            with db_lock:
+                block = db.execute('SELECT size, time FROM blocks '
+                                   'WHERE height=?',
+                                   (blockheight,)).fetchall()
+                txlist = db.execute(
+                    "SELECT "
+                    "   txid,"
+                    "   size,"
+                    "   fee,"
+                    "   startingpriority,"
+                    "   currentpriority,"
+                    "   time,"
+                    "   height,"
+                    "   depends,"
+                    "   feerate,"
+                    "   isconflict,"
+                    "   inblock "
+                    "FROM blocktxs LEFT JOIN txs ON blocktxs.txrowid=txs.id "
+                    "WHERE blockheight=?",
+                    (blockheight,)).fetchall()
+        finally:
+            if db is not None:
+                db.close()
+
+        # Make sure there are no missing txs.
+        txids = map(itemgetter(0), txlist)
+        assert not any([txid is None for txid in txids])
+
+        if block:
+            blocksize, blocktime = block[0]
+        else:
+            return None
+        memblock = cls()
+        memblock.height = blockheight - 1
+        entries = {}
+        for tx in txlist:
+            entry = MemEntry()
+            entry.size = tx[1]
+            entry.fee = decimal.Decimal(tx[2])
+            entry.startingpriority = decimal.Decimal(tx[3])
+            entry.currentpriority = decimal.Decimal(tx[4])
+            entry.time = tx[5]
+            entry.height = tx[6]
+            entry.depends = tx[7].split(",") if tx[7] else []
+            # We need to do this because depends is recorded upon first sight
+            # of the tx; some deps might have confirmed in the meantime
+            entry.depends = filter(lambda dep: dep in txids, entry.depends)
+            entry.feerate = tx[8]
+            entry.isconflict = bool(tx[9])
+            entry.inblock = bool(tx[10])
+            entry.leadtime = blocktime - tx[5]
+            entries[tx[0]] = entry
+        memblock.entries = entries
+        memblock.time = blocktime
+        memblock.blockheight = blockheight
+        memblock.blocksize = blocksize
+        return memblock
+
+    @staticmethod
+    def get_heights(blockrangetuple=None, dbfile=MEMBLOCK_DBFILE):
+        '''Get the list of MemBlocks stored on disk.
+
+        Returns a list of heights of all MemBlocks on disk within
+        range(*blockrangetuple)
+        '''
+        if not os.path.exists(dbfile):
+            return []
+        if blockrangetuple is None:
+            blockrangetuple = (0, float("inf"))
+        db = None
+        try:
+            db = sqlite3.connect(dbfile)
+            with db_lock:
+                heights = db.execute(
+                    'SELECT height FROM blocks '
+                    'where height>=? and height <?',
+                    blockrangetuple).fetchall()
+        finally:
+            if db is not None:
+                db.close()
+        return [r[0] for r in heights]
+
+
+# TODO: Remove this when transition to new db is complete.
+class OldMemBlock(BaseMemBlock):
+    '''The mempool state at the time a block was discovered.'''
+
     def write(self, dbfile, blocks_to_keep):
         '''Write MemBlock to disk.
 
@@ -344,7 +617,7 @@ class MemBlock(MempoolState):
         db = None
         try:
             db = sqlite3.connect(dbfile)
-            for key, val in MEMBLOCK_TABLE_SCHEMA.items():
+            for key, val in OLD_MEMBLOCK_TABLE_SCHEMA.items():
                 db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
                            (key, ','.join(val)))
             db.execute('CREATE INDEX IF NOT EXISTS heightidx '
@@ -431,16 +704,6 @@ class MemBlock(MempoolState):
                 db.close()
         return [r[0] for r in heights]
 
-    def __nonzero__(self):
-        return self.entries is not None
-
-    def __repr__(self):
-        return "MemBlock(blockheight: %d, blocksize: %d, len(entries): %d)" % (
-            self.blockheight, self.blocksize, len(self.entries))
-
-    def __copy__(self):
-        raise NotImplementedError
-
 
 class MemEntry(SimEntry):
     '''Represents a mempool entry.
@@ -510,6 +773,7 @@ class MemEntry(SimEntry):
         return (self.currentpriority > PRIORITYTHRESH or
                 self.feerate < MINRELAYTXFEE)
 
+    # TODO: deprecate this
     def _get_attr_tuple(self):
         '''Get tuple of attributes.
         Used when writing MemBlock to disk.
@@ -532,6 +796,7 @@ class MemEntry(SimEntry):
         )
         return attr_tuple
 
+    # TODO: deprecate this
     @classmethod
     def _from_attr_tuple(cls, tup):
         '''Return MemEntry from attribute tuple.

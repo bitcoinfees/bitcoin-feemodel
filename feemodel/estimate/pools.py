@@ -83,6 +83,8 @@ class PoolsEstimatorNP(SimPoolsNP):
         totalhashes = 0
         for height in range(startheight, endheight+1):
             if numhashes is None or not height % DIFF_RETARGET_INTERVAL:
+                # TODO: store the numhashes in self.blockstats, so that
+                #       the block can be pruned if necessary
                 numhashes = get_hashesperblock(height)
             totalhashes += numhashes
         starttime = self.blockstats[startheight][2]

@@ -66,7 +66,7 @@ class NPMinerTests(unittest.TestCase):
             empty_memblock.blockheight = 333954
             empty_memblock.height = 333953
             empty_memblock.blocksize = 0
-            empty_memblock.time = pe.blockstats[333953][1] + 20
+            empty_memblock.time = pe.blockstats[333953][2] + 20
             empty_memblock.entries = {}
             pe.update(empty_memblock)
         print(pe)

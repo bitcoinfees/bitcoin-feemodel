@@ -4,6 +4,7 @@ import os
 from copy import copy
 from time import sleep
 from pprint import pprint
+from operator import itemgetter
 
 from feemodel.tests.config import (mk_tmpdatadir, rm_tmpdatadir,
                                    test_memblock_dbfile as dbfile)
@@ -99,11 +100,12 @@ class WriteReadTests(unittest.TestCase):
     def test_writeread(self):
         '''Tests that mempool entry is unchanged upon write/read.'''
         tmpdbfile = os.path.join(self.datadir, '_tmp.db')
-        memblock = MemBlock.read(333931)
-        memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
-        memblock_read = MemBlock.read(333931, dbfile=tmpdbfile)
-        print(memblock_read)
-        self.assertEqual(memblock_read, memblock)
+        for height in MemBlock.get_heights():
+            memblock = MemBlock.read(height)
+            memblock.write(dbfile=tmpdbfile, blocks_to_keep=2016)
+            memblock_read = MemBlock.read(height, dbfile=tmpdbfile)
+            print(memblock_read)
+            self.assertEqual(memblock_read, memblock)
 
     def test_writereadempty(self):
         '''Tests write/read of empty entries dict'''
@@ -127,15 +129,44 @@ class WriteReadTests(unittest.TestCase):
         tmpdbfile = os.path.join(self.datadir, '_tmp.db')
         blocks_to_keep = 10
         memblocks = [MemBlock.read(height)
-                     for height in range(333931, 333953)]
+                     for height in range(333931, 333954)]
 
         for memblock in memblocks:
             if memblock:
                 memblock.write(dbfile=tmpdbfile,
                                blocks_to_keep=blocks_to_keep)
 
-        block_list = MemBlock.get_heights(dbfile=tmpdbfile)
+        block_list = sorted(MemBlock.get_heights(dbfile=tmpdbfile))
         self.assertEqual(len(block_list), blocks_to_keep)
+        self.assertEqual(block_list, list(range(333944, 333954)))
+
+        db = None
+        try:
+            db = sqlite3.connect(tmpdbfile)
+            blocktxsblocks = map(itemgetter(0), sorted(db.execute(
+                "SELECT DISTINCT blockheight FROM blocktxs").fetchall()))
+            self.assertEqual(block_list, blocktxsblocks)
+            txsheights = map(itemgetter(0), sorted(db.execute(
+                "SELECT DISTINCT heightremoved FROM txs").fetchall()))
+            txsheights.remove(None)
+            self.assertEqual(block_list, txsheights)
+
+            # Check no duplicate txids.
+            self.assertEqual(
+                len(db.execute("SELECT DISTINCT txid FROM txs").fetchall()),
+                len(db.execute("SELECT txid FROM txs").fetchall()))
+
+            # Check the null-heightremoved txs
+            self.assertEqual(
+                db.execute("SELECT count(*) FROM txs "
+                           "WHERE heightremoved IS NULL").fetchall()[0][0],
+                len(filter(
+                    lambda entry: not entry.inblock,
+                    memblocks[-1].entries.values()))
+            )
+        finally:
+            if db is not None:
+                db.close()
 
     def test_duplicate_writes(self):
         tmpdbfile = os.path.join(self.datadir, '_tmp.db')
@@ -143,13 +174,19 @@ class WriteReadTests(unittest.TestCase):
         block.write(tmpdbfile, 100)
         self.assertRaises(
             sqlite3.IntegrityError, block.write, tmpdbfile, 100)
-        db = sqlite3.connect(tmpdbfile)
-        txlist = db.execute('SELECT * FROM txs WHERE blockheight=333931')
-        txids = [tx[1] for tx in txlist]
-        self.assertEqual(sorted(set(txids)), sorted(txids))
-        block_read = MemBlock.read(333931, dbfile=tmpdbfile)
-        self.assertEqual(block, block_read)
-        db.close()
+        db = None
+        try:
+            db = sqlite3.connect(tmpdbfile)
+            txids = db.execute(
+                'SELECT txid FROM txs JOIN blocktxs '
+                'ON txs.id=blocktxs.txrowid WHERE blockheight=333931')
+            txids = [e[0] for e in txids]
+            self.assertEqual(sorted(set(txids)), sorted(txids))
+            block_read = MemBlock.read(333931, dbfile=tmpdbfile)
+            self.assertEqual(block, block_read)
+        finally:
+            if db is not None:
+                db.close()
 
     def test_read_uninitialized(self):
         '''Read from a db that has not been initialized.'''
@@ -169,9 +206,6 @@ class ProcessBlocksTests(unittest.TestCase):
         self.memblockref = MemBlock.read(self.test_blockheight,
                                          dbfile=dbfile)
         for entry in self.memblockref.entries.values():
-            # This test data was from an old version where leadtime was not
-            # an integer.
-            entry.leadtime = int(entry.leadtime)
             entry.isconflict = False
         self.testrawmempool = rawmempool_from_mementries(
             self.memblockref.entries)
