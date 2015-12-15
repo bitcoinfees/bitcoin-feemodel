@@ -290,12 +290,21 @@ class MemBlock(MempoolState):
             del state.entries[txid]
 
         stats = self.calc_stranding_feerate(bootstrap=False)
-        stranding_feerate = stats['sfr'] if stats else None
+        if stats:
+            stranding_feerate = stats['sfr']
+            abovekn = stats['abovekn']
+            belowkn = stats['belowkn']
+        else:
+            stranding_feerate = None
+            abovekn = None
+            belowkn = None
 
         blocktext = (
-            'Block {} ({} bytes) by {}: {}/{} in mempool, SFR is {}.'.
-            format(self.blockheight, self.blocksize, blockname,
-                   len(entries_inblock), len(blocktxids)-1, stranding_feerate))
+            'Block {} ({} bytes) by {}: {}/{} in mempool, '
+            'SFR/akn/bkn: {}/{}/{}'.format(
+                self.blockheight, self.blocksize, blockname,
+                len(entries_inblock), len(blocktxids)-1,
+                stranding_feerate, abovekn, belowkn))
         logger.info(blocktext)
 
         # As a measure of our node's connectivity, we want to note the
