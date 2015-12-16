@@ -29,7 +29,7 @@ MEMBLOCK_SCHEMA = {
     ],
     "txs": [
         "id INTEGER PRIMARY KEY",
-        "txid TEXT UNIQUE",
+        "txid TEXT",
         "size INTEGER",
         "fee TEXT",
         "startingpriority TEXT",
@@ -382,7 +382,12 @@ class MemBlock(BaseMemBlock):
         '''
         if not self:
             raise ValueError("Failed write: empty memblock.")
-        TEMPTABLE = "temptable"
+
+        # Temp tables
+        NONREMOVED = "nonremoved"
+        MEMBLOCKTXS = "memblocktxs"
+        # TEMPTABLE = "temptable"
+
         db = None
         memblocktxids = self.entries.keys()
 
@@ -391,112 +396,195 @@ class MemBlock(BaseMemBlock):
         # print("======================")
 
         try:
-            db = sqlite3.connect(dbfile)
-            for key, val in MEMBLOCK_SCHEMA.items():
-                db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
-                           (key, ','.join(val)))
-            db.execute('CREATE INDEX IF NOT EXISTS heightidx '
-                       'ON txs (heightremoved)')
-            db.execute('CREATE INDEX IF NOT EXISTS txididx '
-                       'ON txs (txid)')
-            db.execute('CREATE INDEX IF NOT EXISTS block_heightidx '
-                       'ON blocktxs (blockheight)')
             with db_lock:
-                with db:
-                    # Create a temp table to hold the current memblock txids
-                    db.execute(
-                        "CREATE TEMP TABLE {} "
-                        "(txid TEXT, isconflict INTEGER, inblock INTEGER)".
-                        format(TEMPTABLE))
-                    db.executemany(
-                        "INSERT INTO {} VALUES (?,?,?)".format(TEMPTABLE),
-                        [(txid, self.entries[txid].isconflict,
-                          self.entries[txid].inblock)
-                         for txid in memblocktxids])
-                    # print("Entered temp table in {}".format(time() - start))
-
-                    # Get the txids which have not yet been entered into txs
-                    txidstoenter = db.execute(
-                        "SELECT txid FROM {} WHERE txid "
-                        "NOT IN (SELECT txid FROM txs)".format(TEMPTABLE)
-                    )
-                    # Enter these new txs
-                    txstoenter = [
-                        (
-                            txid,
-                            self.entries[txid].size,
-                            str(self.entries[txid].fee),
-                            str(self.entries[txid].startingpriority),
-                            self.entries[txid].time,
-                            self.entries[txid].height,
-                            ','.join(self.entries[txid].depends),
-                            self.entries[txid].feerate,
-                            None
-                        )
-                        for txid in map(itemgetter(0), txidstoenter)
-                    ]
-                    db.executemany(
-                        "INSERT INTO txs(txid, size, fee, startingpriority, "
-                        "time, height, depends, feerate, heightremoved) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)", txstoenter)
-                    # print("Entered new txs in {}".format(time() - start))
-
-                    # Get the ids of memblock txs
-                    alltxs = db.execute(
-                        "SELECT id, txid FROM txs WHERE txid IN "
-                        "(SELECT txid FROM {})".format(TEMPTABLE)).fetchall()
-                    alltxids = map(itemgetter(1), alltxs)
-                    assert set(memblocktxids) == set(alltxids)
-                    # Enter into blocktxs
-                    db.executemany(
-                        "INSERT INTO blocktxs VALUES (?,?,?,?,?)",
-                        [(
-                            self.blockheight,
-                            txrowid,
-                            str(self.entries[txid].currentpriority),
-                            self.entries[txid].isconflict,
+                db = sqlite3.connect(dbfile)
+                for key, val in MEMBLOCK_SCHEMA.items():
+                    db.execute('CREATE TABLE IF NOT EXISTS %s (%s)' %
+                               (key, ','.join(val)))
+                db.execute('CREATE INDEX IF NOT EXISTS heightidx '
+                           'ON txs (heightremoved)')
+                db.execute('CREATE INDEX IF NOT EXISTS block_heightidx '
+                           'ON blocktxs (blockheight)')
+                # Temporary tables for data manipulation
+                db.execute(
+                    "CREATE TEMP TABLE {} (id INTEGER, txid TEXT)".
+                    format(NONREMOVED))
+                db.execute(
+                    "CREATE TEMP TABLE {} "
+                    "(txid TEXT, isconflict INTEGER, inblock INTEGER)".
+                    format(MEMBLOCKTXS))
+                # Fetch the nonremoved txs
+                db.execute(
+                    "INSERT INTO {} "
+                    "SELECT id, txid FROM txs "
+                    "WHERE heightremoved IS NULL".format(NONREMOVED)
+                )
+                # Table the memblocktxs
+                db.executemany(
+                    "INSERT INTO {} VALUES (?,?,?)".format(MEMBLOCKTXS),
+                    [(txid,
+                      self.entries[txid].isconflict,
+                      self.entries[txid].inblock)
+                     for txid in memblocktxids])
+                # Update the heightremoved
+                db.execute(
+                    "UPDATE txs SET heightremoved=? "
+                    "WHERE id IN "
+                    "(SELECT id FROM {0} LEFT JOIN {1} "
+                    " ON {0}.txid={1}.txid WHERE "
+                    " {1}.isconflict=1 OR "
+                    " {1}.inblock=1 OR "
+                    " {1}.inblock is NULL)".
+                    format(NONREMOVED, MEMBLOCKTXS),
+                    (self.blockheight,)
+                )
+                # Get the new txs to table
+                txidstoenter = db.execute(
+                    "SELECT txid FROM {} EXCEPT SELECT txid FROM {}".
+                    format(MEMBLOCKTXS, NONREMOVED)
+                )
+                txstoenter = [
+                    (
+                        txid,
+                        self.entries[txid].size,
+                        str(self.entries[txid].fee),
+                        str(self.entries[txid].startingpriority),
+                        self.entries[txid].time,
+                        self.entries[txid].height,
+                        ','.join(self.entries[txid].depends),
+                        self.entries[txid].feerate,
+                        self.blockheight if (
+                            self.entries[txid].isconflict or
                             self.entries[txid].inblock)
-                         for txrowid, txid in alltxs]
+                        else None
                     )
-                    # print("Entered blocktxs in {}".format(time() - start))
+                    for txid in map(itemgetter(0), txidstoenter)
+                ]
+                # Enter new txs. There might be duplicate txid,
+                # but that's OK!
+                db.executemany(
+                    "INSERT INTO txs(txid, size, fee, startingpriority, "
+                    "time, height, depends, feerate, heightremoved) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", txstoenter)
 
-                    # Update heightremoved.
-                    # Purpose of heightremoved is only so we know
-                    # when we can delete this row.
-                    db.execute(
-                        "UPDATE txs SET heightremoved = ? "
-                        "WHERE txid IN (SELECT txid FROM {} "
-                        "WHERE isconflict=1 OR inblock=1) OR "
-                        "(txid NOT IN (SELECT txid FROM {}) AND "
-                        "heightremoved IS NULL)".format(TEMPTABLE, TEMPTABLE),
-                        (self.blockheight, )
-                    )
-                    # print("Updated heightremoved in {}".format(time() - start))
+                # Get the rowids, to enter into blocktxs
+                finaltxs = db.execute(
+                    "SELECT id, txid FROM txs WHERE "
+                    "heightremoved IS NULL OR "
+                    "heightremoved=?",
+                    (self.blockheight,)
+                ).fetchall()
+                rowidmap = {txid: rowid for rowid, txid in finaltxs}
+                # Assert that there are no duplicate txids
+                assert len(finaltxs) == len(set(map(itemgetter(1), finaltxs)))
+                # Enter into blocktxs
+                blocktxstoenter = [(
+                    self.blockheight,
+                    rowidmap[txid],
+                    str(self.entries[txid].currentpriority),
+                    self.entries[txid].isconflict,
+                    self.entries[txid].inblock)
+                    for txid in memblocktxids
+                ]
+                db.executemany("INSERT INTO blocktxs VALUES (?,?,?,?,?)",
+                               blocktxstoenter)
 
-                    # Enter into blocks
-                    db.execute(
-                        'INSERT INTO blocks VALUES (?,?,?)',
-                        (self.blockheight, self.blocksize, self.time))
-                    # print("Entered into blocks in {}".format(time() - start))
-
-                    # Remove the temp table
-                    # db.execute("DROP TABLE {}".format(TEMPTABLE))
-
-                    # print("Finished dropping temptable in {}".format(time() - start))
-
-                # print("Finished committing first part in {}".format(time() - start))
+                # Enter into blocks
+                db.execute(
+                    'INSERT INTO blocks VALUES (?,?,?)',
+                    (self.blockheight, self.blocksize, self.time))
 
                 # Remove old blocks
                 if blocks_to_keep > 0:
                     height_thresh = self.blockheight - blocks_to_keep
-                    with db:
-                        db.execute("DELETE FROM txs WHERE heightremoved<=?",
-                                   (height_thresh,))
-                        db.execute("DELETE FROM blocks WHERE height<=?",
-                                   (height_thresh,))
-                        db.execute("DELETE FROM blocktxs WHERE blockheight<=?",
-                                   (height_thresh,))
-                        # print("Finished deleting in {}.".format(time() - start))
+                    db.execute("DELETE FROM txs WHERE heightremoved<=?",
+                               (height_thresh,))
+                    db.execute("DELETE FROM blocks WHERE height<=?",
+                               (height_thresh,))
+                    db.execute("DELETE FROM blocktxs WHERE blockheight<=?",
+                               (height_thresh,))
+                    # print("Finished deleting in {}.".format(time() - start))
+                db.commit()
+
+                # ===============================
+                # Create a temp table to hold the current memblock txids
+                # db.execute(
+                #     "CREATE TEMP TABLE {} "
+                #     "(txid TEXT, isconflict INTEGER, inblock INTEGER)".
+                #     format(TEMPTABLE))
+                # db.executemany(
+                #     "INSERT INTO {} VALUES (?,?,?)".format(TEMPTABLE),
+                #     [(txid, self.entries[txid].isconflict,
+                #       self.entries[txid].inblock)
+                #      for txid in memblocktxids])
+                # # print("Entered temp table in {}".format(time() - start))
+
+                # # Get the txids which have not yet been entered into txs
+                # txidstoenter = db.execute(
+                #     "SELECT txid FROM {} WHERE txid "
+                #     "NOT IN (SELECT txid FROM txs)".format(TEMPTABLE)
+                # )
+                # # Enter these new txs
+                # txstoenter = [
+                #     (
+                #         txid,
+                #         self.entries[txid].size,
+                #         str(self.entries[txid].fee),
+                #         str(self.entries[txid].startingpriority),
+                #         self.entries[txid].time,
+                #         self.entries[txid].height,
+                #         ','.join(self.entries[txid].depends),
+                #         self.entries[txid].feerate,
+                #         None
+                #     )
+                #     for txid in map(itemgetter(0), txidstoenter)
+                # ]
+                # db.executemany(
+                #     "INSERT INTO txs(txid, size, fee, startingpriority, "
+                #     "time, height, depends, feerate, heightremoved) "
+                #     "VALUES (?,?,?,?,?,?,?,?,?)", txstoenter)
+                # # print("Entered new txs in {}".format(time() - start))
+
+                # # Get the ids of memblock txs
+                # alltxs = db.execute(
+                #     "SELECT id, txid FROM txs WHERE txid IN "
+                #     "(SELECT txid FROM {})".format(TEMPTABLE)).fetchall()
+                # alltxids = map(itemgetter(1), alltxs)
+                # assert set(memblocktxids) == set(alltxids)
+                # # Enter into blocktxs
+                # db.executemany(
+                #     "INSERT INTO blocktxs VALUES (?,?,?,?,?)",
+                #     [(
+                #         self.blockheight,
+                #         txrowid,
+                #         str(self.entries[txid].currentpriority),
+                #         self.entries[txid].isconflict,
+                #         self.entries[txid].inblock)
+                #      for txrowid, txid in alltxs]
+                # )
+                # # print("Entered blocktxs in {}".format(time() - start))
+
+                # # Update heightremoved.
+                # # Purpose of heightremoved is only so we know
+                # # when we can delete this row.
+                # db.execute(
+                #     "UPDATE txs SET heightremoved = ? "
+                #     "WHERE txid IN (SELECT txid FROM {} "
+                #     "WHERE isconflict=1 OR inblock=1) OR "
+                #     "(txid NOT IN (SELECT txid FROM {}) AND "
+                #     "heightremoved IS NULL)".format(TEMPTABLE, TEMPTABLE),
+                #     (self.blockheight, )
+                # )
+                # # print("Updated heightremoved in {}".format(time() - start))
+
+                # # Enter into blocks
+                # db.execute(
+                #     'INSERT INTO blocks VALUES (?,?,?)',
+                #     (self.blockheight, self.blocksize, self.time))
+                # print("Entered into blocks in {}".format(time() - start))
+
+                # Remove the temp table
+                # db.execute("DROP TABLE {}".format(TEMPTABLE))
         finally:
             if db is not None:
                 db.close()
@@ -769,6 +857,7 @@ class MemEntry(SimEntry):
         return (self.currentpriority > PRIORITYTHRESH or
                 self.feerate < MINRELAYTXFEE)
 
+    # TODO: deprecate this
     def _get_attr_tuple(self):
         '''Get tuple of attributes.
         Used when writing MemBlock to disk.
@@ -791,6 +880,7 @@ class MemEntry(SimEntry):
         )
         return attr_tuple
 
+    # TODO: deprecate this
     @classmethod
     def _from_attr_tuple(cls, tup):
         '''Return MemEntry from attribute tuple.
