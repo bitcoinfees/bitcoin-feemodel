@@ -405,6 +405,12 @@ class MemBlock(BaseMemBlock):
                            'ON txs (heightremoved)')
                 db.execute('CREATE INDEX IF NOT EXISTS block_heightidx '
                            'ON blocktxs (blockheight)')
+
+                # Enter into blocks
+                db.execute(
+                    'INSERT INTO blocks VALUES (?,?,?)',
+                    (self.blockheight, self.blocksize, self.time))
+
                 # Temporary tables for data manipulation
                 db.execute(
                     "CREATE TEMP TABLE {} (id INTEGER, txid TEXT)".
@@ -488,11 +494,6 @@ class MemBlock(BaseMemBlock):
                 ]
                 db.executemany("INSERT INTO blocktxs VALUES (?,?,?,?,?)",
                                blocktxstoenter)
-
-                # Enter into blocks
-                db.execute(
-                    'INSERT INTO blocks VALUES (?,?,?)',
-                    (self.blockheight, self.blocksize, self.time))
 
                 # Remove old blocks
                 if blocks_to_keep > 0:

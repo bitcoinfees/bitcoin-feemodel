@@ -58,7 +58,9 @@ class BasicAppTests(unittest.TestCase):
         db = sqlite3.connect(MEMBLOCK_DBFILE)
         with db:
             db.execute("DELETE FROM blocks WHERE height=333953")
-            db.execute("DELETE FROM txs WHERE height=333953")
+            db.execute("UPDATE txs SET heightremoved=NULL "
+                       "WHERE heightremoved=333953")
+            db.execute("DELETE FROM blocktxs WHERE blockheight=333953")
         db.close()
 
     def test_A(self):
