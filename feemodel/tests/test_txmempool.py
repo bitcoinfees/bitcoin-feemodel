@@ -203,6 +203,10 @@ class ProcessBlocksTests(unittest.TestCase):
         prev = None
         previnblock = None
         for idx, b in enumerate(memblocks):
+            # Check for no broken deps
+            self.assertTrue(all([
+                all([dep in b.entries for dep in entry.depends])
+                for entry in b.entries.values()]))
             self.assertEqual(b.blockheight, b.height+1)
             self.assertEqual(b.blockheight, self.test_blockheight+idx)
             self.assertTrue(all([not entry.isconflict

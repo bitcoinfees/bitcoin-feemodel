@@ -289,6 +289,11 @@ class MemBlock(MempoolState):
             # if there are > 1 blocks in this update cycle.
             del state.entries[txid]
 
+        # Get rid of broken deps, for multiple blocks
+        for entry in state.entries.values():
+            entry.depends = filter(lambda dep: dep in state.entries,
+                                   entry.depends)
+
         stats = self.calc_stranding_feerate(bootstrap=False)
         if stats:
             stranding_feerate = stats['sfr']
