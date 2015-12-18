@@ -155,6 +155,15 @@ class WriteReadTests(unittest.TestCase):
             self.assertEqual(
                 len(db.execute("SELECT DISTINCT txid FROM txs").fetchall()),
                 len(db.execute("SELECT txid FROM txs").fetchall()))
+
+            # Check the null-heightremoved txs
+            self.assertEqual(
+                db.execute("SELECT count(*) FROM txs "
+                           "WHERE heightremoved IS NULL").fetchall()[0][0],
+                len(filter(
+                    lambda entry: not entry.inblock,
+                    memblocks[-1].entries.values()))
+            )
         finally:
             if db is not None:
                 db.close()
