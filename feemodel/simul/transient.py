@@ -67,7 +67,7 @@ def transientsim(sim, feepoints=None, init_entries=None,
         processes = [threading.Thread(target=target, args=args)]
     for process in processes:
         process.start()
-    logger.debug("Subprocesses started.")
+    logger.debug("Subprocesses started ({} total)".format(numprocesses))
 
     starttime = time()
     elapsedtime = 0
