@@ -17,8 +17,6 @@ def cli(port):
 @cli.command()
 @click.option('--mempool', is_flag=True,
               help='Collect memblock data only (no simulation)')
-@click.option('--external', is_flag=True,
-              help='Listen on all addresses, instead of only on localhost.')
 @click.option('--txsource', type=click.STRING, default=None,
               help="Filename of a pickled txsource to use initially.")
 def start(mempool, external, txsource):
@@ -35,8 +33,6 @@ def start(mempool, external, txsource):
                    % logfile)
     else:
         click.echo("Starting simulation app; logging to %s" % logfile)
-    if external:
-        config.set("app", "external", "true")
     main(mempool_only=mempool, txsourcefile=txsource)
 
 

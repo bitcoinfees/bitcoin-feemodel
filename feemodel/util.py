@@ -156,8 +156,17 @@ class BlockingProxy(Proxy):
     '''
 
     def __init__(self):
+        host = feemodel.config.config.get("rpc", "host")
+        port = feemodel.config.config.get("rpc", "port")
+        user = feemodel.config.config.get("rpc", "username")
+        passwd = feemodel.config.config.get("rpc", "password")
+        if not user:
+            service_url = None
+        else:
+            service_url = "http://{}:{}@{}:{}".format(user, passwd, host, port)
         super(BlockingProxy, self).__init__(
-            timeout=feemodel.config.config.getint("txmempool", "poll_timeout"))
+            timeout=feemodel.config.config.getint("txmempool", "poll_timeout"),
+            service_url=service_url)
         self.rlock = threading.RLock()
 
     def _call(self, *args):

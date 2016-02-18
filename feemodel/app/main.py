@@ -165,10 +165,7 @@ def main(mempool_only=False, txsourcefile=None):
         return jsonify(response)
 
     with sim.context_start():
-        if config.getboolean("app", "external"):
-            host = "0.0.0.0"
-        else:
-            host = "127.0.0.1"
+        host = config.get("app", "host")
         port = config.getint("app", "port")
         print("Logging to {}".format(logfile))
         logger.info("Listening on http://{}:{}".format(host, port))

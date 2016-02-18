@@ -16,7 +16,9 @@ MINRELAYTXFEE = 5000
 
 # Create the default data directory.
 # TODO: don't create it here, but in app.main.
-datadir = user_data_dir(pkgname)
+datadir = os.environ.get("FEEMODEL_DATADIR")
+if datadir is None:
+    datadir = user_data_dir(pkgname)
 if not os.path.exists(datadir):
     try:
         os.makedirs(datadir)
