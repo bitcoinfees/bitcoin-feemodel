@@ -19,7 +19,7 @@ def cli(port):
               help='Collect memblock data only (no simulation)')
 @click.option('--txsource', type=click.STRING, default=None,
               help="Filename of a pickled txsource to use initially.")
-def start(mempool, external, txsource):
+def start(mempool, txsource):
     '''Start the simulation app.
 
     Use --mempool for memblock data collection only (no simulation).
