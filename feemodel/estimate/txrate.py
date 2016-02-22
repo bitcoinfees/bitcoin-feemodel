@@ -81,6 +81,14 @@ class ExpEstimator(SimTxSource):
                         prevtime = entry.time
                         txbatch = []
                 self._add_txs(txbatch, state.time-prevtime, is_init)
+
+            # Check for RBF-ed txs
+            if state_delta.height == 0:
+                reverse_delta = self.prevstate - state
+                rbf_size = sum([entry.size for entry in
+                                reverse_delta.entries.values()])
+                if rbf_size > 0:
+                    logger.info("{} bytes RBF-ed".format(rbf_size))
         finally:
             self.prevstate = state
 
