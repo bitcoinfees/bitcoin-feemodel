@@ -1,3 +1,4 @@
+NOTE: This project has been succeeded by [Feesim](https://github.com/bitcoinfees/feesim).
 
 bitcoin-feemodel (unreleased)
 -----------------------------
